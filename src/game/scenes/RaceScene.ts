@@ -35,9 +35,19 @@ import { armorResistance, effectiveCarSpec } from '../../core/vehicle/carSpec'
 import { applyRaceOutcome, type CareerState } from '../../core/progression/career'
 import { rewardFor } from '../../core/economy/rewards'
 import { loadCareer, saveCareer } from '../state/saveGame'
+import { getCurrentOffer, setCurrentOffer } from '../state/roundState'
 import { audioBus } from '../systems/audio'
+import {
+  applyRaceLadderResults,
+  pickRivals,
+  rankOf,
+  rivalStrength,
+  simulateRound,
+} from '../../core/progression/ladder'
+import { rosterById } from '../../data/roster'
+import { TRACKS_BY_TIER } from '../../data/tracks'
 import { STARTER_CAR, carById } from '../../data/cars'
-import { DIFFICULTY_RAMP, RIVAL_DRIVERS, RUBBER_BAND } from '../../data/drivers'
+import { DRIVING_STYLES, RUBBER_BAND } from '../../data/drivers'
 import {
   AI_GUNNER,
   GUN,
@@ -48,7 +58,7 @@ import {
   WALL_DAMAGE,
   WEAPONS_FREE_DELAY_MS,
 } from '../../data/weapons'
-import { TEST_CIRCUIT } from '../../data/tracks/testCircuit'
+import type { TrackDef } from '../../data/tracks/testCircuit'
 import type { RaceResults } from './ResultsScene'
 
 const CAR_SCALE = 0.75
@@ -128,7 +138,8 @@ interface DroppedMine {
 }
 
 export class RaceScene extends Phaser.Scene {
-  private track = TEST_CIRCUIT
+  private track!: TrackDef
+  private rivalIds: string[] = []
   private centerline: Vec2[] = []
   private gates: Gate[] = []
   private barriers: Vec2[] = []
@@ -195,6 +206,19 @@ export class RaceScene extends Phaser.Scene {
 
     this.career = loadCareer()
     this.playerSpec = effectiveCarSpec(carById(this.career.carId), this.career.upgrades)
+
+    // the accepted sign-up offer decides track and grid; fall back to a
+    // default pro-tier round if the scene starts without one
+    let offer = getCurrentOffer()
+    if (!offer) {
+      offer = {
+        track: TRACKS_BY_TIER.pro,
+        rivalIds: pickRivals(this.career.ladder, this.career.points, Math.random),
+      }
+      setCurrentOffer(offer)
+    }
+    this.track = offer.track
+    this.rivalIds = offer.rivalIds
 
     this.centerline = catmullRomClosed(this.track.controls, this.track.samplesPerSegment)
     this.gates = buildGates(this.centerline, this.track.gateCount, this.track.width / 2 + this.track.shoulder)
@@ -745,13 +769,16 @@ export class RaceScene extends Phaser.Scene {
     player.damage = this.career.damage // persistent damage carries into the race
     player.mines = this.career.mines // one-race consumable bought in the garage
     this.cars.push(player)
-    RIVAL_DRIVERS.forEach((d, i) => {
+    this.rivalIds.forEach((id, i) => {
+      const driver = rosterById(id)
+      const style = DRIVING_STYLES[i % DRIVING_STYLES.length]
+      const rank = rankOf(this.career.ladder, this.career.points, id)
       this.cars.push(
-        makeUnit(i + 1, d.id, d.name, d.bodyColor, `car-${d.id}`, {
+        makeUnit(i + 1, id, driver.name, driver.bodyColor, `car-${id}`, {
           lineIdx: 0,
-          lookAheadSamples: d.lookAheadSamples,
-          speedScale: d.speedScale,
-          tuning: d.tuning,
+          lookAheadSamples: style.lookAheadSamples,
+          speedScale: rivalStrength(rank),
+          tuning: style.tuning,
         }),
       )
     })
@@ -819,8 +846,8 @@ export class RaceScene extends Phaser.Scene {
         RUBBER_BAND.min,
         RUBBER_BAND.max,
       )
-      const ramp = 1 + Math.min(DIFFICULTY_RAMP.max, this.career.points * DIFFICULTY_RAMP.perPoint)
-      const scale = car.ai.speedScale * band * ramp
+      // raw pace comes from ladder rank (set at grid build), banded here
+      const scale = car.ai.speedScale * band
       spec = { ...spec, topSpeed: spec.topSpeed * scale, accel: spec.accel * scale }
     }
     if (turboActive) {
@@ -880,6 +907,15 @@ export class RaceScene extends Phaser.Scene {
       endDamage: player.damage,
       won: playerPosition === 1 && !playerWrecked,
     })
+
+    // rivals from this race earn ladder points by placement, then the two
+    // skipped tiers run in the background
+    const rivalPlacements = this.placementOrder
+      .map((id, i) => ({ id, placement: i + 1, wrecked: this.cars.find((c) => c.id === id)!.wrecked }))
+      .filter((r) => r.id !== 'player')
+    let ladder = applyRaceLadderResults(this.career.ladder, this.track.tier, rivalPlacements)
+    ladder = simulateRound(ladder, this.track.tier, this.rivalIds, Math.random)
+    this.career = { ...this.career, ladder }
     saveCareer(this.career)
 
     const results: RaceResults = {

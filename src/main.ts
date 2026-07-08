@@ -4,6 +4,8 @@ import { BootScene } from './game/scenes/BootScene'
 import { MenuScene } from './game/scenes/MenuScene'
 import { RaceScene } from './game/scenes/RaceScene'
 import { ResultsScene } from './game/scenes/ResultsScene'
+import { SignUpScene } from './game/scenes/SignUpScene'
+import { RankingScene } from './game/scenes/RankingScene'
 import { GarageScene } from './game/scenes/GarageScene'
 
 new Phaser.Game({
@@ -20,5 +22,5 @@ new Phaser.Game({
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
-  scene: [BootScene, MenuScene, GarageScene, RaceScene, ResultsScene],
+  scene: [BootScene, MenuScene, GarageScene, SignUpScene, RaceScene, ResultsScene, RankingScene],
 })

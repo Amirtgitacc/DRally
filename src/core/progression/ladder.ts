@@ -1,0 +1,113 @@
+// Pure championship-ladder logic — the persistent 20-driver ranking the
+// player climbs from #20. AI drivers not in the player's race earn points
+// in simulated background races each round.
+
+import { RACE_REWARDS, type RaceTier } from '../../data/economy'
+import { ROSTER } from '../../data/roster'
+
+/** driver id → championship points (the player's points live on CareerState) */
+export type Ladder = Record<string, number>
+
+export const PLAYER_ID = '__player'
+
+/** Seeded standings: the scene is established before the player arrives. */
+export function initialLadder(): Ladder {
+  const ladder: Ladder = {}
+  ROSTER.forEach((d, i) => {
+    ladder[d.id] = (ROSTER.length - i) * 6
+  })
+  return ladder
+}
+
+export interface StandingRow {
+  id: string
+  name: string
+  points: number
+  isPlayer: boolean
+}
+
+/** Full 20-row table sorted by points; ties rank the player below rivals. */
+export function standings(ladder: Ladder, playerPoints: number): StandingRow[] {
+  const rows: StandingRow[] = ROSTER.map((d) => ({
+    id: d.id,
+    name: d.name,
+    points: ladder[d.id] ?? 0,
+    isPlayer: false,
+  }))
+  rows.push({ id: PLAYER_ID, name: 'YOU', points: playerPoints, isPlayer: true })
+  return rows.sort((a, b) => b.points - a.points || Number(a.isPlayer) - Number(b.isPlayer))
+}
+
+/** 1-based championship rank. */
+export function rankOf(ladder: Ladder, playerPoints: number, id: string): number {
+  return standings(ladder, playerPoints).findIndex((r) => r.id === id) + 1
+}
+
+export function playerRank(ladder: Ladder, playerPoints: number): number {
+  return rankOf(ladder, playerPoints, PLAYER_ID)
+}
+
+/** AI pace from ladder rank: #1 ≈ 1.05, #20 ≈ 0.90. */
+export function rivalStrength(rank: number): number {
+  return 0.9 + (20 - Math.min(20, Math.max(1, rank))) * 0.008
+}
+
+function shuffled<T>(items: T[], rand: () => number): T[] {
+  const arr = [...items]
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1))
+    ;[arr[i], arr[j]] = [arr[j], arr[i]]
+  }
+  return arr
+}
+
+/** 3 rivals ranked near the player — the neighborhood you're fighting for. */
+export function pickRivals(ladder: Ladder, playerPoints: number, rand: () => number): string[] {
+  const rows = standings(ladder, playerPoints)
+  const playerIdx = rows.findIndex((r) => r.isPlayer)
+  const windowSize = 7
+  const start = Math.min(Math.max(0, playerIdx - Math.ceil(windowSize / 2)), rows.length - windowSize)
+  const nearby = rows.slice(start, start + windowSize).filter((r) => !r.isPlayer)
+  return shuffled(nearby, rand)
+    .slice(0, 3)
+    .map((r) => r.id)
+}
+
+/** Points for the player's race rivals by finishing order (wrecked earns nothing). */
+export function applyRaceLadderResults(
+  ladder: Ladder,
+  tier: RaceTier,
+  rivalPlacements: Array<{ id: string; placement: number; wrecked: boolean }>,
+): Ladder {
+  const next = { ...ladder }
+  for (const r of rivalPlacements) {
+    if (r.wrecked || r.placement < 1 || r.placement > 3) continue
+    next[r.id] = (next[r.id] ?? 0) + RACE_REWARDS[tier][r.placement - 1].points
+  }
+  return next
+}
+
+/**
+ * The two race tiers the player skipped still run: fill each with 3 drivers
+ * who weren't in the player's race and award podium points.
+ */
+export function simulateRound(
+  ladder: Ladder,
+  playedTier: RaceTier,
+  excludeIds: string[],
+  rand: () => number,
+): Ladder {
+  const next = { ...ladder }
+  const tiers = (Object.keys(RACE_REWARDS) as RaceTier[]).filter((t) => t !== playedTier)
+  const pool = shuffled(
+    ROSTER.map((d) => d.id).filter((id) => !excludeIds.includes(id)),
+    rand,
+  )
+  let cursor = 0
+  for (const tier of tiers) {
+    for (let place = 1; place <= 3 && cursor < pool.length; place++, cursor++) {
+      next[pool[cursor]] = (next[pool[cursor]] ?? 0) + RACE_REWARDS[tier][place - 1].points
+    }
+  }
+  return next
+}

@@ -2,6 +2,7 @@ import Phaser from 'phaser'
 import { GAME_WIDTH, GAME_HEIGHT } from '../../config/game'
 import { carById } from '../../data/cars'
 import { hasSavedCareer, loadCareer, resetCareer } from '../state/saveGame'
+import { playerRank } from '../../core/progression/ladder'
 import { audioBus } from '../systems/audio'
 
 export class MenuScene extends Phaser.Scene {
@@ -98,7 +99,7 @@ export class MenuScene extends Phaser.Scene {
     }
     const c = loadCareer()
     this.careerText.setText(
-      `${carById(c.carId).name} · $${c.cash} · ${c.points} pts · ${c.wins} wins in ${c.racesRun} races`,
+      `Rank #${playerRank(c.ladder, c.points)} · ${carById(c.carId).name} · $${c.cash} · ${c.points} pts · ${c.wins} wins in ${c.racesRun} races`,
     )
   }
 }

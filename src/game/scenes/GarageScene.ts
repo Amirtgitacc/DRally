@@ -193,7 +193,7 @@ export class GarageScene extends Phaser.Scene {
         break
       }
       case 'race':
-        this.scene.start('Race')
+        this.scene.start('SignUp')
         return
     }
     if (next) {
@@ -257,7 +257,7 @@ export class GarageScene extends Phaser.Scene {
         }
       }
       case 'race':
-        return { cost: '', info: 'Sign up for the next race. Prize money for the top three.', enabled: true }
+        return { cost: '', info: 'Head to race sign-up: three races on offer, pick your risk tier.', enabled: true }
     }
   }
 

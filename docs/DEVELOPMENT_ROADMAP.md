@@ -73,8 +73,17 @@ Status legend: ✅ done · 🔨 in progress · ⬜ not started
 
 **Vertical slice complete.** Next work comes from the post-slice backlog below.
 
+## Milestone 9 — Career ladder ✅ (2026-07-08)
+- [x] Three risk-tier races on offer every round (Street/Pro/Death, 1×/4×/16× payouts) — sign-up screen with color-coded tier cards, prizes, laps, and the grid for each
+- [x] Three tracks, one per tier: Dust Bowl Run (wide street opener), Rust Belt Circuit (pro), Serpent's Throat (narrow 4-lap death gauntlet) — all pure data files
+- [x] Persistent 20-driver championship ladder (19 original roster rivals + player starting #20): rivals near your rank fill your grid, podiums earn them points by the same tables, and the two skipped tiers run as simulated background races (pure logic + 8 tests)
+- [x] Rival pace comes from ladder rank (#1 ≈ 1.05×, #20 ≈ 0.90×) with 3 driving-style personalities cycled across the grid; replaces the fixed-rival difficulty ramp
+- [x] Ranking scene after every race: full 20-row table, player highlighted; menu shows career rank
+- Flow: Garage → Sign-Up → Race → Results → Ladder → Garage
+- Verified in browser: tier cards with tail-ender grids for a rank-20 rookie, death race on Serpent's Throat won (+$12,000/+8 pts), ladder points awarded exactly per tables, save round-trips; no console errors
+
 ## Post-slice backlog (distinctive mechanics from research)
-- Three concurrent risk-tier races per round; entrant slots filling in real time
-- Full 20-driver persistent ranking ladder + final boss duel
+- Final boss duel at rank #1 (the career's ending)
+- Sign-up entrant slots filling in real time (flavor)
 - Black market: ram plating, overcharged turbo, sabotage, loanshark
 - 6-car chassis ladder; more tracks/themes; gamepad; desktop wrapper; Hall of Fame

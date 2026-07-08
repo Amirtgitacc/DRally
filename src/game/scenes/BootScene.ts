@@ -1,6 +1,6 @@
 import Phaser from 'phaser'
 import { CAR_CATALOG } from '../../data/cars'
-import { RIVAL_DRIVERS } from '../../data/drivers'
+import { ROSTER } from '../../data/roster'
 import { paintCarTexture } from '../textures/vehicleTextures'
 import {
   paintAsphaltTexture,
@@ -34,7 +34,7 @@ export class BootScene extends Phaser.Scene {
     for (const car of CAR_CATALOG) {
       paintCarTexture(this, `car-${car.id}`, car.bodyColor, car.accentColor)
     }
-    for (const d of RIVAL_DRIVERS) {
+    for (const d of ROSTER) {
       paintCarTexture(this, `car-${d.id}`, d.bodyColor, d.accentColor)
     }
     paintAsphaltTexture(this)

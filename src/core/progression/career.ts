@@ -3,6 +3,7 @@
 
 import { STARTING_CASH } from '../../data/economy'
 import { NO_UPGRADES, type UpgradeLevels } from '../vehicle/carSpec'
+import { initialLadder, type Ladder } from './ladder'
 
 export interface CareerState {
   cash: number
@@ -15,6 +16,8 @@ export interface CareerState {
   wins: number
   /** one-race consumable — cleared after every race, bought in the garage */
   mines: number
+  /** championship points per AI rival (the player's points are `points`) */
+  ladder: Ladder
 }
 
 export function createCareer(): CareerState {
@@ -27,6 +30,7 @@ export function createCareer(): CareerState {
     racesRun: 0,
     wins: 0,
     mines: 0,
+    ladder: initialLadder(),
   }
 }
 
@@ -56,6 +60,14 @@ export function serializeCareer(c: CareerState): string {
   return JSON.stringify(c)
 }
 
+function isValidLadder(value: unknown): value is Ladder {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    Object.values(value).every((v) => typeof v === 'number')
+  )
+}
+
 /** Returns null on malformed/incompatible data — caller starts fresh. */
 export function deserializeCareer(raw: string): CareerState | null {
   try {
@@ -81,6 +93,7 @@ export function deserializeCareer(raw: string): CareerState | null {
       racesRun: typeof data.racesRun === 'number' ? data.racesRun : 0,
       wins: typeof data.wins === 'number' ? data.wins : 0,
       mines: typeof data.mines === 'number' ? data.mines : 0, // older saves lack this
+      ladder: isValidLadder(data.ladder) ? data.ladder : initialLadder(), // ditto
     }
   } catch {
     return null

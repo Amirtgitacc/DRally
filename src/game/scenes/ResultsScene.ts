@@ -88,7 +88,7 @@ export class ResultsScene extends Phaser.Scene {
       .setOrigin(0.5)
 
     const prompt = this.add
-      .text(cx, GAME_HEIGHT * 0.82, 'ENTER: GARAGE     R: RACE AGAIN', {
+      .text(cx, GAME_HEIGHT * 0.82, 'ENTER: STANDINGS', {
         fontFamily: 'monospace',
         fontSize: '26px',
         color: '#e8e8f0',
@@ -96,7 +96,6 @@ export class ResultsScene extends Phaser.Scene {
       .setOrigin(0.5)
     this.tweens.add({ targets: prompt, alpha: 0.3, duration: 700, yoyo: true, repeat: -1 })
 
-    this.input.keyboard?.once('keydown-R', () => this.scene.start('Race'))
-    this.input.keyboard?.once('keydown-ENTER', () => this.scene.start('Garage'))
+    this.input.keyboard?.once('keydown-ENTER', () => this.scene.start('Ranking'))
   }
 }
