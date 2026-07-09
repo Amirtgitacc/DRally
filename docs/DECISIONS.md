@@ -42,6 +42,38 @@ Four defects the scripted difficulty loop surfaced. Each was diagnosed by instru
 | D-026 | 2026-07-09 | Rubber-band catch-up ceiling lowered 1.15 → 1.10. | At 1.15 a trailing rival clawed back almost any machinery advantage, so buying a better car never made you the favourite — contradicting the milestone's own difficulty target. |
 | D-027 | 2026-07-09 | Debug-only `__autoPilot` (drives the player with the AI) + `__step` (runs the game loop by hand) are kept in the `?debug=1` build. | Difficulty is now *measured* rather than guessed, and races can be simulated ~50× faster than real time by skipping rendering. Caveat recorded: the pilot is an AI proxy — it corners conservatively and loses ~4s/race to the racing line, so it under-reports what a skilled human can do. Final difficulty calls need hands-on play. |
 
+### Milestone 13 fixes (2026-07-09)
+
+| # | Date | Decision | Why |
+|---|---|---|---|
+| D-028 | 2026-07-09 | The tire wall is **solid at any height** — airborne cars bounce off it instead of clearing it (they still fly over the scenery, i.e. off-track drag is skipped). Wall damage is not dealt mid-flight. | A mine launch sailed clean over the barrier and dropped the car in the infield, ringed by tires, with no way out for the rest of the race. Giving the wall a finite height only narrows the window; the launch apex (128px direct, more on a chain hit) always beats it eventually. |
+| D-029 | 2026-07-09 | **Stuck-car rescue**: a car that is both crawling (< 32 px/s) *and* off the tarmac for 3s is placed back on the racing line at the gate it was heading for. Both conditions are required. | The safety net for anything D-028 misses. Requiring "off the tarmac" too is what keeps a player parked on the racing line — handbrake on, lining up a shot — from being teleported out from under themselves. |
+| D-030 | 2026-07-09 | Race tier picks rivals from a **talent band** (`TIER_TALENT_BANDS`: street ★–★★, pro ★★–★★★, death ★★★–★★★★), not from a window around the player's rank. | The tier was cosmetic: all three sign-up cards drew from the same 7-driver neighborhood, so a death race paid 16× for the same rookies as a street race. The purse now buys a harder field. |
+| D-031 | 2026-07-09 | Rival pace band re-floored: `rivalStrength` #20 0.90 → **0.94**, #1 1.08 → **1.09**. Corner speeds up ~10% across all three driving styles. | AT: "the AI cars are very slow". A rookie's 0.96 talent scale on a 0.90 base put the slowest car on the grid at 0.864× — a clean lap beat the field. Measured: lifting the *ceiling* as well (to 1.13) put three aces beyond a fully-upgraded Leviathan (4th, 3 gates down), so only the floor moved. |
+| D-032 | 2026-07-09 | Checkpoint-gate debug lines moved from `?debug=1` to their own `?gates=1`. | They paint cyan lines across the track, and `?debug=1` is the flag you actually want while playing. |
+| D-033 | 2026-07-09 | The booby-trap pickup wears a **skull**, and its camera-swim lasts 4.5s (was 2.6s). | It was deliberately drawn as the shiniest orb on the track. A pickup that hurts has to say so from a car's length away, or taking it reads as the game cheating. |
+
+### Milestone 14 — the AI learns to drive (2026-07-09)
+AT beat the death tier four times running, winning by nearly a lap. The scripted pilot had said "4th". The pilot was wrong; measurement found out why.
+
+| # | Date | Decision | Why |
+|---|---|---|---|
+| D-034 | 2026-07-09 | The AI drives a **racing line** (`core/track/racingLine.ts`), not the centerline: relaxation inside the track corridor, pulling each sample toward the midpoint of its neighbours until the line runs wide-apex-wide. | The centerline is both a longer path and a curvier one, so the cornering model braked for bends the grip would have carried flat. Measured on Serpent's Throat, aces averaged **63% of their own top speed** while taking 26 damage on the walls all race — they were never near the limit. |
+| D-035 | 2026-07-09 | **Cornering caution cut hard** (charger 0.44→0.16, floor 330→470 px/s) and re-spread across talent. | Probing found no crash cliff: caution ×0.6 → +20% pace, ×0.4 → +27%, ×0.2 → +34%, and wall damage never moved off 26. The grip was always there. The AI's slowness was a phantom of the braking model, not of its car. |
+| D-036 | 2026-07-09 | Turbo is a decision, not a condition (`core/ai/turbo.ts`): boost on corner exit, to chase a car getting away, and to defend a bumper — holding a reserve otherwise. | The old rule ("track looks straight and tank over a third") almost never fires on a twisty circuit, and never when it matters. |
+| D-037 | 2026-07-09 | Rival gun damage scales with the purse: `AI_GUNNER.damageScale` 0.5 flat → **street 0.5 · pro 0.75 · death 1.0**. Aces fire at the bullet's intercept point (`core/combat/aim.ts`), everyone else at where you are. Rivals with the leader in range shoot the **leader**, not the nearest car. | D-023's flat 0.5 made the top tier a shooting gallery: a player who aims better than the AI simply wins the fight. The handicap exists for a 3-vs-1 grid, so it should shrink where the money says the drivers are better. |
+| D-038 | 2026-07-09 | AI mines: death tier 2 → **3** per rival, dropped when a car behind is genuinely **closing** (not merely present), and rivals now **steer around armed mines** on their line. | Mines were dropped at anyone tailing, so they were spent on cars that were not a threat, and the AI drove over its own minefield. |
+
+### Milestone 15 — machinery, not multipliers (2026-07-09)
+Death tier still lost. Two causes, both structural.
+
+| # | Date | Decision | Why |
+|---|---|---|---|
+| D-039 | 2026-07-09 | A mine's arming delay protects **only the car that dropped it** (`ownerSafeMs` 900ms). Everyone else gets a **45ms fuse**. | `armDelayMs` applied to all cars, so a mine dropped at a tailgater was still inert when they drove over it and armed itself harmlessly behind them — the weapon could not do the one job it has. 45ms is not arbitrary: the mine lands 55px off the dropper's tail, so a pursuer on the bumper is ~35px away and covers that in 58ms at racing speed. Any longer fuse and the mine misses. Verified at 140/90/70px gaps: all now hit for 19 damage and an 111px launch. |
+| D-040 | 2026-07-09 | **Rivals fit upgrades from their ladder rank** (`rivalUpgrades`: #1 runs engine/tires/armor 3, #20 runs stock). | The real asymmetry. Rivals drove showroom cars while the player fitted tier-3 tires — **+40% grip**. No amount of pace tuning could fix that: probing showed the AI was at the *grip* limit, not the braking limit (caution ×0.2 bought nothing over ×0.4). It is also why the player could wreck aces at will: no armor. Aces now survive 179 damage in a race. |
+| D-041 | 2026-07-09 | With real machinery behind them, the rank pace band **narrows to 0.94–1.00** (was 0.94–1.09) and the rubber-band ceiling drops 1.10 → **1.06**. | D-017 says difficulty comes from machinery, not cheats. Left as-was, a rank-1 ace on a built car with the band behind them would run down a leading player at 955 px/s in a 758 px/s car. The multiplier shrinks precisely because the machinery gap is now real. |
+| — | 2026-07-09 | Rejected: "average speed = 95% of top". | Probing proved the ceiling is grip, not courage. Cutting cornering caution from 0.16 to 0.05 moved the aces from 80% to 84% of top and no further — 95% would mean taking hairpins flat. Real racing sits at 70–85%. The right lever was to make the top speed (and the grip under it) bigger, not the fraction. |
+
 ## Open questions
 - Art asset pipeline for the "4K" bar: AI-generated sprites (e.g. Higgsfield), procedural only, CC0 packs, or commissioned art — decide before Milestone 7.
 - Release name and final tone of original flavor writing.

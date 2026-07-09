@@ -5,6 +5,9 @@
 import { RACE_REWARDS, type RaceTier } from '../../data/economy'
 import { ROSTER } from '../../data/roster'
 import { CAR_CATALOG } from '../../data/cars'
+import { DRIVER_TALENT } from '../../data/drivers'
+import type { TalentGrade } from '../ai/talent'
+import type { UpgradeLevels } from '../vehicle/carSpec'
 
 /** driver id → championship points (the player's points live on CareerState) */
 export type Ladder = Record<string, number>
@@ -48,9 +51,18 @@ export function playerRank(ladder: Ladder, playerPoints: number): number {
   return rankOf(ladder, playerPoints, PLAYER_ID)
 }
 
-/** AI pace from ladder rank: #1 ≈ 1.08, #20 ≈ 0.90. */
+/**
+ * AI pace from ladder rank: #1 ≈ 1.00, #20 ≈ 0.94.
+ *
+ * Deliberately narrow. Difficulty is supposed to come from machinery, not from
+ * a multiplier bolted onto the physics (D-017) — and now that rivals fit their
+ * own upgrades (rivalUpgrades), the machinery gap is real. Left at the old
+ * ±9% on top of a built car, a rank-1 ace with the rubber band behind them
+ * would run down a leading player at 955 px/s in a 758 px/s car, which reads as
+ * exactly the cheat this game was designed not to have.
+ */
 export function rivalStrength(rank: number): number {
-  return 0.9 + (20 - Math.min(20, Math.max(1, rank))) * 0.0095
+  return 0.94 + (20 - Math.min(20, Math.max(1, rank))) * 0.0033
 }
 
 /**
@@ -64,6 +76,19 @@ export function rivalChassisId(rank: number): string {
   return CAR_CATALOG[idx].id
 }
 
+/**
+ * And so do their upgrades. Rivals used to drive stock cars while the player
+ * fitted engines, tires and armor: a mid-tier chassis with tier-3 tires has 40%
+ * more grip than a stock top-tier one, so the player could corner faster than
+ * an ace no matter how the pace numbers were tuned. Rank #1 runs a fully built
+ * car; rank #20 runs it as it left the showroom.
+ */
+export function rivalUpgrades(rank: number): UpgradeLevels {
+  const r = Math.min(20, Math.max(1, rank))
+  const tier = Math.max(0, Math.min(3, Math.round(((20 - r) / 19) * 3)))
+  return { engine: tier, tires: tier, armor: tier }
+}
+
 function shuffled<T>(items: T[], rand: () => number): T[] {
   const arr = [...items]
   for (let i = arr.length - 1; i > 0; i--) {
@@ -73,16 +98,27 @@ function shuffled<T>(items: T[], rand: () => number): T[] {
   return arr
 }
 
-/** 3 rivals ranked near the player — the neighborhood you're fighting for. */
-export function pickRivals(ladder: Ladder, playerPoints: number, rand: () => number): string[] {
-  const rows = standings(ladder, playerPoints)
-  const playerIdx = rows.findIndex((r) => r.isPlayer)
-  const windowSize = 7
-  const start = Math.min(Math.max(0, playerIdx - Math.ceil(windowSize / 2)), rows.length - windowSize)
-  const nearby = rows.slice(start, start + windowSize).filter((r) => !r.isPlayer)
-  return shuffled(nearby, rand)
-    .slice(0, 3)
-    .map((r) => r.id)
+/**
+ * Which talent grades turn up at each prize tier. This — not the purse — is
+ * what makes a death race dangerous: the tier used to pick rivals from a window
+ * around the player's rank and ignore the tier entirely, so all three races on
+ * the sign-up sheet fielded the same drivers for wildly different money.
+ */
+export const TIER_TALENT_BANDS: Record<RaceTier, TalentGrade[]> = {
+  street: [1, 2], // rookies and journeymen
+  pro: [2, 3], // journeymen and veterans
+  death: [3, 4], // veterans and aces
+}
+
+/** The drivers eligible to be entered in a race at this tier. */
+export function tierPool(tier: RaceTier): string[] {
+  const band = TIER_TALENT_BANDS[tier]
+  return ROSTER.filter((d) => band.includes(DRIVER_TALENT[d.id])).map((d) => d.id)
+}
+
+/** 3 rivals drawn from the tier's talent band — the field you signed up to face. */
+export function pickRivals(tier: RaceTier, rand: () => number): string[] {
+  return shuffled(tierPool(tier), rand).slice(0, 3)
 }
 
 /** Points for the player's race rivals by finishing order (wrecked earns nothing). */

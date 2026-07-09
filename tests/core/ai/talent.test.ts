@@ -105,13 +105,17 @@ describe('talent scaling', () => {
     expect(a.dodge).toBe(style.dodge)
   })
 
-  it('an ace in a mid car out-paces a rookie in a top car', () => {
+  it('talent moves pace more than rank does — rank buys machinery, not physics', () => {
     const aceMidRank = talentPace(rivalStrength(10), ace)
     const rookieTopRank = talentPace(rivalStrength(1), rookie)
     expect(aceMidRank).toBeGreaterThan(rivalStrength(10))
     expect(rookieTopRank).toBeLessThan(rivalStrength(1))
-    // the chassis still matters — rank #1 machinery keeps the rookie in touch
-    expect(rookieTopRank).toBeGreaterThan(aceMidRank * 0.95)
+    // a talent grade is worth more than 19 places of rank: the rank-1 rookie is
+    // dangerous because of the car they earned (rivalUpgrades), not their hands
+    const rankSpread = rivalStrength(1) - rivalStrength(20)
+    const talentSpread = ace.paceScale - rookie.paceScale
+    expect(talentSpread).toBeGreaterThan(rankSpread)
+    expect(aceMidRank).toBeGreaterThan(rookieTopRank)
   })
 
   it('aces shoot straighter', () => {

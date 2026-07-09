@@ -3,24 +3,35 @@ import type { TalentGrade, TalentProfile } from '../core/ai/talent'
 
 // AI driving personalities and permanent talent grades.
 //
-// Three axes decide how hard a rival is to beat:
+// Four axes decide how hard a rival is to beat:
 //   chassis  → ladder rank        (core/progression/ladder.ts rivalChassisId)
 //   raw pace → ladder rank        (rivalStrength) × talent paceScale
 //   skill    → talent grade       (this file, permanent per driver)
-//   style    → cycled preset      (this file, how they drive, not how well)
+//   style    → talent grade       (this file, how they drive, not how well)
+//
+// Which of them you meet is the race tier's job (ladder.ts TIER_TALENT_BANDS).
 
 export interface DrivingStyle {
   lookAheadSamples: number
   tuning: AiTuning
 }
 
+/**
+ * Cornering was where the whole field lost its lap. Measured on Serpent's
+ * Throat, aces averaged 63% of their own top speed and took 26 damage on the
+ * walls all race: they were braking for corners the grip would have carried
+ * them through. Cutting caution to a fifth put them at 616 px/s with the same
+ * 26 damage — there is no crash cliff here, only unused grip. These numbers now
+ * assume the AI is on the racing line (core/track/racingLine.ts), which is
+ * straighter than the centerline they used to chase.
+ */
 export const DRIVING_STYLES: DrivingStyle[] = [
   // charger — brakes late, hunts gaps
-  { lookAheadSamples: 12, tuning: { steerGain: 2.8, corneringCaution: 0.48, minCornerSpeed: 300, dodge: 65 } },
+  { lookAheadSamples: 12, tuning: { steerGain: 2.9, corneringCaution: 0.16, minCornerSpeed: 470, dodge: 65 } },
   // technician — smooth and consistent
-  { lookAheadSamples: 10, tuning: { steerGain: 2.6, corneringCaution: 0.6, minCornerSpeed: 275, dodge: 75 } },
+  { lookAheadSamples: 10, tuning: { steerGain: 2.7, corneringCaution: 0.3, minCornerSpeed: 400, dodge: 75 } },
   // bruiser — slower line, harder to pass
-  { lookAheadSamples: 8, tuning: { steerGain: 2.4, corneringCaution: 0.72, minCornerSpeed: 250, dodge: 85 } },
+  { lookAheadSamples: 8, tuning: { steerGain: 2.4, corneringCaution: 0.52, minCornerSpeed: 310, dodge: 85 } },
 ]
 
 /**
@@ -40,21 +51,21 @@ export const TALENT_PROFILES: Record<TalentGrade, TalentProfile> = {
   4: {
     grade: 4,
     label: 'ACE',
-    paceScale: 1.045,
-    cautionScale: 0.8,
+    paceScale: 1.05,
+    cautionScale: 0.65,
     minCornerSpeedScale: 1.1,
     // an ace with near-perfect aim simply executes you from behind: at 10
     // shots/s a tight cone is ~24 dmg/s. Keep them the best shot on the grid,
     // but leave the player time to react.
-    aimSpreadScale: 0.85,
+    aimSpreadScale: 0.75,
     mineAggression: 1.5,
     rubberBandScale: 0.6,
   },
   3: {
     grade: 3,
     label: 'VETERAN',
-    paceScale: 1.015,
-    cautionScale: 0.92,
+    paceScale: 1.02,
+    cautionScale: 0.78,
     minCornerSpeedScale: 1.04,
     aimSpreadScale: 0.95,
     mineAggression: 1.15,
@@ -63,8 +74,8 @@ export const TALENT_PROFILES: Record<TalentGrade, TalentProfile> = {
   2: {
     grade: 2,
     label: 'JOURNEYMAN',
-    paceScale: 0.995,
-    cautionScale: 1.05,
+    paceScale: 1.0,
+    cautionScale: 1.12,
     minCornerSpeedScale: 0.96,
     aimSpreadScale: 1.05,
     mineAggression: 0.9,
@@ -73,8 +84,8 @@ export const TALENT_PROFILES: Record<TalentGrade, TalentProfile> = {
   1: {
     grade: 1,
     label: 'ROOKIE',
-    paceScale: 0.96,
-    cautionScale: 1.2,
+    paceScale: 0.95,
+    cautionScale: 1.25,
     minCornerSpeedScale: 0.88,
     aimSpreadScale: 1.4,
     mineAggression: 0.6,
@@ -134,6 +145,8 @@ export const RUBBER_BAND = {
   /**
    * Ceiling on catch-up pace. At 1.15 a trailing rival claws back almost any
    * machinery advantage, so buying a better car never made you the favourite.
+   * Lowered again once rivals started fitting their own upgrades: the band now
+   * sits on top of a genuinely fast car, so it needs to do much less work.
    */
-  max: 1.1,
+  max: 1.06,
 }

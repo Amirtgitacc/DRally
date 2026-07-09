@@ -40,9 +40,9 @@ export class SignUpScene extends Phaser.Scene {
 
     // each tier fields its own grid and venue this round
     this.rivalsByTier = {
-      street: pickRivals(career.ladder, career.points, Math.random),
-      pro: pickRivals(career.ladder, career.points, Math.random),
-      death: pickRivals(career.ladder, career.points, Math.random),
+      street: pickRivals('street', Math.random),
+      pro: pickRivals('pro', Math.random),
+      death: pickRivals('death', Math.random),
     }
     this.trackByTier = {
       street: rollTrack('street', Math.random),

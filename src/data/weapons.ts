@@ -32,11 +32,16 @@ export const AI_GUNNER = {
   /** and how long it waits before the next burst */
   restMs: 700,
   /**
-   * Rival rounds hit softer than yours. The grid is three guns pointed at one
-   * player and one player's gun pointed at a grid; symmetric damage is not a
-   * symmetric fight. Without this a single tailing rival wrecks you outright.
+   * Rival rounds hit softer than yours, because the grid is three guns pointed
+   * at one player and one player's gun pointed at a grid.
+   *
+   * It used to be 0.5 everywhere, which made the top tier a shooting gallery: a
+   * player who aims better than the AI simply wins the fight. The handicap now
+   * shrinks as the purse grows — on a death race the aces shoot for full value.
    */
-  damageScale: 0.5,
+  damageScale: { street: 0.5, pro: 0.75, death: 1.0 } as Record<'street' | 'pro' | 'death', number>,
+  /** aces predict where you'll be; everyone else fires at where you were */
+  leadTargetFromGrade: 4,
 }
 
 /** One-race consumable bought in the garage; dropped behind the car. */
@@ -47,8 +52,19 @@ export const MINES = {
   /** cars this close to a blast also take splash damage */
   blastRadius: 110,
   splashDamage: 10,
-  /** arming delay so the owner can clear the drop point */
-  armDelayMs: 900,
+  /**
+   * The dropper cannot set off their own mine for this long. This used to apply
+   * to everyone, which left a mine dropped at a tailgater still asleep when
+   * they drove over it — the weapon could not do the one job it exists for.
+   */
+  ownerSafeMs: 900,
+  /**
+   * Everyone else gets only a fuse. It has to be shorter than the time a
+   * tailgater needs to reach the mine, or the weapon misses the car it was
+   * aimed at: the mine lands 55px off the dropper's tail, so a pursuer on the
+   * bumper is ~35px away and covers that in 58ms at racing speed.
+   */
+  fuseMs: 45,
   triggerRadius: 36,
   dropCooldownMs: 300,
 }
@@ -80,12 +96,14 @@ export const MINE_BLAST = {
  * starts being an execution. Aces still bring extra via mineAggression.
  */
 export const AI_MINES = {
-  count: { street: 0, pro: 1, death: 2 } as Record<'street' | 'pro' | 'death', number>,
+  count: { street: 0, pro: 1, death: 3 } as Record<'street' | 'pro' | 'death', number>,
   /** drop when an enemy trails this close behind */
   dropRange: 190,
   cooldownMs: 2600,
   /** no drops until the packed grid has spread out after GO */
   graceMs: 8000,
+  /** and drop the moment a car behind is closing this fast, px/s */
+  closingSpeed: 60,
 }
 
 export const TURBO = {
@@ -142,7 +160,8 @@ export const PICKUPS = {
   ammoAmount: 50,
   repairAmount: 25,
   cashAmount: 200,
-  trapDurationMs: 2600,
+  /** the skull-marked orb swims your camera for long enough to cost a corner */
+  trapDurationMs: 4500,
 }
 
 /** Guns stay cold for this long after GO so the field can spread out. */

@@ -114,6 +114,36 @@ Full spec: **docs/MILESTONE_12_PLAN.md**. Delivered:
 - Verified: 170 unit tests, clean `tsc` + build, browser playthroughs on all 6 venues (mine readability, airborne, turbo, crash lurch, dealer/venues/garage/market/ladder screens), no console errors; test career cleared afterwards
 - Open: the final "Challenging" call is AT's — the scripted pilot is an AI proxy, not a human. Hands-on races are the last check
 
+## Milestone 13 — Fix & sharpen ✅ (2026-07-09)
+Four problems AT hit while playing. See DECISIONS.md D-028…D-033.
+- [x] **Cars no longer land in the infield**: the tire wall is solid at any height, so a mine launch bounces off it instead of clearing it (airborne cars still ignore off-track drag). Backed by a **stuck-car rescue** — crawling *and* off the tarmac for 3s puts a car back on the racing line at its next gate; a car parked on the line is never moved. Pure logic in `core/vehicle/rescue.ts`, 8 tests
+- [x] **The race tier now decides who you race**, not just what it pays: rivals are drawn from a talent band (street ★–★★ · pro ★★–★★★ · death ★★★–★★★★). Before this, all three sign-up cards drew from the same window around your rank — a death race fielded the same rookies for 16× the money
+- [x] **The AI is no longer slow**: the pace floor rose 0.90 → 0.94 (a rookie's talent scale had dragged the slowest car on the grid to 0.864×) and all three driving styles corner ~10% faster. The ceiling barely moved — measurement showed lifting it too put three aces beyond a fully-upgraded Leviathan
+- [x] The booby-trap pickup wears a skull and swims your camera for 4.5s (was 2.6s); checkpoint debug lines moved off `?debug=1` onto `?gates=1`
+- Measured with the scripted pilot (Cinder Yards, same clean-driving proxy, mid-career Harrier): **street → 1st** (also 1st in the starter car on Dust Bowl), **pro → 2nd**, **death → 4th** at 31% damage. Armed: pro → 1st, death → 3rd with an ace wrecked. Late career, Leviathan + weapons vs the three aces on Serpent's Throat → 3rd, one gate down, two aces over 45% damage
+- Verified: 181 unit tests, clean `tsc` + build; in-browser — a car launched to a 601px apex never gets more than 170px off-centre (the wall holds), a stranded car recovers at 3008ms, a parked car drifts 0px over 6.4s, the skull reads clearly at race zoom
+- Open: as with M12, the final "is it challenging?" call is AT's — the scripted pilot corners conservatively and under-reports a human
+
+## Milestone 14 — The AI learns to drive ✅ (2026-07-09)
+AT won four death races in a row by nearly a lap. The scripted pilot had predicted 4th, so the first job was finding out what the pilot could not see. See DECISIONS.md D-034…D-038.
+- [x] **Root cause**: the aces were averaging 63% of their own top speed and taking 26 wall damage a race — they were braking for corners the grip would have taken flat, and driving the centerline, which is both longer and curvier than the line a driver takes. Probing (caution ×0.6 / ×0.4 / ×0.2 → +20% / +27% / +34% pace, wall damage unchanged at 26) proved there was no crash cliff, only unused grip
+- [x] **Racing line** (`core/track/racingLine.ts`, 15 tests): relaxation inside the track corridor produces a wide-apex-wide line, guarded on every shipped venue by tests asserting it stays on the tarmac, is shorter, and is straighter than the centerline
+- [x] **Cornering retuned** per talent grade on top of that line; **turbo became a decision** (`core/ai/turbo.ts`, 8 tests) — corner exit, chasing a gap, defending a bumper, with a reserve held otherwise
+- [x] **Combat sharpened**: rival gun damage now scales with the purse (street 0.5 · pro 0.75 · death 1.0 — it was a flat 0.5, which made the top tier a shooting gallery); aces fire at the bullet's intercept point (`core/combat/aim.ts`, 8 tests) instead of where you were; rivals with the leader in range shoot the **leader**; death-tier mines 2 → 3 per rival, dropped only at a car that is actually closing, and rivals now steer around armed mines
+- Measured on Serpent's Throat, aces: **avg 458 → 600 px/s**, max 665 → 747 (they finally reach their own top speed), wall damage **26 → 0**, race 82s → 65s. Street still opens easily (rookies 270 px/s, journeyman 373, starter car wins by 2 gates); pro is a four-car photo finish
+- Verified: 212 unit tests, clean `tsc` + build, zero AI wall damage across Dust Bowl / Cinder Yards / Serpent's Throat
+- Open: **AT drives it.** The scripted pilot demonstrably under-reports a human — it said "4th" for a race AT won by a lap — so the only instrument that works now is hands-on play
+
+## Milestone 15 — Machinery, not multipliers ✅ (2026-07-09)
+Death tier was still losing, and AT's mines "somehow never hit" the car in front. Both were bugs, not tuning. See DECISIONS.md D-039…D-041.
+- [x] **The mine bug was real.** `armDelayMs` (900ms) made a dropped mine inert for *everyone*, so it was still asleep when the car chasing it drove over. The delay now protects only the dropper (`ownerSafeMs`); everyone else gets a 45ms fuse, derived from the geometry — the mine lands 55px off the tail, a pursuer on the bumper covers that in 58ms. Verified at 140/90/70px gaps: all hit, 19 damage and an 111px launch. The dropper eats 7 splash of their own blast at point-blank
+- [x] **Rivals now fit upgrades from their ladder rank** (`rivalUpgrades`, #1 fully built → #20 stock). This was the structural asymmetry: rivals drove showroom cars while the player ran tier-3 tires, **+40% grip**. Probing had already shown the AI was at the grip limit, not the braking limit — cutting cornering caution from 0.16 to 0.05 moved them 80% → 84% of top and no further. They had no armor either, which is why they could be wrecked at will
+- [x] **Pace multipliers shrank** to compensate: rank band 0.94–1.09 → **0.94–1.00**, rubber-band ceiling 1.10 → **1.06**. With real machinery a rank-1 ace plus the old band would have chased down a leading player at 955 px/s in a 758 px/s car — the exact cheat D-017 exists to forbid
+- Measured, aces on Serpent's Throat: **avg 458 → 679 px/s** across M14+M15, top speed 745 → 798, and they now survive 179 damage instead of wrecking. A maxed Leviathan + weapons against all three aces is a same-lap photo finish (49 gates each, aces ~8% faster than the scripted pilot). Street is untouched: starter car still wins clean by 8 gates
+- Rejected: "average = 95% of top speed". The ceiling is grip, not courage; 95% would mean taking hairpins flat. Real racing sits at 70–85%. The fix was a bigger top speed and more grip under it, not a bigger fraction
+- Verified: 224 unit tests, clean `tsc` + build
+- Open: **AT drives it.** The scripted pilot still under-reports a human by a wide margin
+
 ## Post-slice backlog (distinctive mechanics from research)
 - Sign-up entrant slots filling in real time (flavor)
 - Black-market stock rotation (items occasionally OUT OF STOCK, per research)

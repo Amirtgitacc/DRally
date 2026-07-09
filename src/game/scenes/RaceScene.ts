@@ -1,5 +1,5 @@
 import Phaser from 'phaser'
-import { DEBUG } from '../../config/game'
+import { DEBUG, SHOW_GATES } from '../../config/game'
 import {
   GROUNDED,
   IDLE_INPUT,
@@ -46,6 +46,12 @@ import {
   talentTuning,
   type TalentProfile,
 } from '../../core/ai/talent'
+import { needsRescue, rescuePose, updateStuckMs } from '../../core/vehicle/rescue'
+import { RESCUE } from '../../data/rescue'
+import { shouldTurbo } from '../../core/ai/turbo'
+import { leadTarget } from '../../core/combat/aim'
+import { mineIsArmed, mineIsLive } from '../../core/combat/mines'
+import { buildRacingLine } from '../../core/track/racingLine'
 import { mineBlast } from '../../core/combat/blast'
 import { formatTime } from '../../core/race/format'
 import { armorResistance, effectiveCarSpec } from '../../core/vehicle/carSpec'
@@ -62,6 +68,7 @@ import {
   rankOf,
   rivalChassisId,
   rivalStrength,
+  rivalUpgrades,
   simulateRound,
 } from '../../core/progression/ladder'
 import { collideCars } from '../../core/vehicle/collision'
@@ -146,15 +153,20 @@ interface CarUnit {
   lastMineAt: number
   /** relative collision mass from the chassis */
   mass: number
+  /** how long this car has been beached on the scenery, ms */
+  stuckMs: number
   /** catalog chassis this rival drives (debug/telemetry) */
   chassisId?: string
+  /** armor tier a rival has fitted; the player's lives on the career */
+  armorTier: number
 }
 
 /** A mine on the tarmac: casing, blinking arm light, danger ring once armed. */
 interface DroppedMine {
   x: number
   y: number
-  armedAt: number
+  droppedAt: number
+  ownerId: string
   sprite: Phaser.GameObjects.Image
   light: Phaser.GameObjects.Image
   ring: Phaser.GameObjects.Image
@@ -188,6 +200,8 @@ export class RaceScene extends Phaser.Scene {
   private track!: TrackDef
   private rivalIds: string[] = []
   private centerline: Vec2[] = []
+  /** the line the AI drives: apex-clipping, straighter and shorter than centre */
+  private racingLine: Vec2[] = []
   private gates: Gate[] = []
   private barriers: Vec2[] = []
   private gateSpacing = 1
@@ -274,7 +288,7 @@ export class RaceScene extends Phaser.Scene {
     if (!offer) {
       offer = {
         track: TRACKS_BY_TIER.pro[0],
-        rivalIds: pickRivals(this.career.ladder, this.career.points, Math.random),
+        rivalIds: pickRivals('pro', Math.random),
       }
       setCurrentOffer(offer)
     }
@@ -285,6 +299,8 @@ export class RaceScene extends Phaser.Scene {
     this.hasOverTurbo = this.career.overTurbo
 
     this.centerline = catmullRomClosed(this.track.controls, this.track.samplesPerSegment)
+    // leave a car's width of tarmac between the line and the paint
+    this.racingLine = buildRacingLine(this.centerline, { maxOffset: this.track.width / 2 - CAR_RADIUS - 8 })
     this.gates = buildGates(this.centerline, this.track.gateCount, this.track.width / 2 + this.track.shoulder)
     this.gateSpacing = closedPolylineLength(this.centerline) / this.track.gateCount
 
@@ -360,11 +376,11 @@ export class RaceScene extends Phaser.Scene {
         car.state.vx *= decay
         car.state.vy *= decay
       }
-      // a car in the air is over the barriers and the scenery, not in them
-      if (!isAirborne(car.state)) {
-        this.applyOffTrackDrag(car, dt)
-        this.resolveBarrierCollisions(car)
-      }
+      // a car in the air clears the scenery, but never the tire wall: a mine
+      // launch that sailed into the infield left the car beached in there
+      if (!isAirborne(car.state)) this.applyOffTrackDrag(car, dt)
+      this.resolveBarrierCollisions(car)
+      this.updateStuckRescue(car, dt)
 
       car.gunCooldown = Math.max(0, car.gunCooldown - dt)
       if (wantsFire && weaponsFree && !car.wrecked && (car.finishedAt === null || !car.isPlayer)) {
@@ -447,7 +463,7 @@ export class RaceScene extends Phaser.Scene {
       .setDepth(2.35)
     for (const obj of [sprite, light, ring]) this.cameras.cameras[1]?.ignore(obj)
 
-    this.mines.push({ x, y, armedAt: now + MINES.armDelayMs, sprite, light, ring })
+    this.mines.push({ x, y, droppedAt: now, ownerId: car.id, sprite, light, ring })
     audioBus.pickup(true) // placement click; real sample hook later
   }
 
@@ -455,7 +471,7 @@ export class RaceScene extends Phaser.Scene {
     if (this.mines.length === 0) return
     const survivors: DroppedMine[] = []
     for (const mine of this.mines) {
-      const armed = now >= mine.armedAt
+      const armed = mineIsArmed(mine, now, MINES)
       // unarmed: dim and inert. armed: the light blinks and the ring breathes.
       const blink = 0.55 + 0.45 * Math.sin(now * 0.014)
       mine.sprite.setAlpha(armed ? 1 : 0.6)
@@ -463,16 +479,16 @@ export class RaceScene extends Phaser.Scene {
       mine.ring.setAlpha(armed ? 0.1 + 0.16 * blink : 0)
 
       let triggered: CarUnit | null = null
-      if (armed) {
-        for (const car of this.cars) {
-          if (car.wrecked) continue
-          if (car.isPlayer && this.phase === 'finished') continue
-          // a car in the air flies straight over an armed mine
-          if (isAirborne(car.state)) continue
-          if (Math.hypot(car.state.x - mine.x, car.state.y - mine.y) < MINES.triggerRadius) {
-            triggered = car
-            break
-          }
+      for (const car of this.cars) {
+        if (car.wrecked) continue
+        if (car.isPlayer && this.phase === 'finished') continue
+        // a car in the air flies straight over an armed mine
+        if (isAirborne(car.state)) continue
+        // the dropper gets a long grace; everyone else only gets the fuse
+        if (!mineIsLive(mine, car.id, now, MINES)) continue
+        if (Math.hypot(car.state.x - mine.x, car.state.y - mine.y) < MINES.triggerRadius) {
+          triggered = car
+          break
         }
       }
 
@@ -689,7 +705,8 @@ export class RaceScene extends Phaser.Scene {
 
   /** A round connects: sparks, a white flash, a shove, and — if it's you — a jolt. */
   private onBulletHit(car: CarUnit, b: Bullet) {
-    const damage = GUN.damagePerHit * (b.owner.isPlayer ? 1 : AI_GUNNER.damageScale)
+    // the rivals' handicap shrinks as the purse grows: full value on a death race
+    const damage = GUN.damagePerHit * (b.owner.isPlayer ? 1 : AI_GUNNER.damageScale[this.track.tier])
     this.damageCar(car, damage, b.owner)
     this.hitSparks.explode(5, b.x, b.y)
     this.flashCar(car)
@@ -728,7 +745,8 @@ export class RaceScene extends Phaser.Scene {
 
   private damageCar(car: CarUnit, amount: number, _source: CarUnit | null) {
     if (car.wrecked || this.phase === 'countdown') return
-    const resistance = car.isPlayer ? armorResistance(this.career.upgrades.armor) : 1
+    // rivals fit armor too, from their ladder rank — an ace is not a soft target
+    const resistance = armorResistance(car.isPlayer ? this.career.upgrades.armor : car.armorTier)
     const result = applyDamage(car.damage, amount, resistance)
     car.damage = result.damage
     if (result.wrecked) this.wreckCar(car)
@@ -790,18 +808,38 @@ export class RaceScene extends Phaser.Scene {
   }
 
   /** Is an enemy inside gun range and inside the aim cone? */
+  /**
+   * The gun is bolted to the nose, so "aiming" is really deciding when to pull
+   * the trigger. Two things decide it:
+   *
+   *  - aces fire at where you WILL be (the bullet's intercept point), everyone
+   *    else at where you are, which at racing speeds is where you were
+   *  - if the race leader is within range, that is who they shoot at; nobody
+   *    wastes ammo on a backmarker while the win is driving away
+   */
   private hasTargetInSights(car: CarUnit): boolean {
     if (car.ammo <= 0) return false
-    for (const other of this.cars) {
-      if (other === car || other.wrecked) continue
-      if (other.isPlayer && this.phase === 'finished') continue
-      const dx = other.state.x - car.state.x
-      const dy = other.state.y - car.state.y
-      const dist = Math.hypot(dx, dy)
-      if (dist > AI_GUNNER.range) continue
-      if (Math.abs(wrapAngle(Math.atan2(dy, dx) - car.state.heading)) < AI_GUNNER.aimCone) return true
-    }
-    return false
+    const leaderId = this.placementOrder[0]
+    const candidates = this.cars.filter((other) => {
+      if (other === car || other.wrecked) return false
+      if (other.isPlayer && this.phase === 'finished') return false
+      return Math.hypot(other.state.x - car.state.x, other.state.y - car.state.y) <= AI_GUNNER.range
+    })
+    if (!candidates.length) return false
+
+    const leader = candidates.find((c) => c.id === leaderId)
+    const targets = leader ? [leader] : candidates
+    return targets.some((other) => this.canHit(car, other))
+  }
+
+  private canHit(car: CarUnit, other: CarUnit): boolean {
+    const grade = car.ai?.talent.grade ?? 1
+    const aim =
+      grade >= AI_GUNNER.leadTargetFromGrade
+        ? leadTarget(car.state, { x: other.state.x, y: other.state.y, vx: other.state.vx, vy: other.state.vy }, GUN.bulletSpeed)
+        : { x: other.state.x, y: other.state.y }
+    const angle = Math.atan2(aim.y - car.state.y, aim.x - car.state.x)
+    return Math.abs(wrapAngle(angle - car.state.heading)) < AI_GUNNER.aimCone
   }
 
   /**
@@ -811,19 +849,8 @@ export class RaceScene extends Phaser.Scene {
   private maybeAutoDropMine(car: CarUnit, now: number) {
     const cooldown = car.ai?.mineCooldownMs ?? AI_MINES.cooldownMs
     if (car.mines <= 0 || now < this.raceStartAt + AI_MINES.graceMs || now - car.lastMineAt <= cooldown) return
-    const fx = Math.cos(car.state.heading)
-    const fy = Math.sin(car.state.heading)
-    for (const other of this.cars) {
-      if (other === car || other.wrecked) continue
-      if (other.isPlayer && this.phase !== 'racing') continue
-      const dx = other.state.x - car.state.x
-      const dy = other.state.y - car.state.y
-      const d = Math.hypot(dx, dy)
-      if (d < AI_MINES.dropRange && dx * fx + dy * fy < -d * 0.5) {
-        this.tryDropMine(car, now)
-        return
-      }
-    }
+    // a car merely sitting behind you is not a threat; one that is closing is
+    if (this.isBeingChased(car)) this.tryDropMine(car, now)
   }
 
   /**
@@ -850,9 +877,35 @@ export class RaceScene extends Phaser.Scene {
     const fire = this.burstGate(car, this.hasTargetInSights(car), now)
     if (this.phase === 'racing') this.maybeAutoDropMine(car, now)
 
-    const curvature = Math.min(1, turnAmount(this.centerline, ai.lineIdx, ai.lookAheadSamples * 2) / 1.1)
-    const turbo = curvature < 0.12 && car.turbo > 0.35
+    const curvature = Math.min(1, turnAmount(this.racingLine, ai.lineIdx, ai.lookAheadSamples * 2) / 1.1)
+    const leader = this.placementOrder[0]
+    const leaderCar = this.cars.find((c) => c.id === leader)
+    const turbo = shouldTurbo({
+      curvatureAhead: curvature,
+      turbo: car.turbo,
+      forwardSpeed: forwardSpeed(car.state),
+      topSpeed: this.effectiveSpec(car, false).topSpeed,
+      deficit: leaderCar ? this.progressScore(leaderCar) - this.progressScore(car) : 0,
+      underAttack: this.isBeingChased(car),
+    })
     return { fire, turbo }
+  }
+
+  /** Is somebody close behind and closing? Worth a mine, and worth the turbo. */
+  private isBeingChased(car: CarUnit): boolean {
+    const fx = Math.cos(car.state.heading)
+    const fy = Math.sin(car.state.heading)
+    for (const other of this.cars) {
+      if (other === car || other.wrecked || other.finishedAt !== null) continue
+      const dx = other.state.x - car.state.x
+      const dy = other.state.y - car.state.y
+      const d = Math.hypot(dx, dy)
+      if (d >= AI_MINES.dropRange || dx * fx + dy * fy > -d * 0.5) continue
+      // closing = their velocity along the gap between us beats ours
+      const closing = (car.state.vx - other.state.vx) * (dx / d) + (car.state.vy - other.state.vy) * (dy / d)
+      if (closing > AI_MINES.closingSpeed) return true
+    }
+    return false
   }
 
   // ---------------------------------------------------------------- pickups
@@ -1072,6 +1125,8 @@ export class RaceScene extends Phaser.Scene {
         mines: 0,
         lastMineAt: 0,
         mass: 1,
+        stuckMs: 0,
+        armorTier: 0,
       }
       this.syncCarVisuals(unit)
       return unit
@@ -1116,12 +1171,15 @@ export class RaceScene extends Phaser.Scene {
         const talent = talentOf(id)
         const style = styleForGrade(talent.grade)
         const chassis = carById(rivalChassisId(rank))
+        // rivals build their cars too — a stock chassis has stock tires, and the
+        // player's tier-3 rubber out-corners any amount of pace tuning
+        const upgrades = rivalUpgrades(rank)
         const rival = makeUnit(i + 1, id, driver.name, driver.bodyColor, `car-${id}-${chassis.variant}`, {
           lineIdx: 0,
           lookAheadSamples: style.lookAheadSamples,
           speedScale: talentPace(rivalStrength(rank), talent),
           tuning: talentTuning(style.tuning, talent),
-          spec: chassis,
+          spec: effectiveCarSpec(chassis, upgrades),
           talent,
           aimSpread: talentAimSpread(GUN.aiSpread, talent),
           mineCooldownMs: talentMineCooldown(AI_MINES.cooldownMs, talent),
@@ -1130,6 +1188,7 @@ export class RaceScene extends Phaser.Scene {
         rival.mass = chassis.mass
         rival.mines = talentMineCount(AI_MINES.count[this.track.tier], talent)
         rival.chassisId = chassis.id
+        rival.armorTier = upgrades.armor
         this.cars.push(rival)
       })
     }
@@ -1160,13 +1219,14 @@ export class RaceScene extends Phaser.Scene {
 
   private computeAiInput(car: CarUnit): CarInput {
     const ai = car.ai!
-    const n = this.centerline.length
+    const line = this.racingLine
+    const n = line.length
 
     let bestD = Infinity
     let bestIdx = ai.lineIdx
     for (let step = 0; step < 30; step++) {
       const i = (ai.lineIdx + step) % n
-      const p = this.centerline[i]
+      const p = line[i]
       const d = Math.hypot(p.x - car.state.x, p.y - car.state.y)
       if (d < bestD) {
         bestD = d
@@ -1177,11 +1237,12 @@ export class RaceScene extends Phaser.Scene {
 
     // Steering chases a point a fixed distance ahead — pushing it further out
     // just makes the car cut the corner into the inside barrier.
-    const target = this.centerline[(bestIdx + ai.lookAheadSamples) % n]
-    // Braking is the part that must see further the faster we travel.
+    const target = line[(bestIdx + ai.lookAheadSamples) % n]
+    // Braking is the part that must see further the faster we travel. Measured
+    // on the racing line, which straightens the corner the centerline exaggerates.
     const spec = this.effectiveSpec(car, false)
     const brakeHorizon = lookAheadFor(ai.lookAheadSamples * 2, forwardSpeed(car.state), spec.topSpeed)
-    const curvatureAhead = Math.min(1, turnAmount(this.centerline, bestIdx, brakeHorizon) / 1.1)
+    const curvatureAhead = Math.min(1, turnAmount(line, bestIdx, brakeHorizon) / 1.1)
 
     let avoid: Vec2 | null = null
     let avoidD = AVOID_RANGE
@@ -1197,8 +1258,29 @@ export class RaceScene extends Phaser.Scene {
         avoid = { x: other.state.x, y: other.state.y }
       }
     }
+    // an armed mine on the line is worth more of a swerve than a car is
+    const mine = this.nearestArmedMineAhead(car, fx, fy)
+    if (mine) avoid = mine
 
     return aiDrive(car.state, { target, curvatureAhead, avoid }, spec, ai.tuning)
+  }
+
+  /** The nearest mine ahead that would actually go off under this car, or null. */
+  private nearestArmedMineAhead(car: CarUnit, fx: number, fy: number): Vec2 | null {
+    const now = this.time.now
+    let best: Vec2 | null = null
+    let bestD = AI_MINES.dropRange
+    for (const mine of this.mines) {
+      if (!mineIsLive(mine, car.id, now, MINES)) continue
+      const dx = mine.x - car.state.x
+      const dy = mine.y - car.state.y
+      const d = Math.hypot(dx, dy)
+      if (d < bestD && dx * fx + dy * fy > d * 0.6) {
+        bestD = d
+        best = { x: mine.x, y: mine.y }
+      }
+    }
+    return best
   }
 
   private effectiveSpec(car: CarUnit, turboActive: boolean) {
@@ -1430,6 +1512,32 @@ export class RaceScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * The safety net. Nothing should be able to strand a car any more, but a car
+   * with no way out is an unrecoverable race, so we put it back on the line.
+   */
+  private updateStuckRescue(car: CarUnit, dt: number) {
+    if (this.phase !== 'racing' || car.wrecked || car.finishedAt !== null || isAirborne(car.state)) {
+      car.stuckMs = 0
+      return
+    }
+    const sample = {
+      speed: speed(car.state),
+      offCenter: distanceToClosedPolyline({ x: car.state.x, y: car.state.y }, this.centerline),
+      halfWidth: this.track.width / 2,
+    }
+    car.stuckMs = updateStuckMs(car.stuckMs, sample, dt * 1000, RESCUE)
+    if (!needsRescue(car.stuckMs, RESCUE)) return
+
+    car.stuckMs = 0
+    const gate = this.gates[nextGateIndex(car.progress) % this.gates.length]
+    const pose = rescuePose(gate.a, gate.b, gate.tangent)
+    car.state = { ...car.state, ...pose, ...GROUNDED, vx: 0, vy: 0 }
+    car.prevPos = { x: pose.x, y: pose.y }
+    this.syncCarVisuals(car)
+    if (car.isPlayer) this.cameras.main.flash(160, 40, 40, 50)
+  }
+
   private resolveBarrierCollisions(car: CarUnit) {
     const s = car.state
     const minDist = CAR_RADIUS + TIRE_RADIUS
@@ -1450,7 +1558,8 @@ export class RaceScene extends Phaser.Scene {
           s.vx *= 0.8
           s.vy *= 0.8
           const impact = Math.abs(vn)
-          if (impact > WALL_DAMAGE.threshold) {
+          // bouncing off the wall mid-flight is the mine's doing, not a crash
+          if (impact > WALL_DAMAGE.threshold && !isAirborne(s)) {
             this.damageCar(car, impactDamage(impact, WALL_DAMAGE), null)
           }
           if (car.isPlayer && impact > 160) {
@@ -2257,12 +2366,14 @@ export class RaceScene extends Phaser.Scene {
     }
     w.__tracks = ALL_TRACKS.map((t) => t.id)
 
-    const gfx = this.add.graphics().setDepth(50)
-    this.gates.forEach((g, i) => {
-      gfx.lineStyle(4, i === 0 ? 0xf2a33c : 0x4fc3f7, 0.55)
-      gfx.lineBetween(g.a.x, g.a.y, g.b.x, g.b.y)
-    })
-    this.cameras.cameras[1]?.ignore(gfx)
+    if (SHOW_GATES) {
+      const gfx = this.add.graphics().setDepth(50)
+      this.gates.forEach((g, i) => {
+        gfx.lineStyle(4, i === 0 ? 0xf2a33c : 0x4fc3f7, 0.55)
+        gfx.lineBetween(g.a.x, g.a.y, g.b.x, g.b.y)
+      })
+      this.cameras.cameras[1]?.ignore(gfx)
+    }
 
     this.debugText = this.add.text(16, 120, '', {
       fontFamily: 'monospace',

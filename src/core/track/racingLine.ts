@@ -1,0 +1,104 @@
+// The line a driver takes, as opposed to the middle of the road.
+//
+// The AI used to chase the centerline. That is both a longer path and a slower
+// one: it turns through the full angle of every corner instead of straightening
+// it out, so the cornering model brakes for a bend the car could have taken
+// nearly flat. Aces averaged 63% of their own top speed.
+//
+// The line is found by relaxation. Each sample may slide sideways within the
+// corridor; on every pass we pull it toward the midpoint of its neighbours,
+// which is the move that reduces curvature. Repeat and the line settles wide
+// on entry, tight at the apex, wide on exit — the shape a driver draws.
+
+import type { Vec2 } from './geometry'
+
+export interface RacingLineOptions {
+  /** how far the line may stray from the centerline, px */
+  maxOffset: number
+  /** relaxation passes; more = smoother, with diminishing returns */
+  iterations?: number
+  /** how far each pass moves a point toward its neighbours' midpoint, 0..1 */
+  rate?: number
+}
+
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
+
+/** Unit normal (left of travel) of a closed polyline at index i. */
+function normalAt(points: Vec2[], i: number): Vec2 {
+  const n = points.length
+  const prev = points[(i - 1 + n) % n]
+  const next = points[(i + 1) % n]
+  const dx = next.x - prev.x
+  const dy = next.y - prev.y
+  const len = Math.hypot(dx, dy) || 1
+  return { x: -dy / len, y: dx / len }
+}
+
+/**
+ * Offsets, one per centerline sample, of the line a driver would take.
+ * Positive = left of travel. Kept separate from the points so callers can see
+ * how far off-centre the line runs without recomputing anything.
+ */
+export function racingLineOffsets(centerline: Vec2[], opts: RacingLineOptions): number[] {
+  const n = centerline.length
+  const iterations = opts.iterations ?? 240
+  const rate = opts.rate ?? 0.35
+  const normals = centerline.map((_, i) => normalAt(centerline, i))
+  const offsets = new Array<number>(n).fill(0)
+
+  for (let pass = 0; pass < iterations; pass++) {
+    const next = offsets.slice()
+    for (let i = 0; i < n; i++) {
+      const prev = centerline[(i - 1 + n) % n]
+      const here = centerline[i]
+      const after = centerline[(i + 1) % n]
+      const np = normals[(i - 1 + n) % n]
+      const na = normals[(i + 1) % n]
+      const oPrev = offsets[(i - 1 + n) % n]
+      const oNext = offsets[(i + 1) % n]
+
+      // where the neighbours currently sit, and the midpoint between them
+      const ax = prev.x + np.x * oPrev
+      const ay = prev.y + np.y * oPrev
+      const bx = after.x + na.x * oNext
+      const by = after.y + na.y * oNext
+      const midx = (ax + bx) / 2
+      const midy = (ay + by) / 2
+
+      // only the sideways part of that move is available to us
+      const along = (midx - here.x) * normals[i].x + (midy - here.y) * normals[i].y
+      next[i] = clamp(offsets[i] + (along - offsets[i]) * rate, -opts.maxOffset, opts.maxOffset)
+    }
+    for (let i = 0; i < n; i++) offsets[i] = next[i]
+  }
+  return offsets
+}
+
+/** The racing line itself: the centerline pushed sideways by those offsets. */
+export function buildRacingLine(centerline: Vec2[], opts: RacingLineOptions): Vec2[] {
+  const offsets = racingLineOffsets(centerline, opts)
+  return centerline.map((p, i) => {
+    const nrm = normalAt(centerline, i)
+    return { x: p.x + nrm.x * offsets[i], y: p.y + nrm.y * offsets[i] }
+  })
+}
+
+/** Sum of turn angle around a closed polyline, radians. Lower = straighter. */
+export function totalCurvature(points: Vec2[]): number {
+  const n = points.length
+  let total = 0
+  for (let i = 0; i < n; i++) {
+    const a = points[(i - 1 + n) % n]
+    const b = points[i]
+    const c = points[(i + 1) % n]
+    const abx = b.x - a.x
+    const aby = b.y - a.y
+    const bcx = c.x - b.x
+    const bcy = c.y - b.y
+    const la = Math.hypot(abx, aby) || 1
+    const lb = Math.hypot(bcx, bcy) || 1
+    const dot = clamp((abx * bcx + aby * bcy) / (la * lb), -1, 1)
+    total += Math.acos(dot)
+  }
+  return total
+}

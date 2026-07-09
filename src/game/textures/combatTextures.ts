@@ -213,16 +213,55 @@ export function paintPickupTextures(scene: Phaser.Scene) {
     '#3f7d4a',
   )
 
-  // the booby trap is dressed up as the shiniest pickup on the track
+  // the booby trap wears a skull: a pickup that hurts has to say so from a
+  // car's length away, or taking it feels like the game cheated
   paint(
     'trap',
     (ctx) => {
-      const grad = ctx.createRadialGradient(22, 22, 2, 22, 22, 14)
-      grad.addColorStop(0, 'rgba(255, 255, 255, 0.95)')
-      grad.addColorStop(0.5, 'rgba(214, 140, 255, 0.85)')
-      grad.addColorStop(1, 'rgba(140, 60, 200, 0)')
-      ctx.fillStyle = grad
+      const glow = ctx.createRadialGradient(22, 22, 2, 22, 22, 16)
+      glow.addColorStop(0, 'rgba(214, 140, 255, 0.55)')
+      glow.addColorStop(1, 'rgba(140, 60, 200, 0)')
+      ctx.fillStyle = glow
       ctx.fillRect(4, 4, 36, 36)
+
+      ctx.fillStyle = '#f2ecf7'
+      // cranium
+      ctx.beginPath()
+      ctx.arc(22, 19.5, 9, Math.PI, 0)
+      ctx.lineTo(31, 24)
+      ctx.quadraticCurveTo(31, 27, 27, 27)
+      ctx.lineTo(17, 27)
+      ctx.quadraticCurveTo(13, 27, 13, 24)
+      ctx.closePath()
+      ctx.fill()
+      // jaw
+      ctx.beginPath()
+      ctx.moveTo(17, 27)
+      ctx.lineTo(27, 27)
+      ctx.lineTo(26, 32)
+      ctx.lineTo(18, 32)
+      ctx.closePath()
+      ctx.fill()
+
+      ctx.fillStyle = '#2a0f3d'
+      // eye sockets, angled inward for a scowl
+      ctx.beginPath()
+      ctx.ellipse(18.2, 19.5, 3.4, 3.8, 0.25, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.beginPath()
+      ctx.ellipse(25.8, 19.5, 3.4, 3.8, -0.25, 0, Math.PI * 2)
+      ctx.fill()
+      // nose
+      ctx.beginPath()
+      ctx.moveTo(22, 21.5)
+      ctx.lineTo(24, 25)
+      ctx.lineTo(20, 25)
+      ctx.closePath()
+      ctx.fill()
+      // teeth
+      ctx.fillRect(21.4, 27, 1.3, 5)
+      ctx.fillRect(18.6, 27, 1.2, 5)
+      ctx.fillRect(24.2, 27, 1.2, 5)
     },
     '#5a2a80',
   )
