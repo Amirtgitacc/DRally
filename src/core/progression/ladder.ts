@@ -4,6 +4,7 @@
 
 import { RACE_REWARDS, type RaceTier } from '../../data/economy'
 import { ROSTER } from '../../data/roster'
+import { CAR_CATALOG } from '../../data/cars'
 
 /** driver id → championship points (the player's points live on CareerState) */
 export type Ladder = Record<string, number>
@@ -47,9 +48,20 @@ export function playerRank(ladder: Ladder, playerPoints: number): number {
   return rankOf(ladder, playerPoints, PLAYER_ID)
 }
 
-/** AI pace from ladder rank: #1 ≈ 1.05, #20 ≈ 0.90. */
+/** AI pace from ladder rank: #1 ≈ 1.08, #20 ≈ 0.90. */
 export function rivalStrength(rank: number): number {
-  return 0.9 + (20 - Math.min(20, Math.max(1, rank))) * 0.008
+  return 0.9 + (20 - Math.min(20, Math.max(1, rank))) * 0.0095
+}
+
+/**
+ * The chassis a rival drives comes from their ladder rank — the top of the
+ * ladder drives the top of the catalog. This is what keeps late-career races
+ * hard: your upgrades chase their machinery.
+ */
+export function rivalChassisId(rank: number): string {
+  const r = Math.min(20, Math.max(1, rank))
+  const idx = Math.min(CAR_CATALOG.length - 1, Math.floor(((20 - r) * CAR_CATALOG.length) / 20))
+  return CAR_CATALOG[idx].id
 }
 
 function shuffled<T>(items: T[], rand: () => number): T[] {

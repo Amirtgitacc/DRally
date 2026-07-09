@@ -1,6 +1,7 @@
 import Phaser from 'phaser'
 import { CAR_CATALOG } from '../../data/cars'
 import { ROSTER } from '../../data/roster'
+import { BOSS } from '../../data/boss'
 import { paintCarTexture } from '../textures/vehicleTextures'
 import {
   paintAsphaltTexture,
@@ -11,8 +12,11 @@ import {
 } from '../textures/environmentTextures'
 import {
   paintBulletTexture,
+  paintEdgeFlashTexture,
+  paintFlameConeTexture,
   paintMineTexture,
   paintPickupTextures,
+  paintRingTexture,
   paintScorchTexture,
   paintSparkTexture,
 } from '../textures/combatTextures'
@@ -32,11 +36,16 @@ export class BootScene extends Phaser.Scene {
 
   create() {
     for (const car of CAR_CATALOG) {
-      paintCarTexture(this, `car-${car.id}`, car.bodyColor, car.accentColor)
+      paintCarTexture(this, `car-${car.id}`, car.bodyColor, car.accentColor, car.variant)
     }
+    // rivals climb the chassis ladder with rank, so every driver gets all
+    // three silhouettes in their livery
     for (const d of ROSTER) {
-      paintCarTexture(this, `car-${d.id}`, d.bodyColor, d.accentColor)
+      for (const variant of ['compact', 'muscle', 'sleek'] as const) {
+        paintCarTexture(this, `car-${d.id}-${variant}`, d.bodyColor, d.accentColor, variant)
+      }
     }
+    paintCarTexture(this, `car-${BOSS.id}`, BOSS.bodyColor, BOSS.accentColor, 'sleek')
     paintAsphaltTexture(this)
     paintDirtTexture(this)
     paintSmokeTexture(this)
@@ -44,8 +53,11 @@ export class BootScene extends Phaser.Scene {
     paintTireWallTexture(this)
     paintBulletTexture(this)
     paintMineTexture(this)
+    paintRingTexture(this)
     paintSparkTexture(this)
     paintScorchTexture(this)
+    paintFlameConeTexture(this)
+    paintEdgeFlashTexture(this)
     paintPickupTextures(this)
     paintGlowTexture(this)
     paintPoleTexture(this)

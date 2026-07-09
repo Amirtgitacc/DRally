@@ -49,6 +49,32 @@ describe('career', () => {
     expect(c!.mines).toBe(0)
   })
 
+  it('accepts older saves without black-market or champion fields', () => {
+    const old = JSON.parse(serializeCareer(createCareer()))
+    delete old.ramPlating
+    delete old.overTurbo
+    delete old.sabotage
+    delete old.loan
+    delete old.champion
+    const c = deserializeCareer(JSON.stringify(old))
+    expect(c).not.toBeNull()
+    expect(c!.ramPlating).toBe(false)
+    expect(c!.overTurbo).toBe(false)
+    expect(c!.sabotage).toBe(false)
+    expect(c!.loan).toBeNull()
+    expect(c!.champion).toBe(false)
+  })
+
+  it('round-trips an active loan and the champion flag', () => {
+    const c = {
+      ...createCareer(),
+      loan: { owed: 4500, racesLeft: 2 },
+      champion: true,
+      ramPlating: true,
+    }
+    expect(deserializeCareer(serializeCareer(c))).toEqual(c)
+  })
+
   it('caps persistent damage below 100 even after a wreck', () => {
     const c = applyRaceOutcome(createCareer(), {
       prizeCash: 0,

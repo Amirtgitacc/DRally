@@ -24,6 +24,10 @@ export interface RaceResults {
   prizeCash: number
   pointsEarned: number
   careerCash: number
+  /** a lost duel — a win goes straight to the Champion scene instead */
+  duelLost?: boolean
+  /** loanshark status line, when a loan is running or just came due */
+  loanNote?: string
 }
 
 export class ResultsScene extends Phaser.Scene {
@@ -38,7 +42,9 @@ export class ResultsScene extends Phaser.Scene {
 
     const title = results.playerWrecked
       ? 'WRECKED — OUT OF THE RACE'
-      : `YOU FINISHED ${ordinal(results.playerPosition).toUpperCase()}`
+      : results.duelLost
+        ? 'THE CHAMPION KEEPS THE CROWN'
+        : `YOU FINISHED ${ordinal(results.playerPosition).toUpperCase()}`
     this.add
       .text(cx, GAME_HEIGHT * 0.16, title, {
         fontFamily: 'monospace',
@@ -76,6 +82,7 @@ export class ResultsScene extends Phaser.Scene {
       `Prize    $${results.prizeCash}   Points  +${results.pointsEarned}`,
       `Pickups  $${results.cashCollected}   Bank    $${results.careerCash}`,
       ...(results.bestLapMs !== null ? [`Best lap ${formatTime(results.bestLapMs)}`] : []),
+      ...(results.loanNote ? ['', results.loanNote] : []),
     ]
     this.add
       .text(cx, GAME_HEIGHT * 0.65, lapLines.join('\n'), {

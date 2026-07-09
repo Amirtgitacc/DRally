@@ -5,8 +5,10 @@ import type { TrackDef } from '../../data/tracks/testCircuit'
 
 export interface RaceOffer {
   track: TrackDef
-  /** roster ids of the 3 rivals on this grid */
+  /** roster ids of the 3 rivals on this grid (ignored for the duel) */
   rivalIds: string[]
+  /** rank-1 final duel: 1-v-1 against the champion, no ladder points */
+  duel?: boolean
 }
 
 let currentOffer: RaceOffer | null = null

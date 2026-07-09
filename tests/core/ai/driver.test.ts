@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { aiDrive, wrapAngle, type AiContext, type AiTuning } from '../../../src/core/ai/driver'
+import { aiDrive, lookAheadFor, wrapAngle, type AiContext, type AiTuning } from '../../../src/core/ai/driver'
 import type { CarPhysicsSpec, CarState } from '../../../src/core/vehicle/carPhysics'
 
 const spec: CarPhysicsSpec = {
@@ -18,9 +18,36 @@ const spec: CarPhysicsSpec = {
 const tune: AiTuning = { steerGain: 2.5, corneringCaution: 1, minCornerSpeed: 130, dodge: 70 }
 
 // facing +x, moving at 300 px/s
-const cruising: CarState = { x: 0, y: 0, heading: 0, vx: 300, vy: 0 }
+const cruising: CarState = { x: 0, y: 0, heading: 0, vx: 300, vy: 0, z: 0, vz: 0 }
 
 const straightCtx: AiContext = { target: { x: 400, y: 0 }, curvatureAhead: 0, avoid: null }
+
+describe('lookAheadFor', () => {
+  it('looks further ahead the faster the car is going', () => {
+    const slow = lookAheadFor(10, 100, 600)
+    const fast = lookAheadFor(10, 600, 600)
+    expect(fast).toBeGreaterThan(slow)
+  })
+
+  it('a faster car looks further ahead at the same absolute speed share', () => {
+    // two cars at 90% of their own top speed: the quicker one needs more road
+    const slowCar = lookAheadFor(10, 0.9 * 500, 500)
+    const fastCar = lookAheadFor(10, 0.9 * 700, 700)
+    expect(fastCar).toBe(slowCar) // same fraction → same horizon in samples...
+    // ...but in px that horizon is travelled faster, which is the point:
+    expect(lookAheadFor(10, 700, 500)).toBeGreaterThanOrEqual(fastCar)
+  })
+
+  it('clamps at both ends and never returns a useless horizon', () => {
+    expect(lookAheadFor(10, 0, 600)).toBeGreaterThanOrEqual(2)
+    expect(lookAheadFor(1, -500, 600)).toBeGreaterThanOrEqual(2)
+    expect(lookAheadFor(10, 99999, 600)).toBe(lookAheadFor(10, 600, 600))
+  })
+
+  it('survives a zero top speed without dividing by zero', () => {
+    expect(Number.isFinite(lookAheadFor(10, 300, 0))).toBe(true)
+  })
+})
 
 describe('wrapAngle', () => {
   it('wraps into [-π, π]', () => {

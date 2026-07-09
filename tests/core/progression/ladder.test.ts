@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
+import { CAR_CATALOG } from '../../../src/data/cars'
 import {
   applyRaceLadderResults,
   initialLadder,
   PLAYER_ID,
   pickRivals,
   playerRank,
+  rivalChassisId,
   rivalStrength,
   simulateRound,
   standings,
@@ -37,9 +39,20 @@ describe('ladder basics', () => {
   })
 
   it('maps rank to pace: #1 fastest, #20 slowest', () => {
-    expect(rivalStrength(1)).toBeCloseTo(1.052)
+    expect(rivalStrength(1)).toBeCloseTo(1.0805)
     expect(rivalStrength(20)).toBeCloseTo(0.9)
     expect(rivalStrength(1)).toBeGreaterThan(rivalStrength(10))
+  })
+
+  it('maps rank to chassis: top ranks drive the top of the catalog', () => {
+    expect(rivalChassisId(1)).toBe('leviathan')
+    expect(rivalChassisId(10)).toBe('harrier')
+    expect(rivalChassisId(20)).toBe('jackal')
+    // never gets worse as rank improves
+    const order = CAR_CATALOG.map((c) => c.id)
+    for (let r = 19; r >= 1; r--) {
+      expect(order.indexOf(rivalChassisId(r))).toBeGreaterThanOrEqual(order.indexOf(rivalChassisId(r + 1)))
+    }
   })
 })
 

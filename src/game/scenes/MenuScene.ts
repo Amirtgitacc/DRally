@@ -75,7 +75,15 @@ export class MenuScene extends Phaser.Scene {
     this.tweens.add({ targets: prompt, alpha: 0.25, duration: 700, yoyo: true, repeat: -1 })
 
     this.add
-      .text(cx, GAME_HEIGHT * 0.74, 'N: new career (wipes save)', {
+      .text(cx, GAME_HEIGHT * 0.72, 'V: venues · L: ladder', {
+        fontFamily: 'monospace',
+        fontSize: '20px',
+        color: '#9aa0ac',
+      })
+      .setOrigin(0.5)
+
+    this.add
+      .text(cx, GAME_HEIGHT * 0.78, 'N: new career (wipes save)', {
         fontFamily: 'monospace',
         fontSize: '18px',
         color: '#70707e',
@@ -85,11 +93,17 @@ export class MenuScene extends Phaser.Scene {
     const kb = this.input.keyboard!
     kb.once('keydown', () => audioBus.unlock()) // browser audio needs a user gesture
     kb.once('keydown-ENTER', () => this.scene.start('Garage'))
+    kb.on('keydown-V', () => this.scene.start('Venues'))
+    kb.on('keydown-L', () => this.scene.start('Ranking'))
     kb.on('keydown-N', () => {
       resetCareer()
       this.refreshCareerLine()
     })
-    this.events.on('shutdown', () => kb.off('keydown-N'))
+    this.events.on('shutdown', () => {
+      kb.off('keydown-N')
+      kb.off('keydown-V')
+      kb.off('keydown-L')
+    })
   }
 
   private refreshCareerLine() {
@@ -98,8 +112,10 @@ export class MenuScene extends Phaser.Scene {
       return
     }
     const c = loadCareer()
+    const rank = c.champion ? 'CHAMPION' : `Rank #${playerRank(c.ladder, c.points)}`
     this.careerText.setText(
-      `Rank #${playerRank(c.ladder, c.points)} · ${carById(c.carId).name} · $${c.cash} · ${c.points} pts · ${c.wins} wins in ${c.racesRun} races`,
+      `${rank} · ${carById(c.carId).name} · $${c.cash} · ${c.points} pts · ${c.wins} wins in ${c.racesRun} races`,
     )
+    this.careerText.setColor(c.champion ? '#c9a227' : '#9aa0ac')
   }
 }

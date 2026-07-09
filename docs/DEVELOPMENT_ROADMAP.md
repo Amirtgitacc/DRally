@@ -82,8 +82,39 @@ Status legend: ✅ done · 🔨 in progress · ⬜ not started
 - Flow: Garage → Sign-Up → Race → Results → Ladder → Garage
 - Verified in browser: tier cards with tail-ender grids for a rank-20 rookie, death race on Serpent's Throat won (+$12,000/+8 pts), ladder points awarded exactly per tables, save round-trips; no console errors
 
+## Milestone 10 — Final duel & black market ✅ (2026-07-08)
+- [x] Final boss duel: at rank #1 the sign-up screen becomes a single mandatory 1-v-1 challenge from **The Sovereign**, an original champion above the 20-driver ladder (one-off car spec + pace above the rank-1 rival, black/gold livery)
+- [x] Winning pays a $25,000 purse, sets a persistent `champion` flag, and lands on a proper CHAMPION win screen (glow title, ember drift, career stats); menu + ranking show champion status; career continues after the crown, duel is not re-offered
+- [x] Losing the duel costs nothing but the damage — stay rank #1, retry next round (pure duel logic + 4 tests)
+- [x] Black-market scene (garage MINES tile → MARKET) with mines + 4 new items, all data-driven:
+  - Ram plating ($650, one race): your rams deal 2.2×, you take 0.5×
+  - Overcharged turbo ($900, one race): 1.45× top speed / 2.7× accel boost that self-damages 3.5%/s while boosting (orange flame + HUD badge) and drains 1.5× faster
+  - Sabotage ($1,400): strongest rival on your next grid starts at 40% damage
+  - Loanshark: borrow $3,000, owe $4,500 within 3 races; early repay in the market; due-and-paid collects from winnings; due-and-broke sends the enforcers (all cash + 40% damage, debt written off) — the designed fix for the broke-with-a-wrecked-car death spiral (pure logic + 12 tests)
+- [x] Results screen shows the loan clock / collection / enforcement; save format extended with backward-compatible deserialization (old saves load clean)
+- Verified in browser via debug hooks: all 5 purchases + early repay (cash math exact), sabotaged rival spawns at 40%, plated ram dealt 39.6 (18 cap × 2.2) vs halved return, overcharged top speed exactly 520×1.45=754 px/s, loan countdown → enforcement on results, duel offer/loss/win end-to-end twice, champion menu line, sign-up back to 3 tiers post-crown; 91 unit tests, no console errors
+
+## Milestone 11 — Content & feel: cars, tracks, AI, combat physics ✅ (2026-07-08)
+- [x] 6-car chassis ladder (Jackal $500 → Vandal $1.4k → Marauder $2.6k → Harrier $4.4k → Basilisk $6.8k → Leviathan $16k), each with collision mass and one of three body silhouettes (compact/muscle/sleek, procedural variants); garage got min-max-normalized stat-compare bars with a tick marking your current car
+- [x] 3 new tracks — Boneyard Loop (street, sand theme), Cinder Yards (pro, cold industrial), Widow's Coil (death, swamp folds) — with per-track ground/shoulder color themes; sign-up rolls one venue per tier per round and draws a mini track-outline preview on each card; geometry guarded by data tests (world bounds + no distant-fold wall overlap)
+- [x] AI difficulty: rivals now drive the chassis their ladder rank earns (rank 1 = Leviathan … rank 20 = Jackal — this was the big fix: they all drove the starter car before), pace curve raised (#1 ≈ 1.08×), braver cornering, stronger rubber band, and 2/4 mines carried in pro/death races dropped on tailgaters (with an 8s opening grace so the packed grid doesn't get mined at the line); boss rebalanced above the Leviathan
+- [x] Collision physics: pure mass-weighted impulse model with restitution + tangential spin kick (core/vehicle/collision.ts, 6 tests) — heavy cars shove light ones, glancing hits twist you round; mine blasts got a radial falloff shove + spin-out and can no longer be shrugged off
+- [x] Combat feel: elongated gradient tracers with hot particle trails, shockwave ring + fireball on mine blasts and wrecks, floating pickup toasts (+$200 / +50 AMMO / TRAPPED!), orange overcharge flame
+- Verified in browser: all 3 new tracks driven (fold corridors clean), rank-based chassis confirmed via debug hook (harrier/marauder at mid-rank), scripted ram spun the rival 13° with mass-correct momentum split, mine self-test dealt 26+ damage with spin kick, AI finished a 4-lap death race in <90s (was 67-82s for 3 laps in M8), grid-start mining regression caught and fixed; 117 unit tests, no console errors
+
+## Milestone 12 — Feel & clarity ✅ (2026-07-09)
+Full spec: **docs/MILESTONE_12_PLAN.md**. Delivered:
+- [x] **Airborne is core state, not a visual**: `CarState` gained `z`/`vz`; while airborne `stepCar` ignores steering, throttle, brake, grip and drag — the car carries its velocity and arcs down (0.8s / 128px apex for a direct hit at mass 1.0, `airtime = 2·vz/gravity`). Mine blast response moved into a pure `core/combat/blast.ts` (damage, radial shove with falloff, spin, launch, all mass-damped). Airborne cars fly over barriers, mines, bullets and the pack. Rendering: sprite scales over a thrown drop shadow, lands with a dust ring, squash-and-settle bounce and a thump
+- [x] Combat feel: bullet hits spark + flash the victim white + shove it along the bullet's path (player hits add shake + a red screen-edge flash); car-vs-car crunch scales sparks and shake with closing speed and dilates time (0.35× for 120ms) above a threshold; turbo gained a flame cone, heat glow, screen-edge speed streaks, camera pull-back and jitter (red and twice as violent on the overcharged mix)
+- [x] Mine redesign: 40px dark disc with a bone-white rim, hazard wedges, blinking amber arm-light and a breathing danger ring once armed — verified readable on all 6 ground themes
+- [x] AI talent grades: permanent per-driver skill (4 aces / 6 veterans / 5 journeymen / 4 rookies over the 19 rivals; the champion drives as an ace) scaling pace, cornering bravery, aim spread, mine aggression and rubber-band reliance. Grades are data keyed by driver id, so old saves pick them up for free. Driving **style now follows talent** (aces charge, rookies bruise) instead of grid slot. Stars shown on the ladder and on every sign-up grid
+- [x] UI clarity: **CAR DEALER** scene (browse all 6 chassis, stat bars with a marker for the car you own, ▲/▼ deltas, price − trade-in = net, unaffordable cars stay browsable), **VENUES** gallery from the menu (V), full-size track maps on the sign-up cards, ladder stars, and **measurable upgrade labels** computed from the real data tables (`ARMOR Lv0→Lv1 · DAMAGE TAKEN -15%`, `RAM DAMAGE DEALT ×2.2 · TAKEN ×0.5`) — never hand-written, so tuning changes can't leave a lying price tag. Garage bars animate to their new value after a purchase
+- [x] Difficulty tuned to "Challenging" with a scripted harness (debug `__autoPilot` drives the player with the AI; `__step` runs the loop by hand). Measured, mid-career, same-tier car: clean driving → 3rd; + guns and mines → 1st at the cost of ~55% damage; late career in a Leviathan vs the three aces on a death track → 2nd, survived
+- Four real defects surfaced by the tuning loop and fixed (see DECISIONS.md): AI corner look-ahead didn't scale with speed, rivals held the trigger forever, gun damage was symmetric in a 3-vs-1 fight, and death-tier mine density was lethal after airborne landed
+- Verified: 170 unit tests, clean `tsc` + build, browser playthroughs on all 6 venues (mine readability, airborne, turbo, crash lurch, dealer/venues/garage/market/ladder screens), no console errors; test career cleared afterwards
+- Open: the final "Challenging" call is AT's — the scripted pilot is an AI proxy, not a human. Hands-on races are the last check
+
 ## Post-slice backlog (distinctive mechanics from research)
-- Final boss duel at rank #1 (the career's ending)
 - Sign-up entrant slots filling in real time (flavor)
-- Black market: ram plating, overcharged turbo, sabotage, loanshark
-- 6-car chassis ladder; more tracks/themes; gamepad; desktop wrapper; Hall of Fame
+- Black-market stock rotation (items occasionally OUT OF STOCK, per research)
+- Gamepad; desktop wrapper; Hall of Fame; more track themes/venues

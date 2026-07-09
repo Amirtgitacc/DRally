@@ -79,6 +79,12 @@ class AudioBus {
     this.blip(90, 30, 0.5, 'sine', 0.6)
   }
 
+  /** A car coming back down onto its suspension. */
+  thud() {
+    this.noiseBurst(0.16, 'lowpass', 400, 60, 0.55)
+    this.blip(70, 40, 0.14, 'sine', 0.35)
+  }
+
   pickup(good: boolean) {
     if (good) {
       this.blip(660, 990, 0.09, 'square', 0.18)

@@ -2,16 +2,8 @@ import Phaser from 'phaser'
 import { GAME_HEIGHT, GAME_WIDTH } from '../../config/game'
 import { CAR_CATALOG, carById } from '../../data/cars'
 import { REPAIR_STEP_PERCENT, type UpgradeKind } from '../../data/economy'
-import {
-  buyCar,
-  buyMines,
-  buyUpgrade,
-  carNetPrice,
-  repairStep,
-  repairStepCost,
-  upgradeCost,
-} from '../../core/economy/garage'
-import { MINES } from '../../data/weapons'
+import { buyUpgrade, repairStep, repairStepCost, upgradeCost } from '../../core/economy/garage'
+import { fittedDeltas, upgradeLabel } from '../../core/economy/upgradeEffects'
 import { effectiveCarSpec } from '../../core/vehicle/carSpec'
 import type { CareerState } from '../../core/progression/career'
 import { loadCareer, saveCareer } from '../state/saveGame'
@@ -19,7 +11,7 @@ import { loadCareer, saveCareer } from '../state/saveGame'
 const MPH_PER_PX = 0.14
 
 interface Tile {
-  id: 'repair' | 'engine' | 'tires' | 'armor' | 'mines' | 'buycar' | 'race'
+  id: 'repair' | 'engine' | 'tires' | 'armor' | 'market' | 'buycar' | 'race'
   label: string
 }
 
@@ -28,7 +20,7 @@ const TILES: Tile[] = [
   { id: 'engine', label: 'ENGINE' },
   { id: 'tires', label: 'TIRES' },
   { id: 'armor', label: 'ARMOR' },
-  { id: 'mines', label: 'MINES' },
+  { id: 'market', label: 'MARKET' },
   { id: 'buycar', label: 'BUY CAR' },
   { id: 'race', label: 'RACE' },
 ]
@@ -40,18 +32,25 @@ const FLAVOR = [
   'Fresh paint hides old sins.',
 ]
 
+/** The three stat bars, and where each reads from the effective car spec. */
+const BAR_STATS = ['topSpeed', 'accel', 'grip'] as const
+type BarStat = (typeof BAR_STATS)[number]
+
 export class GarageScene extends Phaser.Scene {
   private career!: CareerState
   private selected = 0
-  private previewCarIdx = 0
 
   private carImage!: Phaser.GameObjects.Image
   private carNameText!: Phaser.GameObjects.Text
   private infoText!: Phaser.GameObjects.Text
   private statsText!: Phaser.GameObjects.Text
   private pipsGfx!: Phaser.GameObjects.Graphics
+  private compareGfx!: Phaser.GameObjects.Graphics
   private tileTexts: Phaser.GameObjects.Text[] = []
   private tileRects: Phaser.GameObjects.Rectangle[] = []
+  private fittedTexts: Phaser.GameObjects.Text[] = []
+  /** animated bar fills, tweened toward the real ratios after a purchase */
+  private barFill: Record<BarStat, number> = { topSpeed: 0, accel: 0, grip: 0 }
 
   constructor() {
     super('Garage')
@@ -62,7 +61,7 @@ export class GarageScene extends Phaser.Scene {
     this.selected = 0
     this.tileTexts = []
     this.tileRects = []
-    this.previewCarIdx = CAR_CATALOG.findIndex((c) => c.id === this.career.carId)
+    this.fittedTexts = []
 
     const cx = GAME_WIDTH / 2
 
@@ -82,9 +81,27 @@ export class GarageScene extends Phaser.Scene {
       .text(cx - 200, 470, '', { fontFamily: 'monospace', fontSize: '30px', color: '#e8e8f0' })
       .setOrigin(0.5)
 
+    // your car's stat bars, with the exact gain each fitted upgrade bought you
+    this.compareGfx = this.add.graphics()
+    const statLabels = ['SPEED', 'ACCEL', 'GRIP']
+    statLabels.forEach((label, row) => {
+      this.add.text(cx - 470, 496 + row * 30, label.padEnd(6), {
+        fontFamily: 'monospace',
+        fontSize: '17px',
+        color: '#9aa0ac',
+      })
+      this.fittedTexts.push(
+        this.add.text(cx + 10, 496 + row * 30, '', {
+          fontFamily: 'monospace',
+          fontSize: '17px',
+          color: '#7fe0a8',
+        }),
+      )
+    })
+
     // center info box
     this.infoText = this.add
-      .text(cx - 200, 580, '', {
+      .text(cx - 200, 600, '', {
         fontFamily: 'monospace',
         fontSize: '22px',
         color: '#c8c8d4',
@@ -102,6 +119,17 @@ export class GarageScene extends Phaser.Scene {
       lineSpacing: 10,
     })
     this.pipsGfx = this.add.graphics()
+
+    // pip row labels. These live in create(), not refresh(): scene `data`
+    // survives a scene restart, so a "create once" guard there would skip
+    // them on every visit after the first.
+    ;(['engine', 'tires', 'armor'] as UpgradeKind[]).forEach((kind, row) => {
+      this.add.text(GAME_WIDTH - 420, 470 + row * 34, kind.toUpperCase().padEnd(6), {
+        fontFamily: 'monospace',
+        fontSize: '20px',
+        color: '#9aa0ac',
+      })
+    })
 
     // tiles
     const tileW = 200
@@ -131,7 +159,7 @@ export class GarageScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
 
-    this.add.text(16, 16, '←/→ select · ↑/↓ browse cars · Enter confirm · Esc menu', {
+    this.add.text(16, 16, '←/→ select · Enter confirm · Esc menu', {
       fontFamily: 'monospace',
       fontSize: '18px',
       color: '#e8e8f0',
@@ -142,33 +170,22 @@ export class GarageScene extends Phaser.Scene {
     const kb = this.input.keyboard!
     kb.on('keydown-LEFT', () => this.moveSelection(-1))
     kb.on('keydown-RIGHT', () => this.moveSelection(1))
-    kb.on('keydown-UP', () => this.browseCar(1))
-    kb.on('keydown-DOWN', () => this.browseCar(-1))
     kb.on('keydown-ENTER', () => this.activate())
     kb.on('keydown-ESC', () => this.scene.start('Menu'))
     this.events.on('shutdown', () => {
       kb.off('keydown-LEFT')
       kb.off('keydown-RIGHT')
-      kb.off('keydown-UP')
-      kb.off('keydown-DOWN')
       kb.off('keydown-ENTER')
       kb.off('keydown-ESC')
     })
 
+    // bars start full so the first paint is not an animation from zero
+    this.barFill = this.targetBarFills()
     this.refresh()
   }
 
   private moveSelection(dir: number) {
     this.selected = (this.selected + dir + TILES.length) % TILES.length
-    if (TILES[this.selected].id !== 'buycar') {
-      this.previewCarIdx = CAR_CATALOG.findIndex((c) => c.id === this.career.carId)
-    }
-    this.refresh()
-  }
-
-  private browseCar(dir: number) {
-    if (TILES[this.selected].id !== 'buycar') return
-    this.previewCarIdx = (this.previewCarIdx + dir + CAR_CATALOG.length) % CAR_CATALOG.length
     this.refresh()
   }
 
@@ -184,14 +201,12 @@ export class GarageScene extends Phaser.Scene {
       case 'armor':
         next = buyUpgrade(this.career, tile.id)
         break
-      case 'mines':
-        next = buyMines(this.career)
-        break
-      case 'buycar': {
-        const target = CAR_CATALOG[this.previewCarIdx]
-        next = buyCar(this.career, target.id)
-        break
-      }
+      case 'market':
+        this.scene.start('BlackMarket')
+        return
+      case 'buycar':
+        this.scene.start('CarDealer')
+        return
       case 'race':
         this.scene.start('SignUp')
         return
@@ -199,8 +214,48 @@ export class GarageScene extends Phaser.Scene {
     if (next) {
       this.career = next
       saveCareer(this.career)
+      this.animateBars()
       this.refresh()
     }
+  }
+
+  /** Where each bar should sit for the car as it stands right now. */
+  private targetBarFills(): Record<BarStat, number> {
+    const spec = effectiveCarSpec(carById(this.career.carId), this.career.upgrades)
+    return {
+      topSpeed: this.ratio('topSpeed', spec.topSpeed),
+      accel: this.ratio('accel', spec.accel),
+      grip: this.ratio('grip', spec.grip),
+    }
+  }
+
+  /** Slide the bars to their new value so an upgrade is something you SEE. */
+  private animateBars() {
+    const target = this.targetBarFills()
+    for (const stat of BAR_STATS) {
+      this.tweens.addCounter({
+        from: this.barFill[stat],
+        to: target[stat],
+        duration: 450,
+        ease: 'cubic.out',
+        onUpdate: (tween) => {
+          this.barFill[stat] = tween.getValue() ?? target[stat]
+          this.drawBars()
+        },
+      })
+    }
+  }
+
+  /**
+   * Catalog stats live in a narrow band, so spread min..max across the bar
+   * (with a floor so the cheapest car isn't an empty bar). Fully upgraded
+   * cars can exceed the catalog max, so the ratio is clamped at 1.
+   */
+  private ratio(stat: BarStat, value: number): number {
+    const values = CAR_CATALOG.map((car) => car[stat])
+    const min = Math.min(...values)
+    const max = Math.max(...values)
+    return Phaser.Math.Clamp(0.08 + 0.92 * ((value - min) / (max - min)), 0, 1)
   }
 
   private tileCaption(tile: Tile): { cost: string; info: string; enabled: boolean } {
@@ -220,42 +275,40 @@ export class GarageScene extends Phaser.Scene {
       case 'armor': {
         const kind = tile.id as UpgradeKind
         const cost = upgradeCost(c, kind)
-        if (cost === null) return { cost: 'MAX', info: 'This chassis is maxed out on that part.', enabled: false }
-        const blurbs: Record<UpgradeKind, string> = {
-          engine: 'More top speed and acceleration.',
-          tires: 'More grip — corners stop being suggestions.',
-          armor: 'Take less damage from bullets, rams, and walls.',
+        const cap = carById(c.carId).upgradeCaps[kind]
+        if (cost === null) {
+          const fitted = fittedDeltas(kind, c.upgrades[kind])
+            .map((d) => `${d.stat} ${d.text}`)
+            .join(' · ')
+          return { cost: 'MAX', info: `Maxed out at tier ${cap}. Fitted: ${fitted}`, enabled: false }
         }
+        // the exact effect, computed from the data table — never a stale string
         return {
           cost: `$${cost}`,
-          info: `Tier ${c.upgrades[kind] + 1}/${carById(c.carId).upgradeCaps[kind]}: ${blurbs[kind]}`,
+          info: `${upgradeLabel(kind, c.upgrades[kind])}\n(tier ${c.upgrades[kind] + 1} of ${cap}) · $${cost}`,
           enabled: c.cash >= cost,
         }
       }
-      case 'mines': {
-        if (c.mines > 0) {
-          return {
-            cost: 'STOCKED',
-            info: `${c.mines} mines strapped on for the next race. Drop them behind you with C.`,
-            enabled: false,
-          }
-        }
+      case 'market': {
+        const gear: string[] = []
+        if (c.mines > 0) gear.push(`${c.mines} mines`)
+        if (c.ramPlating) gear.push('plating')
+        if (c.overTurbo) gear.push('overcharge')
+        if (c.sabotage) gear.push('sabotage')
+        const carrying = gear.length > 0 ? ` Carrying: ${gear.join(', ')}.` : ''
+        const loan = c.loan ? ` LOAN DUE: $${c.loan.owed} in ${c.loan.racesLeft}.` : ''
         return {
-          cost: `$${MINES.price}`,
-          info: `${MINES.count} proximity mines, dropped behind your car (C key). One race only — used or not.`,
-          enabled: c.cash >= MINES.price,
+          cost: '',
+          info: `The black market: mines, plating, overcharged fuel, sabotage — and a loanshark.${carrying}${loan}`,
+          enabled: true,
         }
       }
-      case 'buycar': {
-        const target = CAR_CATALOG[this.previewCarIdx]
-        if (target.id === c.carId) return { cost: '', info: 'You already drive this one. Browse with ↑/↓.', enabled: false }
-        const net = carNetPrice(c, target.id)
+      case 'buycar':
         return {
-          cost: `$${net}`,
-          info: `${target.name}: ${target.blurb} $${target.price} minus trade-in = $${net}. Upgrades do not transfer.`,
-          enabled: c.cash >= net,
+          cost: '',
+          info: 'The dealer: browse all six chassis side by side against the one you drive.',
+          enabled: true,
         }
-      }
       case 'race':
         return { cost: '', info: 'Head to race sign-up: three races on offer, pick your risk tier.', enabled: true }
     }
@@ -263,11 +316,9 @@ export class GarageScene extends Phaser.Scene {
 
   private refresh() {
     const c = this.career
-    const showing = TILES[this.selected].id === 'buycar' ? CAR_CATALOG[this.previewCarIdx] : carById(c.carId)
+    const showing = carById(c.carId)
     this.carImage.setTexture(`car-${showing.id}`)
-    this.carNameText.setText(
-      showing.id === c.carId ? `${showing.name}  (yours)` : `${showing.name}  —  $${showing.price}`,
-    )
+    this.carNameText.setText(`${showing.name}  (yours)`)
 
     TILES.forEach((tile, i) => {
       const { cost, enabled } = this.tileCaption(tile)
@@ -279,6 +330,16 @@ export class GarageScene extends Phaser.Scene {
     })
 
     this.infoText.setText(this.tileCaption(TILES[this.selected]).info)
+
+    this.drawBars()
+
+    // what each fitted upgrade actually bought, straight off the data table
+    const fittedFor: Record<BarStat, UpgradeKind> = { topSpeed: 'engine', accel: 'engine', grip: 'tires' }
+    const statOf: Record<BarStat, string> = { topSpeed: 'TOP SPEED', accel: 'ACCEL', grip: 'GRIP' }
+    BAR_STATS.forEach((stat, row) => {
+      const delta = fittedDeltas(fittedFor[stat], c.upgrades[fittedFor[stat]]).find((d) => d.stat === statOf[stat])
+      this.fittedTexts[row].setText(delta ? delta.text : '')
+    })
 
     const spec = effectiveCarSpec(carById(c.carId), c.upgrades)
     this.statsText.setText(
@@ -296,8 +357,7 @@ export class GarageScene extends Phaser.Scene {
 
     // upgrade pips: owned vs cap for the owned car
     this.pipsGfx.clear()
-    const kinds: UpgradeKind[] = ['engine', 'tires', 'armor']
-    kinds.forEach((kind, row) => {
+    ;(['engine', 'tires', 'armor'] as UpgradeKind[]).forEach((kind, row) => {
       const cap = carById(c.carId).upgradeCaps[kind]
       const owned = c.upgrades[kind]
       const y = 470 + row * 34
@@ -306,16 +366,19 @@ export class GarageScene extends Phaser.Scene {
         this.pipsGfx.fillRect(GAME_WIDTH - 260 + t * 26, y, 20, 20)
       }
     })
-    // pip labels drawn as part of statsText would misalign; add tiny labels once
-    if (!this.data.get('pipLabels')) {
-      this.data.set('pipLabels', true)
-      kinds.forEach((kind, row) => {
-        this.add.text(GAME_WIDTH - 420, 470 + row * 34, kind.toUpperCase().padEnd(6), {
-          fontFamily: 'monospace',
-          fontSize: '20px',
-          color: '#9aa0ac',
-        })
-      })
-    }
+  }
+
+  /** Bars for the car as it stands, drawn from the animated fill values. */
+  private drawBars() {
+    const barX = GAME_WIDTH / 2 - 380
+    const barW = 360
+    this.compareGfx.clear()
+    BAR_STATS.forEach((stat, row) => {
+      const y = 500 + row * 30
+      this.compareGfx.fillStyle(0x2a2a33, 1)
+      this.compareGfx.fillRect(barX, y, barW, 12)
+      this.compareGfx.fillStyle(0xf2a33c, 1)
+      this.compareGfx.fillRect(barX, y, barW * this.barFill[stat], 12)
+    })
   }
 }

@@ -4,13 +4,33 @@ import type { PickupType } from '../../core/track/pickups'
 // Procedural combat & pickup textures. Same swap-later policy as the rest.
 
 export function paintBulletTexture(scene: Phaser.Scene) {
-  const g = scene.add.graphics()
-  g.fillStyle(0xfff2b0, 1)
-  g.fillRoundedRect(0, 0, 12, 4, 2)
-  g.fillStyle(0xffffff, 1)
-  g.fillRoundedRect(6, 1, 6, 2, 1)
-  g.generateTexture('bullet', 12, 4)
-  g.destroy()
+  // elongated tracer: hot white head fading into an amber tail
+  const size = { w: 26, h: 6 }
+  const tex = scene.textures.createCanvas('bullet', size.w, size.h)!
+  const ctx = tex.getContext()
+  const grad = ctx.createLinearGradient(0, 0, size.w, 0)
+  grad.addColorStop(0, 'rgba(255, 150, 60, 0)')
+  grad.addColorStop(0.55, 'rgba(255, 205, 110, 0.85)')
+  grad.addColorStop(1, 'rgba(255, 255, 255, 1)')
+  ctx.fillStyle = grad
+  ctx.beginPath()
+  ctx.ellipse(size.w / 2, size.h / 2, size.w / 2, size.h / 2, 0, 0, Math.PI * 2)
+  ctx.fill()
+  tex.refresh()
+}
+
+/** Thin expanding circle for blast shockwaves. */
+export function paintRingTexture(scene: Phaser.Scene) {
+  const size = 96
+  const tex = scene.textures.createCanvas('ring', size, size)!
+  const ctx = tex.getContext()
+  const grad = ctx.createRadialGradient(size / 2, size / 2, size * 0.3, size / 2, size / 2, size / 2)
+  grad.addColorStop(0, 'rgba(255, 220, 160, 0)')
+  grad.addColorStop(0.75, 'rgba(255, 220, 160, 0.9)')
+  grad.addColorStop(1, 'rgba(255, 180, 90, 0)')
+  ctx.fillStyle = grad
+  ctx.fillRect(0, 0, size, size)
+  tex.refresh()
 }
 
 export function paintSparkTexture(scene: Phaser.Scene) {
@@ -39,22 +59,76 @@ export function paintScorchTexture(scene: Phaser.Scene) {
   tex.refresh()
 }
 
+/**
+ * The mine has to be spotted at racing speed, at night, on six different
+ * ground themes. So: a big dark disc for mass, a bright bone-white rim that
+ * survives a light ground, hazard wedges for "this is a weapon", and an amber
+ * core the scene blinks once the thing is armed.
+ */
 export function paintMineTexture(scene: Phaser.Scene) {
+  const size = 40
+  const c = size / 2
   const g = scene.add.graphics()
-  g.fillStyle(0x000000, 0.4)
-  g.fillCircle(11, 12, 9) // shadow
-  g.fillStyle(0x1c1c24, 1)
-  g.fillCircle(10, 10, 9)
-  g.lineStyle(2, 0x3a3a46, 1)
-  g.strokeCircle(10, 10, 8)
-  g.fillStyle(0x5a5a66, 1)
-  for (const a of [0, 1.57, 3.14, 4.71]) {
-    g.fillCircle(10 + Math.cos(a) * 6, 10 + Math.sin(a) * 6, 1.5)
+
+  g.fillStyle(0x000000, 0.45)
+  g.fillCircle(c + 2, c + 3, 15) // ground shadow
+
+  g.fillStyle(0x101016, 1) // heavy dark body
+  g.fillCircle(c, c, 15)
+  g.lineStyle(3, 0xe8e8f0, 0.9) // bone rim — reads on dark AND pale ground
+  g.strokeCircle(c, c, 14)
+
+  // hazard wedges around the casing
+  g.fillStyle(0xf2a33c, 0.95)
+  for (let i = 0; i < 4; i++) {
+    const a = i * (Math.PI / 2) + Math.PI / 4
+    g.slice(c, c, 12, a - 0.3, a + 0.3, false)
+    g.fillPath()
   }
-  g.fillStyle(0xd23c2f, 1)
-  g.fillCircle(10, 10, 2.5)
-  g.generateTexture('mine', 22, 22)
+
+  g.fillStyle(0x2a2a33, 1) // detonator plate
+  g.fillCircle(c, c, 7)
+  g.lineStyle(1, 0x5a5a66, 1)
+  g.strokeCircle(c, c, 7)
+  g.fillStyle(0xffb340, 1) // arm light (the scene blinks this)
+  g.fillCircle(c, c, 3.5)
+
+  g.generateTexture('mine', size, size)
   g.destroy()
+}
+
+/** Teardrop exhaust flame drawn behind a boosting car — tinted per turbo type. */
+export function paintFlameConeTexture(scene: Phaser.Scene) {
+  const w = 96
+  const h = 40
+  const tex = scene.textures.createCanvas('flame-cone', w, h)!
+  const ctx = tex.getContext()
+  const grad = ctx.createLinearGradient(w, h / 2, 0, h / 2)
+  grad.addColorStop(0, 'rgba(255, 255, 255, 0.95)') // hot root, at the tailpipe
+  grad.addColorStop(0.35, 'rgba(255, 255, 255, 0.55)')
+  grad.addColorStop(1, 'rgba(255, 255, 255, 0)') // fades into the night
+  ctx.fillStyle = grad
+  ctx.beginPath()
+  ctx.moveTo(w, h / 2 - 13)
+  ctx.quadraticCurveTo(w * 0.35, h / 2 - 9, 0, h / 2)
+  ctx.quadraticCurveTo(w * 0.35, h / 2 + 9, w, h / 2 + 13)
+  ctx.closePath()
+  ctx.fill()
+  tex.refresh()
+}
+
+/** Screen-edge damage flash: clear in the middle, hot at the borders. */
+export function paintEdgeFlashTexture(scene: Phaser.Scene) {
+  const size = 256
+  const tex = scene.textures.createCanvas('edge-flash', size, size)!
+  const ctx = tex.getContext()
+  const grad = ctx.createRadialGradient(size / 2, size / 2, size * 0.28, size / 2, size / 2, size * 0.52)
+  grad.addColorStop(0, 'rgba(255, 255, 255, 0)')
+  grad.addColorStop(0.7, 'rgba(255, 255, 255, 0.45)')
+  grad.addColorStop(1, 'rgba(255, 255, 255, 1)')
+  ctx.fillStyle = grad
+  ctx.fillRect(0, 0, size, size)
+  tex.refresh()
 }
 
 export function paintPickupTextures(scene: Phaser.Scene) {

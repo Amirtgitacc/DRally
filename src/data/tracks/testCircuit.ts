@@ -19,6 +19,13 @@ export interface TrackDef {
   world: { w: number; h: number }
   /** closed loop, listed in driving direction; index 0 is the start line */
   controls: Vec2[]
+  /** optional color identity — tints applied over the shared textures */
+  theme?: {
+    /** tint over the off-track ground tile */
+    ground: number
+    /** rough shoulder fill color */
+    shoulder: number
+  }
 }
 
 /** First original circuit — a bottom straight, sweeping right bend, top chicane, left hairpin. */

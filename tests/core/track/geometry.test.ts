@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildGates,
   catmullRomClosed,
+  closedPolylineLength,
   distanceToClosedPolyline,
   offsetClosedPolyline,
   segmentsIntersect,
@@ -22,6 +23,23 @@ describe('catmullRomClosed', () => {
     // t=0 of each segment is the control point itself
     expect(pts[0]).toEqual({ x: 0, y: 0 })
     expect(pts[8]).toEqual({ x: 100, y: 0 })
+  })
+})
+
+describe('closedPolylineLength', () => {
+  it('measures the full loop, including the closing segment', () => {
+    expect(closedPolylineLength(square)).toBe(400)
+  })
+
+  it('is zero for a degenerate loop', () => {
+    expect(closedPolylineLength([{ x: 5, y: 5 }])).toBe(0)
+  })
+
+  it('grows with the number of samples around a curve, converging on the arc length', () => {
+    const coarse = closedPolylineLength(catmullRomClosed(square, 2))
+    const fine = closedPolylineLength(catmullRomClosed(square, 32))
+    expect(fine).toBeGreaterThan(coarse * 0.95)
+    expect(fine).toBeLessThan(coarse * 1.15)
   })
 })
 

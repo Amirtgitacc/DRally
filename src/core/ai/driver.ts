@@ -31,6 +31,22 @@ export function wrapAngle(a: number): number {
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
 
+/**
+ * How far down the racing line to scan for the next corner, in samples.
+ *
+ * Braking distance grows with speed, so a fixed horizon makes a fast car spot
+ * every corner too late — it arrives over-speed, understeers into the barrier,
+ * and grinds itself to a wreck. Scale the horizon with how fast the car is
+ * actually travelling, as a fraction of what it can do.
+ *
+ * This is the BRAKING horizon only. The steering target stays at a fixed
+ * distance: chasing a point further ahead makes the car cut the corner.
+ */
+export function lookAheadFor(base: number, forwardSpeed: number, topSpeed: number, gain = 1.2): number {
+  const ratio = clamp(forwardSpeed / Math.max(1, topSpeed), 0, 1)
+  return Math.max(2, Math.round(base * (0.65 + gain * ratio)))
+}
+
 export function aiDrive(state: CarState, ctx: AiContext, spec: CarPhysicsSpec, tune: AiTuning): CarInput {
   let tx = ctx.target.x
   let ty = ctx.target.y

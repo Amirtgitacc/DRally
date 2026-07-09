@@ -16,6 +16,14 @@ export interface CareerState {
   wins: number
   /** one-race consumable — cleared after every race, bought in the garage */
   mines: number
+  /** black-market one-race gear — cleared after every race like mines */
+  ramPlating: boolean
+  overTurbo: boolean
+  sabotage: boolean
+  /** outstanding loanshark debt, or null when clean */
+  loan: { owed: number; racesLeft: number } | null
+  /** true once the rank-1 duel has been won — the career's crown */
+  champion: boolean
   /** championship points per AI rival (the player's points are `points`) */
   ladder: Ladder
 }
@@ -30,6 +38,11 @@ export function createCareer(): CareerState {
     racesRun: 0,
     wins: 0,
     mines: 0,
+    ramPlating: false,
+    overTurbo: false,
+    sabotage: false,
+    loan: null,
+    champion: false,
     ladder: initialLadder(),
   }
 }
@@ -52,12 +65,25 @@ export function applyRaceOutcome(c: CareerState, o: RaceOutcome): CareerState {
     damage: Math.min(99, Math.max(0, Math.round(o.endDamage))),
     racesRun: c.racesRun + 1,
     wins: c.wins + (o.won ? 1 : 0),
-    mines: 0, // one race only, used or not
+    // one-race gear is gone after the race, used or not
+    mines: 0,
+    ramPlating: false,
+    overTurbo: false,
+    sabotage: false,
   }
 }
 
 export function serializeCareer(c: CareerState): string {
   return JSON.stringify(c)
+}
+
+function isValidLoan(value: unknown): value is { owed: number; racesLeft: number } {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { owed?: unknown }).owed === 'number' &&
+    typeof (value as { racesLeft?: unknown }).racesLeft === 'number'
+  )
 }
 
 function isValidLadder(value: unknown): value is Ladder {
@@ -93,7 +119,12 @@ export function deserializeCareer(raw: string): CareerState | null {
       racesRun: typeof data.racesRun === 'number' ? data.racesRun : 0,
       wins: typeof data.wins === 'number' ? data.wins : 0,
       mines: typeof data.mines === 'number' ? data.mines : 0, // older saves lack this
-      ladder: isValidLadder(data.ladder) ? data.ladder : initialLadder(), // ditto
+      ramPlating: data.ramPlating === true, // ditto for everything below
+      overTurbo: data.overTurbo === true,
+      sabotage: data.sabotage === true,
+      loan: isValidLoan(data.loan) ? { owed: data.loan.owed, racesLeft: data.loan.racesLeft } : null,
+      champion: data.champion === true,
+      ladder: isValidLadder(data.ladder) ? data.ladder : initialLadder(),
     }
   } catch {
     return null

@@ -77,6 +77,17 @@ export function offsetClosedPolyline(points: Vec2[], offset: number): Vec2[] {
   })
 }
 
+/** Total arc length around a closed polyline, px. */
+export function closedPolylineLength(points: Vec2[]): number {
+  let total = 0
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i]
+    const b = points[(i + 1) % points.length]
+    total += Math.hypot(b.x - a.x, b.y - a.y)
+  }
+  return total
+}
+
 /** Walk a closed polyline and emit points every `spacing` px of arc length. */
 export function spacedPointsAlong(points: Vec2[], spacing: number): Vec2[] {
   const out: Vec2[] = []
