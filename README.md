@@ -36,7 +36,9 @@ npm run preview # serve the production build locally
 | Shift | Turbo boost |
 | Space | Handbrake (drift) |
 | M | Mute audio |
-| Esc | Back to menu |
+| Esc | Pause race / back in menus |
+
+Controls can be rebound from **Settings / Controls**. Gamepads use the left stick for steering, triggers/stick for throttle and brake, face buttons for weapons/handbrake, right shoulder for turbo, and Start for pause.
 
 ## Publishing (itch.io)
 

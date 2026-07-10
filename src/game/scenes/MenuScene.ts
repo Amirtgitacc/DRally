@@ -1,121 +1,108 @@
 import Phaser from 'phaser'
-import { GAME_WIDTH, GAME_HEIGHT } from '../../config/game'
-import { carById } from '../../data/cars'
-import { hasSavedCareer, loadCareer, resetCareer } from '../state/saveGame'
+import { GAME_HEIGHT, GAME_WIDTH } from '../../config/game'
 import { playerRank } from '../../core/progression/ladder'
+import { carById } from '../../data/cars'
 import { audioBus } from '../systems/audio'
+import { hasSavedCareer, readCareer } from '../state/saveGame'
+import { loadSettings } from '../state/settings'
+import { C, STROKE } from '../ui/theme'
+import { flavor, heading, text, tile, type TileHandle } from '../ui/widgets'
+
+interface MenuItem {
+  label: string
+  scene: string
+  data?: object
+  needsCareer?: boolean
+}
+
+const ITEMS: MenuItem[] = [
+  { label: 'CONTINUE CAREER', scene: 'Garage', needsCareer: true },
+  { label: 'NEW CAREER', scene: 'Profile', data: { replace: true } },
+  { label: 'VENUES', scene: 'Venues' },
+  { label: 'CHAMPIONSHIP LADDER', scene: 'Ranking', needsCareer: true },
+  { label: 'HALL OF FAME', scene: 'HallOfFame', needsCareer: true },
+  { label: 'SETTINGS / CONTROLS', scene: 'Settings' },
+  { label: 'CREDITS', scene: 'Credits' },
+  { label: 'PREVIEW / DEMO', scene: 'Preview' },
+]
 
 export class MenuScene extends Phaser.Scene {
-  private careerText!: Phaser.GameObjects.Text
+  private selected = 0
+  private handles: TileHandle[] = []
+  private saved = false
 
   constructor() {
     super('Menu')
   }
 
   create() {
-    const cx = GAME_WIDTH / 2
-
-    // drifting haze behind everything
-    this.add.particles(0, 0, 'smoke', {
-      x: { min: 0, max: GAME_WIDTH },
-      y: { min: 0, max: GAME_HEIGHT },
-      speedX: { min: 8, max: 30 },
-      speedY: { min: -4, max: 4 },
-      scale: { start: 1.6, end: 2.6 },
-      alpha: { start: 0.05, end: 0 },
-      lifespan: 9000,
-      frequency: 400,
-      tint: 0x2a2a3a,
-    })
-
-    const title = this.add
-      .text(cx, GAME_HEIGHT * 0.3, 'DEATHRALLY', {
-        fontFamily: 'monospace',
-        fontSize: '84px',
-        color: '#f2a33c',
-        stroke: '#000000',
-        strokeThickness: 10,
-      })
-      .setOrigin(0.5)
-    if (this.game.renderer.type === Phaser.WEBGL) {
-      title.postFX.addGlow(0xf2a33c, 3, 0, false, 0.1, 18)
-    }
-
-    // player's current car cruising under the title
-    const carSprite = this.add
-      .image(cx, GAME_HEIGHT * 0.87, `car-${loadCareer().carId}`)
-      .setScale(1.8)
-      .setAngle(-90)
-    this.tweens.add({ targets: carSprite, y: '-=10', duration: 1400, yoyo: true, repeat: -1, ease: 'sine.inout' })
-
-    this.add
-      .text(cx, GAME_HEIGHT * 0.44, 'dev build — working title', {
-        fontFamily: 'monospace',
-        fontSize: '18px',
-        color: '#8888a0',
-      })
-      .setOrigin(0.5)
-
-    this.careerText = this.add
-      .text(cx, GAME_HEIGHT * 0.55, '', {
-        fontFamily: 'monospace',
-        fontSize: '22px',
-        color: '#9aa0ac',
-      })
-      .setOrigin(0.5)
-    this.refreshCareerLine()
-
-    const prompt = this.add
-      .text(cx, GAME_HEIGHT * 0.66, 'ENTER: GARAGE & RACE', {
-        fontFamily: 'monospace',
-        fontSize: '28px',
-        color: '#e8e8f0',
-      })
-      .setOrigin(0.5)
-    this.tweens.add({ targets: prompt, alpha: 0.25, duration: 700, yoyo: true, repeat: -1 })
-
-    this.add
-      .text(cx, GAME_HEIGHT * 0.72, 'V: venues · L: ladder', {
-        fontFamily: 'monospace',
-        fontSize: '20px',
-        color: '#9aa0ac',
-      })
-      .setOrigin(0.5)
-
-    this.add
-      .text(cx, GAME_HEIGHT * 0.78, 'N: new career (wipes save)', {
-        fontFamily: 'monospace',
-        fontSize: '18px',
-        color: '#70707e',
-      })
-      .setOrigin(0.5)
-
-    const kb = this.input.keyboard!
-    kb.once('keydown', () => audioBus.unlock()) // browser audio needs a user gesture
-    kb.once('keydown-ENTER', () => this.scene.start('Garage'))
-    kb.on('keydown-V', () => this.scene.start('Venues'))
-    kb.on('keydown-L', () => this.scene.start('Ranking'))
-    kb.on('keydown-N', () => {
-      resetCareer()
-      this.refreshCareerLine()
-    })
-    this.events.on('shutdown', () => {
-      kb.off('keydown-N')
-      kb.off('keydown-V')
-      kb.off('keydown-L')
-    })
-  }
-
-  private refreshCareerLine() {
-    if (!hasSavedCareer()) {
-      this.careerText.setText('New driver — the Jackal and $500 await.')
+    audioBus.applySettings(loadSettings())
+    const career = readCareer()
+    this.saved = hasSavedCareer() && career !== null
+    if (!this.saved || !career) {
+      this.scene.start('Profile', { firstLaunch: true })
       return
     }
-    const c = loadCareer()
-    const rank = c.champion ? 'CHAMPION' : `Rank #${playerRank(c.ladder, c.points)}`
-    this.careerText.setText(
-      `${rank} · ${carById(c.carId).name} · $${c.cash} · ${c.points} pts · ${c.wins} wins in ${c.racesRun} races`,
-    )
-    this.careerText.setColor(c.champion ? '#c9a227' : '#9aa0ac')
+    this.selected = 0
+    this.handles = []
+    const cx = GAME_WIDTH / 2
+
+    this.add.particles(0, 0, 'smoke', {
+      x: { min: 0, max: GAME_WIDTH }, y: { min: 0, max: GAME_HEIGHT },
+      speedX: { min: 8, max: 30 }, speedY: { min: -4, max: 4 },
+      scale: { start: 1.6, end: 2.6 }, alpha: { start: 0.05, end: 0 },
+      lifespan: 9000, frequency: 400, tint: 0x2a2a3a,
+    })
+
+    heading(this, cx, 105, 'DEATHRALLY', { size: 'hero', strokeThickness: STROKE.hero, glow: true })
+    flavor(this, cx, 170, 'working title · original combat racing')
+
+    const car = this.add.image(490, 405, `car-${career.carId}`).setScale(2.5).setAngle(-90).setTint(career.profile.liveryColor)
+    this.tweens.add({ targets: car, y: '-=10', duration: 1400, yoyo: true, repeat: -1, ease: 'sine.inout' })
+    const rank = career.champion ? 'CHAMPION' : `Rank #${playerRank(career.ladder, career.points)}`
+    text(this, 490, 570, [career.profile.driverName, `${rank} · ${carById(career.carId).name}`, `$${career.cash} · ${career.points} pts`, `${career.wins} wins / ${career.racesRun} starts`].join('\n'), {
+      size: 'bodyLg', align: 'center', lineSpacing: 10, origin: [0.5, 0], color: career.champion ? C.gold : C.textBody,
+    })
+
+    ITEMS.forEach((item, i) => {
+      const y = 250 + i * 88
+      this.handles.push(tile(this, 1230, y, 720, 68, item.label, { size: 'action', accent: i === 0 ? C.amberDim : undefined }))
+    })
+    flavor(this, cx, GAME_HEIGHT - 42, '↑/↓ navigate · Enter select · V venues · L ladder · N new career')
+
+    const kb = this.input.keyboard!
+    const up = () => this.move(-1)
+    const down = () => this.move(1)
+    const enter = () => this.activate()
+    const venues = () => this.scene.start('Venues')
+    const ladder = () => this.scene.start('Ranking')
+    const fresh = () => this.scene.start('Profile', { replace: true })
+    kb.once('keydown', () => audioBus.unlock())
+    kb.on('keydown-UP', up)
+    kb.on('keydown-DOWN', down)
+    kb.on('keydown-ENTER', enter)
+    kb.on('keydown-V', venues)
+    kb.on('keydown-L', ladder)
+    kb.on('keydown-N', fresh)
+    this.events.once('shutdown', () => {
+      kb.off('keydown-UP', up); kb.off('keydown-DOWN', down); kb.off('keydown-ENTER', enter)
+      kb.off('keydown-V', venues); kb.off('keydown-L', ladder); kb.off('keydown-N', fresh)
+    })
+    this.refresh()
+  }
+
+  private move(delta: number) {
+    this.selected = (this.selected + delta + ITEMS.length) % ITEMS.length
+    this.refresh()
+  }
+
+  private refresh() {
+    ITEMS.forEach((item, i) => this.handles[i].setState(i === this.selected, !item.needsCareer || this.saved))
+  }
+
+  private activate() {
+    const item = ITEMS[this.selected]
+    if (item.needsCareer && !this.saved) return
+    this.scene.start(item.scene, item.data)
   }
 }

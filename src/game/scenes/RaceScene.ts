@@ -33,7 +33,7 @@ import {
   currentLap,
   nextGateIndex,
 } from '../../core/race/progress'
-import { computePlacements, ordinal, type PlacementEntry } from '../../core/race/placement'
+import { ordinal } from '../../core/race/placement'
 import { applyDamage, impactDamage, repairDamage } from '../../core/combat/damage'
 import { layoutPickups, type PickupType } from '../../core/track/pickups'
 import { aiDrive, lookAheadFor, wrapAngle, type AiTuning } from '../../core/ai/driver'
@@ -55,7 +55,7 @@ import { buildRacingLine } from '../../core/track/racingLine'
 import { mineBlast } from '../../core/combat/blast'
 import { formatTime } from '../../core/race/format'
 import { armorResistance, effectiveCarSpec } from '../../core/vehicle/carSpec'
-import { applyRaceOutcome, type CareerState } from '../../core/progression/career'
+import { applyAbandonOutcome, applyRaceOutcome, updateTrackRecord, type CareerState } from '../../core/progression/career'
 import { applyDuelOutcome } from '../../core/progression/duel'
 import { rewardFor } from '../../core/economy/rewards'
 import { settleLoanAfterRace } from '../../core/economy/blackMarket'
@@ -94,6 +94,14 @@ import {
 } from '../../data/weapons'
 import type { TrackDef } from '../../data/tracks/testCircuit'
 import type { RaceResults } from './ResultsScene'
+import { C, STROKE, hex } from '../ui/theme'
+import { damageColor, heading, hintBar, plate, statBar, text } from '../ui/widgets'
+import { InputManager } from '../input/inputManager'
+import { loadSettings, saveSettings, type SettingsState } from '../state/settings'
+import { createSeededRandom, randomSeed } from '../../core/race/random'
+import type { RacePhase } from '../race/raceRuntime'
+import { simulationDeltaSeconds } from '../race/raceSimulation'
+import { racePlacements } from '../race/placementSystem'
 
 const CAR_SCALE = 0.75
 const CAR_RADIUS = 34
@@ -102,8 +110,6 @@ const TIRE_RADIUS = 24
 const MPH_PER_PX = 0.14
 const OFF_TRACK_DRAG = 1.4
 const AVOID_RANGE = 150
-
-type RacePhase = 'countdown' | 'racing' | 'finished'
 
 interface CarUnit {
   id: string
@@ -228,6 +234,13 @@ export class RaceScene extends Phaser.Scene {
   private playerTurboActive = false
   /** wall-clock deadline for the crash time-dilation */
   private slowMoUntil = 0
+  private random: () => number = Math.random
+  private raceSeed = 0
+  private settings!: SettingsState
+  private inputManager!: InputManager
+  private fireToggled = false
+  private turboToggled = false
+  private resultCommitted = false
 
   private skidRT!: Phaser.GameObjects.RenderTexture
   private skidStamp!: Phaser.GameObjects.Image
@@ -257,8 +270,6 @@ export class RaceScene extends Phaser.Scene {
   /** wall clock for __step(), the debug-only manual game loop */
   private stepClock = 0
 
-  private cursors!: Phaser.Types.Input.Keyboard.CursorKeys
-  private keys!: Record<'W' | 'A' | 'S' | 'D' | 'SPACE' | 'X' | 'SHIFT' | 'C', Phaser.Input.Keyboard.Key>
   private autoInput: DriveOverride | null = null
   /** debug-only: drive the player with the AI, to measure difficulty */
   private autoPilot: { fire: boolean; turbo: boolean; mines: boolean } | null = null
@@ -278,8 +289,12 @@ export class RaceScene extends Phaser.Scene {
     this.standingsTexts = []
     this.trapUntil = 0
     this.allRivalsDoneAt = null
+    this.resultCommitted = false
+    this.fireToggled = false
+    this.turboToggled = false
 
     this.career = loadCareer()
+    this.settings = loadSettings()
     this.playerSpec = effectiveCarSpec(carById(this.career.carId), this.career.upgrades)
 
     // the accepted sign-up offer decides track and grid; fall back to a
@@ -288,13 +303,16 @@ export class RaceScene extends Phaser.Scene {
     if (!offer) {
       offer = {
         track: TRACKS_BY_TIER.pro[0],
-        rivalIds: pickRivals('pro', Math.random),
+        rivalIds: pickRivals('pro', this.random),
+        seed: randomSeed(),
       }
       setCurrentOffer(offer)
     }
     this.track = offer.track
     this.rivalIds = offer.rivalIds
     this.isDuel = offer.duel === true
+    this.raceSeed = offer.seed ?? randomSeed()
+    this.random = createSeededRandom(this.raceSeed)
     this.hasPlating = this.career.ramPlating
     this.hasOverTurbo = this.career.overTurbo
 
@@ -317,11 +335,14 @@ export class RaceScene extends Phaser.Scene {
   }
 
   update(time: number, delta: number) {
+    this.inputManager.update()
+    if (this.settings.toggleFire && this.inputManager.justDown('fire')) this.fireToggled = !this.fireToggled
+    if (this.settings.toggleTurbo && this.inputManager.justDown('turbo')) this.turboToggled = !this.turboToggled
     // a heavy crash dilates time for a moment — the whole sim lurches
     const dilation = time < this.slowMoUntil ? IMPACT_FX.crashSlowMoScale : 1
-    const dt = Math.min(delta / 1000, 0.05) * dilation
+    const dt = simulationDeltaSeconds(delta, dilation)
     const locked = this.phase === 'countdown'
-    const weaponsFree = this.phase === 'racing' && time > this.raceStartAt + WEAPONS_FREE_DELAY_MS
+    const weaponsFree = this.career.profile.weaponsEnabled && this.phase === 'racing' && time > this.raceStartAt + WEAPONS_FREE_DELAY_MS
 
     for (const car of this.cars) {
       let input: CarInput = IDLE_INPUT
@@ -341,9 +362,9 @@ export class RaceScene extends Phaser.Scene {
             } else {
               const drive: DriveOverride = this.autoInput ?? this.readPlayerInput()
               input = drive
-              wantsFire = drive.fire ?? this.keys.X.isDown
-              wantsTurbo = drive.turbo ?? this.keys.SHIFT.isDown
-              if ((drive.dropMine ?? this.keys.C.isDown) && this.phase === 'racing') {
+              wantsFire = drive.fire ?? (this.settings.toggleFire ? this.fireToggled : this.inputManager.down('fire'))
+              wantsTurbo = drive.turbo ?? (this.settings.toggleTurbo ? this.turboToggled : this.inputManager.down('turbo'))
+              if ((drive.dropMine ?? this.inputManager.justDown('mine')) && this.phase === 'racing' && this.career.profile.weaponsEnabled) {
                 this.tryDropMine(car, time)
               }
             }
@@ -351,7 +372,7 @@ export class RaceScene extends Phaser.Scene {
         } else {
           input = this.computeAiInput(car)
           const combat = this.computeAiCombat(car, time)
-          wantsFire = combat.fire
+          wantsFire = combat.fire && this.career.profile.weaponsEnabled
           wantsTurbo = combat.turbo
         }
       }
@@ -415,15 +436,14 @@ export class RaceScene extends Phaser.Scene {
     if (this.allRivalsDoneAt === null) {
       this.allRivalsDoneAt = now
       if (!this.rivalsDoneToast) {
-        this.rivalsDoneToast = this.add
-          .text(this.scale.width / 2, 320, '', {
-            fontFamily: 'monospace',
-            fontSize: '30px',
-            color: '#d23c2f',
-            stroke: '#000000',
-            strokeThickness: 6,
-          })
-          .setOrigin(0.5)
+        this.rivalsDoneToast = text(this, this.scale.width / 2, 320, '', {
+          size: 'subtitle',
+          color: C.danger,
+          stroke: C.shadow,
+          strokeThickness: STROKE.heading,
+          origin: [0.5, 0.5],
+        })
+        // must join the container, or the HUD camera never draws it (D-011)
         this.hudContainer.add(this.rivalsDoneToast)
       }
     }
@@ -508,7 +528,7 @@ export class RaceScene extends Phaser.Scene {
     this.explosionSmoke.explode(16, mine.x, mine.y)
     this.hitSparks.explode(8, mine.x, mine.y)
     this.blastEffects(mine.x, mine.y, 1)
-    this.scorchStamp.setPosition(mine.x, mine.y).setRotation(Math.random() * Math.PI)
+    this.scorchStamp.setPosition(mine.x, mine.y).setRotation(this.random() * Math.PI)
     this.skidRT.draw(this.scorchStamp)
 
     const tuning = {
@@ -523,7 +543,7 @@ export class RaceScene extends Phaser.Scene {
         { x: car.state.x, y: car.state.y, mass: car.mass, direct: car === triggered },
         mine,
         tuning,
-        Math.random,
+        this.random,
       )
       if (!impulse) continue
 
@@ -540,7 +560,7 @@ export class RaceScene extends Phaser.Scene {
     }
 
     if (Math.hypot(this.player.state.x - mine.x, this.player.state.y - mine.y) < 500) {
-      this.cameras.main.shake(200, 0.008)
+      this.shake(200, 0.008)
     }
     mine.sprite.destroy()
     mine.light.destroy()
@@ -580,7 +600,7 @@ export class RaceScene extends Phaser.Scene {
 
     const nearPlayer = car.isPlayer || Math.hypot(this.player.state.x - x, this.player.state.y - y) < 420
     if (nearPlayer) {
-      this.cameras.main.shake(160, IMPACT_FX.landingShake)
+      this.shake(160, IMPACT_FX.landingShake)
       audioBus.thud()
     }
   }
@@ -637,7 +657,7 @@ export class RaceScene extends Phaser.Scene {
 
     // talent decides how straight a rival shoots
     const spread = car.isPlayer ? GUN.playerSpread : car.ai!.aimSpread
-    const dir = car.state.heading + (Math.random() * 2 - 1) * spread
+    const dir = car.state.heading + (this.random() * 2 - 1) * spread
     const mx = car.state.x + Math.cos(car.state.heading) * GUN.muzzleOffset
     const my = car.state.y + Math.sin(car.state.heading) * GUN.muzzleOffset
 
@@ -670,7 +690,7 @@ export class RaceScene extends Phaser.Scene {
       b.x += b.vx * dt
       b.y += b.vy * dt
       b.sprite.setPosition(b.x, b.y)
-      if (Math.random() < 0.5) this.bulletTrail.emitParticleAt(b.x, b.y)
+      if (this.random() < 0.5) this.bulletTrail.emitParticleAt(b.x, b.y)
 
       let dead = b.ttl <= 0
       if (!dead) {
@@ -718,8 +738,8 @@ export class RaceScene extends Phaser.Scene {
     car.state.vy += (b.vy / bulletSpeed) * kick
 
     if (car.isPlayer) {
-      this.cameras.main.shake(60, IMPACT_FX.playerHitShake)
-      this.flashScreenEdge(0xd23c2f, IMPACT_FX.playerHitFlashAlpha)
+      this.shake(60, IMPACT_FX.playerHitShake)
+      this.flashScreenEdge(C.danger, IMPACT_FX.playerHitFlashAlpha)
     }
   }
 
@@ -732,15 +752,25 @@ export class RaceScene extends Phaser.Scene {
       // clearTint() leaves tintFill set, which would paint the car solid white
       car.sprite.tintFill = false
       if (car.wrecked) car.sprite.setTint(0x2c2c30)
+      else if (car.isPlayer) car.sprite.setTint(this.career.profile.liveryColor)
       else car.sprite.clearTint()
     })
   }
 
   /** Colour bleeds in from the screen borders, then drains away. */
   private flashScreenEdge(color: number, alpha: number) {
+    if (this.settings.reducedFlash) alpha *= 0.25
     this.tweens.killTweensOf(this.edgeFlash)
     this.edgeFlash.setTint(color).setAlpha(alpha)
     this.tweens.add({ targets: this.edgeFlash, alpha: 0, duration: 260, ease: 'quad.out' })
+  }
+
+  private shake(duration: number, intensity: number) {
+    if (!this.settings.reducedShake) this.cameras.main.shake(duration, intensity)
+  }
+
+  private cameraFlash(duration: number, red: number, green: number, blue: number) {
+    if (!this.settings.reducedFlash) this.cameras.main.flash(duration, red, green, blue)
   }
 
   private damageCar(car: CarUnit, amount: number, _source: CarUnit | null) {
@@ -762,20 +792,20 @@ export class RaceScene extends Phaser.Scene {
 
     // flying debris chunks
     for (let i = 0; i < 8; i++) {
-      const angle = Math.random() * Math.PI * 2
-      const dist = 60 + Math.random() * 130
+      const angle = this.random() * Math.PI * 2
+      const dist = 60 + this.random() * 130
       const piece = this.add
         .image(car.state.x, car.state.y, 'debris')
-        .setRotation(Math.random() * Math.PI * 2)
+        .setRotation(this.random() * Math.PI * 2)
         .setDepth(6.9)
       this.cameras.cameras[1]?.ignore(piece)
       this.tweens.add({
         targets: piece,
         x: car.state.x + Math.cos(angle) * dist,
         y: car.state.y + Math.sin(angle) * dist,
-        rotation: piece.rotation + (Math.random() - 0.5) * 10,
+        rotation: piece.rotation + (this.random() - 0.5) * 10,
         alpha: 0.25,
-        duration: 500 + Math.random() * 300,
+        duration: 500 + this.random() * 300,
         ease: 'cubic.out',
       })
     }
@@ -794,12 +824,12 @@ export class RaceScene extends Phaser.Scene {
       .setBlendMode(Phaser.BlendModes.ADD)
     this.cameras.cameras[1]?.ignore(flash)
     this.tweens.add({ targets: flash, alpha: 0, scale: 1.2, duration: 320, onComplete: () => flash.destroy() })
-    this.scorchStamp.setPosition(car.state.x, car.state.y).setRotation(Math.random() * Math.PI)
+    this.scorchStamp.setPosition(car.state.x, car.state.y).setRotation(this.random() * Math.PI)
     this.skidRT.draw(this.scorchStamp)
     car.sprite.setTint(0x2c2c30)
     car.shadow.setAlpha(0.2)
     car.damageSmoke.frequency = 30
-    this.cameras.main.shake(260, 0.008)
+    this.shake(260, 0.008)
 
     if (car.isPlayer) {
       this.phase = 'finished'
@@ -922,7 +952,7 @@ export class RaceScene extends Phaser.Scene {
       this.tweens.add({
         targets: sprite,
         scale: 1.12,
-        duration: 600 + Math.random() * 300,
+        duration: 600 + this.random() * 300,
         yoyo: true,
         repeat: -1,
         ease: 'sine.inout',
@@ -971,12 +1001,12 @@ export class RaceScene extends Phaser.Scene {
         break
     }
     if (car.isPlayer) {
-      const toasts: Record<PickupType, [string, string]> = {
-        ammo: [`+${PICKUPS.ammoAmount} AMMO`, '#ffd75e'],
-        turbo: ['TURBO FULL', '#4fc3f7'],
-        repair: [`-${PICKUPS.repairAmount}% DMG`, '#7fe0a8'],
-        cash: [`+$${PICKUPS.cashAmount}`, '#7fe0a8'],
-        trap: ['TRAPPED!', '#d68cff'],
+      const toasts: Record<PickupType, [string, number]> = {
+        ammo: [`+${PICKUPS.ammoAmount} AMMO`, C.ammo],
+        turbo: ['TURBO FULL', C.turbo],
+        repair: [`-${PICKUPS.repairAmount}% DMG`, C.money],
+        cash: [`+$${PICKUPS.cashAmount}`, C.money],
+        trap: ['TRAPPED!', 0xd68cff],
       }
       this.spawnToast(p.x, p.y, ...toasts[p.type])
     }
@@ -1133,9 +1163,11 @@ export class RaceScene extends Phaser.Scene {
     }
 
     const playerCar = carById(this.career.carId)
-    const player = makeUnit(0, 'player', 'You', playerCar.bodyColor, `car-${playerCar.id}`, null)
+    const player = makeUnit(0, 'player', this.career.profile.driverName, this.career.profile.liveryColor, `car-${playerCar.id}`, null)
+    player.sprite.setTint(this.career.profile.liveryColor)
     player.damage = this.career.damage // persistent damage carries into the race
-    player.mines = this.career.mines // one-race consumable bought in the garage
+    player.mines = this.career.profile.weaponsEnabled ? this.career.mines : 0
+    player.ammo = this.career.profile.weaponsEnabled ? GUN.ammoMax : 0
     player.mass = playerCar.mass
     if (this.hasOverTurbo) {
       // the volatile mix burns red and angry
@@ -1152,7 +1184,7 @@ export class RaceScene extends Phaser.Scene {
       const boss = makeUnit(1, BOSS.id, BOSS.name, BOSS.bodyColor, `car-${BOSS.id}`, {
         lineIdx: 0,
         lookAheadSamples: style.lookAheadSamples,
-        speedScale: BOSS.paceScale,
+        speedScale: BOSS.paceScale * this.difficultyPaceScale(),
         tuning: talentTuning(style.tuning, talent),
         spec: BOSS.spec,
         talent,
@@ -1177,7 +1209,7 @@ export class RaceScene extends Phaser.Scene {
         const rival = makeUnit(i + 1, id, driver.name, driver.bodyColor, `car-${id}-${chassis.variant}`, {
           lineIdx: 0,
           lookAheadSamples: style.lookAheadSamples,
-          speedScale: talentPace(rivalStrength(rank), talent),
+          speedScale: talentPace(rivalStrength(rank), talent) * this.difficultyPaceScale(),
           tuning: talentTuning(style.tuning, talent),
           spec: effectiveCarSpec(chassis, upgrades),
           talent,
@@ -1186,7 +1218,8 @@ export class RaceScene extends Phaser.Scene {
           rubberBandGain: talentRubberBand(RUBBER_BAND.gainPerGate, talent),
         })
         rival.mass = chassis.mass
-        rival.mines = talentMineCount(AI_MINES.count[this.track.tier], talent)
+        rival.mines = this.career.profile.weaponsEnabled ? talentMineCount(AI_MINES.count[this.track.tier], talent) : 0
+        rival.ammo = this.career.profile.weaponsEnabled ? GUN.ammoMax : 0
         rival.chassisId = chassis.id
         rival.armorTier = upgrades.armor
         this.cars.push(rival)
@@ -1215,6 +1248,12 @@ export class RaceScene extends Phaser.Scene {
       })
       car.ai.lineIdx = best
     }
+  }
+
+  private difficultyPaceScale(): number {
+    if (this.career.profile.difficulty === 'street') return 0.94
+    if (this.career.profile.difficulty === 'hard') return 1.06
+    return 1
   }
 
   private computeAiInput(car: CarUnit): CarInput {
@@ -1337,7 +1376,20 @@ export class RaceScene extends Phaser.Scene {
     }
   }
 
-  private transitionToResults(now: number, playerWrecked: boolean) {
+  /** Called only by the pause overlay after the player confirms the destructive action. */
+  public abandonRace() {
+    if (this.resultCommitted) return
+    this.phase = 'finished'
+    this.transitionToResults(this.time.now, false, true)
+  }
+
+  public resumeRaceAudio() {
+    if (this.phase === 'racing') audioBus.engineStart()
+  }
+
+  private transitionToResults(now: number, playerWrecked: boolean, abandoned = false) {
+    if (this.resultCommitted) return
+    this.resultCommitted = true
     this.updatePlacements()
     const standings = this.placementOrder.map((id) => {
       const car = this.cars.find((c) => c.id === id)!
@@ -1346,14 +1398,17 @@ export class RaceScene extends Phaser.Scene {
         isPlayer: car.isPlayer,
         timeMs: car.finishedAt !== null ? car.finishedAt - this.raceStartAt : null,
         wrecked: car.wrecked,
+        dnf: car.isPlayer && abandoned,
       }
     })
     const player = this.player
     const playerPosition = this.placementOrder.indexOf('player') + 1
-    const won = playerPosition === 1 && !playerWrecked
-    const reward = this.isDuel ? { cash: 0, points: 0 } : rewardFor(this.track.tier, playerPosition, playerWrecked)
+    const won = playerPosition === 1 && !playerWrecked && !abandoned
+    const reward = this.isDuel || abandoned ? { cash: 0, points: 0 } : rewardFor(this.track.tier, playerPosition, playerWrecked)
 
-    if (this.isDuel) {
+    if (abandoned) {
+      this.career = applyAbandonOutcome(this.career, player.damage)
+    } else if (this.isDuel) {
       // the duel sits outside the championship: purse and crown, no points,
       // no background races
       this.career = applyDuelOutcome(this.career, {
@@ -1376,16 +1431,32 @@ export class RaceScene extends Phaser.Scene {
         .map((id, i) => ({ id, placement: i + 1, wrecked: this.cars.find((c) => c.id === id)!.wrecked }))
         .filter((r) => r.id !== 'player')
       let ladder = applyRaceLadderResults(this.career.ladder, this.track.tier, rivalPlacements)
-      ladder = simulateRound(ladder, this.track.tier, this.rivalIds, Math.random)
+      ladder = simulateRound(ladder, this.track.tier, this.rivalIds, this.random)
       this.career = { ...this.career, ladder }
     }
+
+    const oldRecord = this.career.records[this.track.id]
+    if (!abandoned) {
+      this.career = updateTrackRecord(this.career, {
+        trackId: this.track.id,
+        bestLapMs: player.lapTimes.length ? Math.min(...player.lapTimes) : null,
+        raceTimeMs: player.finishedAt === null ? null : player.finishedAt - this.raceStartAt,
+        finish: player.finishedAt === null || playerWrecked ? null : playerPosition,
+        won,
+      })
+    }
+    const newRecord = this.career.records[this.track.id]
+    const newRecords: string[] = []
+    if (newRecord?.bestLapMs !== null && newRecord?.bestLapMs !== oldRecord?.bestLapMs) newRecords.push('BEST LAP')
+    if (newRecord?.bestRaceMs !== null && newRecord?.bestRaceMs !== oldRecord?.bestRaceMs) newRecords.push('BEST RACE')
+    if (newRecord?.bestFinish !== null && newRecord?.bestFinish !== oldRecord?.bestFinish) newRecords.push('BEST FINISH')
 
     // the loanshark's clock ticks on every race, duel included
     const settled = settleLoanAfterRace(this.career)
     this.career = settled.career
     saveCareer(this.career)
 
-    if (this.isDuel && won) {
+    if (this.isDuel && won && !abandoned) {
       this.scene.start('Champion')
       return
     }
@@ -1399,7 +1470,9 @@ export class RaceScene extends Phaser.Scene {
     }
 
     const results: RaceResults = {
+      trackId: this.track.id,
       trackName: this.track.name,
+      driverName: this.career.profile.driverName,
       laps: this.track.laps,
       totalMs: (player.finishedAt ?? now) - this.raceStartAt,
       bestLapMs: player.lapTimes.length > 0 ? Math.min(...player.lapTimes) : null,
@@ -1407,42 +1480,31 @@ export class RaceScene extends Phaser.Scene {
       standings,
       playerPosition,
       playerWrecked,
-      cashCollected: player.cash,
+      abandoned,
+      cashCollected: abandoned ? 0 : player.cash,
       prizeCash: this.isDuel ? 0 : reward.cash,
       pointsEarned: this.isDuel ? 0 : reward.points,
       careerCash: this.career.cash,
       duelLost: this.isDuel,
       loanNote: loanNotes[settled.event],
+      newRecords,
+      seed: this.raceSeed,
     }
     this.scene.start('Results', results)
   }
 
   private updatePlacements() {
-    const entries: PlacementEntry[] = this.cars.map((car) => {
-      const gate = this.gates[nextGateIndex(car.progress)]
-      return {
-        id: car.id,
-        gatesPassed: car.progress.gatesPassed,
-        distToNextGate: Math.hypot(gate.center.x - car.state.x, gate.center.y - car.state.y),
-        finishedAtMs: car.finishedAt,
-        wrecked: car.wrecked,
-      }
-    })
-    this.placementOrder = computePlacements(entries)
+    this.placementOrder = racePlacements(this.cars, this.gates)
   }
 
   private startCountdown() {
     const cx = this.scale.width / 2
     this.lightsGfx = this.add.graphics()
-    this.countdownText = this.add
-      .text(cx, 250, '', {
-        fontFamily: 'monospace',
-        fontSize: '96px',
-        color: '#e8e8f0',
-        stroke: '#000000',
-        strokeThickness: 10,
-      })
-      .setOrigin(0.5)
+    this.countdownText = heading(this, cx, 250, '', {
+      size: 'hero',
+      color: C.textPrimary,
+      strokeThickness: STROKE.hero,
+    })
     this.hudContainer.add([this.lightsGfx, this.countdownText])
 
     const drawLights = (lit: number, green: boolean) => {
@@ -1494,12 +1556,10 @@ export class RaceScene extends Phaser.Scene {
 
   private readPlayerInput(): CarInput {
     return {
-      throttle: this.cursors.up.isDown || this.keys.W.isDown ? 1 : 0,
-      brake: this.cursors.down.isDown || this.keys.S.isDown ? 1 : 0,
-      steer:
-        (this.cursors.right.isDown || this.keys.D.isDown ? 1 : 0) -
-        (this.cursors.left.isDown || this.keys.A.isDown ? 1 : 0),
-      handbrake: this.cursors.space.isDown || this.keys.SPACE.isDown,
+      throttle: this.inputManager.down('accelerate') ? 1 : 0,
+      brake: this.inputManager.down('brake') ? 1 : 0,
+      steer: (this.inputManager.down('steerRight') ? 1 : 0) - (this.inputManager.down('steerLeft') ? 1 : 0),
+      handbrake: this.inputManager.down('handbrake'),
     }
   }
 
@@ -1535,7 +1595,7 @@ export class RaceScene extends Phaser.Scene {
     car.state = { ...car.state, ...pose, ...GROUNDED, vx: 0, vy: 0 }
     car.prevPos = { x: pose.x, y: pose.y }
     this.syncCarVisuals(car)
-    if (car.isPlayer) this.cameras.main.flash(160, 40, 40, 50)
+    if (car.isPlayer) this.cameraFlash(160, 40, 40, 50)
   }
 
   private resolveBarrierCollisions(car: CarUnit) {
@@ -1563,7 +1623,7 @@ export class RaceScene extends Phaser.Scene {
             this.damageCar(car, impactDamage(impact, WALL_DAMAGE), null)
           }
           if (car.isPlayer && impact > 160) {
-            this.cameras.main.shake(90, Math.min(0.006, impact / 60000))
+            this.shake(90, Math.min(0.006, impact / 60000))
           }
         }
       }
@@ -1628,7 +1688,7 @@ export class RaceScene extends Phaser.Scene {
             this.flashCar(carB)
           }
           if ((carA.isPlayer || carB.isPlayer) && rel > 180) {
-            this.cameras.main.shake(70 + Math.min(140, rel / 6), Math.min(IMPACT_FX.crashMaxShake, rel / 45000))
+            this.shake(70 + Math.min(140, rel / 6), Math.min(IMPACT_FX.crashMaxShake, rel / 45000))
           }
           // a real crunch stops the world for a moment
           if (rel > IMPACT_FX.crashSlowMoImpact && (carA.isPlayer || carB.isPlayer)) {
@@ -1819,17 +1879,14 @@ export class RaceScene extends Phaser.Scene {
   }
 
   /** Short-lived floating text in world space (pickup feedback). */
-  private spawnToast(x: number, y: number, message: string, color: string) {
-    const toast = this.add
-      .text(x, y - 30, message, {
-        fontFamily: 'monospace',
-        fontSize: '26px',
-        color,
-        stroke: '#000000',
-        strokeThickness: 5,
-      })
-      .setOrigin(0.5)
-      .setDepth(8)
+  private spawnToast(x: number, y: number, message: string, color: number) {
+    const toast = text(this, x, y - 30, message, {
+      size: 'bodyLg',
+      color,
+      stroke: C.shadow,
+      strokeThickness: 5,
+      origin: [0.5, 0.5],
+    }).setDepth(8)
     this.cameras.cameras[1]?.ignore(toast)
     this.tweens.add({
       targets: toast,
@@ -1875,17 +1932,17 @@ export class RaceScene extends Phaser.Scene {
     car.flameCone.setVisible(boosting)
     car.turboGlow.setVisible(boosting)
     if (boosting) {
-      const flicker = 0.85 + Math.random() * 0.3
+      const flicker = 0.85 + this.random() * 0.3
       const overcharged = car.isPlayer && this.hasOverTurbo
       car.flameCone
         .setPosition(car.state.x - 40 * cos, car.state.y - 40 * sin)
         .setRotation(car.state.heading)
         .setScale((overcharged ? 1.35 : 1) * flicker, (overcharged ? 1.2 : 1) * flicker)
-        .setAlpha(0.55 + 0.35 * Math.random())
+        .setAlpha(0.55 + 0.35 * this.random())
       car.turboGlow
         .setPosition(car.state.x - 52 * cos, car.state.y - 52 * sin)
         .setScale((overcharged ? 1.15 : 0.85) * flicker)
-        .setAlpha(0.3 + 0.15 * Math.random())
+        .setAlpha(0.3 + 0.15 * this.random())
     }
 
     // headlight throw + taillights with brake flare
@@ -1909,9 +1966,9 @@ export class RaceScene extends Phaser.Scene {
     // burning wreck flicker
     if (car.wrecked && car.fireGlow) {
       car.fireGlow
-        .setPosition(car.state.x + (Math.random() - 0.5) * 8, car.state.y + (Math.random() - 0.5) * 8)
-        .setAlpha(0.18 + Math.random() * 0.22)
-        .setScale(0.45 + Math.random() * 0.18)
+        .setPosition(car.state.x + (this.random() - 0.5) * 8, car.state.y + (this.random() - 0.5) * 8)
+        .setAlpha(0.18 + this.random() * 0.22)
+        .setScale(0.45 + this.random() * 0.18)
     }
 
     car.damageSmoke.setPosition(car.state.x + 10 * cos, car.state.y + 10 * sin)
@@ -1955,8 +2012,8 @@ export class RaceScene extends Phaser.Scene {
     let jitterY = 0
     if (boosting) {
       const amp = TURBO_FX.jitter * (overcharged ? TURBO_FX.overchargeJitterScale : 1) * speedRatio
-      jitterX = (Math.random() - 0.5) * amp
-      jitterY = (Math.random() - 0.5) * amp
+      jitterX = (this.random() - 0.5) * amp
+      jitterY = (this.random() - 0.5) * amp
     }
     cam.setFollowOffset(-this.lookAheadX + jitterX, -this.lookAheadY + jitterY)
     this.updateSpeedStreaks(boosting, speedRatio, overcharged)
@@ -1985,13 +2042,13 @@ export class RaceScene extends Phaser.Scene {
     const cy = h / 2
 
     for (let i = 0; i < TURBO_FX.streakCount; i++) {
-      const angle = Math.random() * Math.PI * 2
+      const angle = this.random() * Math.PI * 2
       // ride an ellipse just outside the action, so the car stays unobscured
-      const t = 0.72 + Math.random() * 0.3
+      const t = 0.72 + this.random() * 0.3
       const sx = cx + Math.cos(angle) * cx * t
       const sy = cy + Math.sin(angle) * cy * t
-      const len = 50 + Math.random() * 150 * intensity
-      this.speedStreaks.lineStyle(2 + Math.random() * 2, color, 0.12 + 0.38 * intensity * Math.random())
+      const len = 50 + this.random() * 150 * intensity
+      this.speedStreaks.lineStyle(2 + this.random() * 2, color, 0.12 + 0.38 * intensity * this.random())
       this.speedStreaks.lineBetween(sx, sy, sx + Math.cos(angle) * len, sy + Math.sin(angle) * len)
     }
   }
@@ -2011,15 +2068,34 @@ export class RaceScene extends Phaser.Scene {
   }
 
   private setupInput() {
-    this.cursors = this.input.keyboard!.createCursorKeys()
-    this.keys = this.input.keyboard!.addKeys('W,A,S,D,SPACE,X,SHIFT,C') as RaceScene['keys']
-    this.input.keyboard!.on('keydown-ESC', () => this.scene.start('Menu'))
-    this.input.keyboard!.on('keydown-M', () => audioBus.toggleMute())
-    this.events.on('shutdown', () => {
+    this.inputManager = new InputManager(this)
+    const onKey = (event: KeyboardEvent) => {
+      if (this.inputManager.matches('pause', event.code) && this.phase !== 'finished' && !this.scene.isPaused()) {
+        this.openPause()
+      } else if (this.inputManager.matches('mute', event.code)) {
+        this.settings.muted = !this.settings.muted
+        saveSettings(this.settings)
+        audioBus.applySettings(this.settings)
+      }
+    }
+    this.input.keyboard?.on('keydown', onKey)
+    this.events.once('shutdown', () => {
       audioBus.engineStop()
-      this.input.keyboard?.off('keydown-ESC')
-      this.input.keyboard?.off('keydown-M')
+      this.input.keyboard?.off('keydown', onKey)
     })
+  }
+
+  private openPause() {
+    audioBus.engineStop()
+    const position = this.placementOrder.indexOf('player') + 1
+    this.scene.launch('RacePause', {
+      trackName: this.track.name,
+      lap: currentLap(this.player.progress),
+      laps: this.track.laps,
+      position,
+      weaponsFree: this.career.profile.weaponsEnabled && this.time.now > this.raceStartAt + WEAPONS_FREE_DELAY_MS,
+    })
+    this.scene.pause()
   }
 
   // ---------------------------------------------------------------- HUD
@@ -2034,107 +2110,78 @@ export class RaceScene extends Phaser.Scene {
       .setAlpha(0)
 
     const plates = this.add.graphics()
-    // status-bar plate (bottom-left)
-    plates.fillStyle(0x0a0a10, 0.65)
-    plates.fillRoundedRect(14, this.scale.height - 172, 300, 156, 10)
-    plates.lineStyle(2, 0xf2a33c, 0.35)
-    plates.strokeRoundedRect(14, this.scale.height - 172, 300, 156, 10)
-    // standings plate (right)
-    plates.fillStyle(0x0a0a10, 0.65)
-    plates.fillRoundedRect(this.scale.width - 320, 160, 306, 138, 10)
-    plates.lineStyle(2, 0xf2a33c, 0.35)
-    plates.strokeRoundedRect(this.scale.width - 320, 160, 306, 138, 10)
+    plate(plates, 14, this.scale.height - 172, 300, 156) // status (bottom-left)
+    plate(plates, this.scale.width - 320, 160, 306, 138) // standings (right)
 
-    const hint = this.add.text(
-      16,
-      16,
-      'Arrows/WASD drive · X fire · C mine · Shift turbo · Space handbrake · M mute · Esc menu',
-      {
-        fontFamily: 'monospace',
-        fontSize: '18px',
-        color: '#e8e8f0',
-        backgroundColor: '#000000aa',
-        padding: { x: 10, y: 6 },
-      },
-    )
+    const hint = hintBar(this, 'Configured controls active · Esc pause/help · M mute')
 
+    // labels sit inline-left of each bar, as in the garage. Stacking them above
+    // each bar only fits if the label is shorter than the row gap, which it is
+    // not once a real webfont replaces the system mono.
     const barLabels = ['DMG', 'AMMO', 'TURBO'].map((label, i) =>
-      this.add.text(32, this.scale.height - 168 + i * 28, label, {
-        fontFamily: 'monospace',
-        fontSize: '13px',
-        color: '#9aa0ac',
-      }),
+      text(this, 28, this.scale.height - 152 + i * 28, label, { size: 'micro', color: C.textSecondary }),
     )
 
-    this.cashText = this.add.text(16, 62, '$0', {
-      fontFamily: 'monospace',
-      fontSize: '24px',
-      color: '#7fe0a8',
-      stroke: '#000000',
-      strokeThickness: 4,
+    this.cashText = text(this, 16, 62, '$0', {
+      size: 'action',
+      color: C.money,
+      stroke: C.shadow,
+      strokeThickness: STROKE.text,
     })
 
-    this.speedText = this.add
-      .text(28, this.scale.height - 34, '0 MPH', {
-        fontFamily: 'monospace',
-        fontSize: '42px',
-        color: '#f2a33c',
-        stroke: '#000000',
-        strokeThickness: 6,
-      })
-      .setOrigin(0, 1)
+    this.speedText = text(this, 28, this.scale.height - 34, '0 MPH', {
+      size: 'speed',
+      color: C.amber,
+      stroke: C.shadow,
+      strokeThickness: STROKE.heading,
+      origin: [0, 1],
+    })
 
     this.hudBars = this.add.graphics()
 
-    this.positionText = this.add
-      .text(this.scale.width - 28, this.scale.height - 30, '4th', {
-        fontFamily: 'monospace',
-        fontSize: '64px',
-        color: '#f2a33c',
-        stroke: '#000000',
-        strokeThickness: 8,
-      })
-      .setOrigin(1, 1)
+    this.positionText = text(this, this.scale.width - 28, this.scale.height - 30, '4th', {
+      size: 'readout',
+      color: C.amber,
+      stroke: C.shadow,
+      strokeThickness: STROKE.title,
+      origin: [1, 1],
+    })
 
     const right = this.scale.width - 28
-    this.lapText = this.add
-      .text(right, 24, `LAP 1/${this.track.laps}`, {
-        fontFamily: 'monospace',
-        fontSize: '40px',
-        color: '#e8e8f0',
-        stroke: '#000000',
-        strokeThickness: 6,
-      })
-      .setOrigin(1, 0)
-    this.timeText = this.add
-      .text(right, 78, '0:00.00', {
-        fontFamily: 'monospace',
-        fontSize: '28px',
-        color: '#9aa0ac',
-        stroke: '#000000',
-        strokeThickness: 4,
-      })
-      .setOrigin(1, 0)
-    this.bestText = this.add
-      .text(right, 116, '', {
-        fontFamily: 'monospace',
-        fontSize: '22px',
-        color: '#7fe0a8',
-        stroke: '#000000',
-        strokeThickness: 4,
-      })
-      .setOrigin(1, 0)
+    this.lapText = text(this, right, 24, `LAP 1/${this.track.laps}`, {
+      size: 'heading',
+      stroke: C.shadow,
+      strokeThickness: STROKE.heading,
+      origin: [1, 0],
+    })
+    this.timeText = text(this, right, 78, '0:00.00', {
+      size: 'bodyLg',
+      color: C.textSecondary,
+      stroke: C.shadow,
+      strokeThickness: STROKE.text,
+      origin: [1, 0],
+    })
+    this.bestText = text(this, right, 116, '', {
+      size: 'body',
+      color: C.money,
+      stroke: C.shadow,
+      strokeThickness: STROKE.text,
+      origin: [1, 0],
+    })
 
     // black-market gear fitted for this race, shown above the status plate
     const gear: string[] = []
     if (this.hasPlating) gear.push('RAM PLATING')
     if (this.hasOverTurbo) gear.push('OVERCHARGE')
-    const gearText = this.add.text(16, this.scale.height - 200, gear.join(' · '), {
-      fontFamily: 'monospace',
-      fontSize: '16px',
-      color: '#ffa030',
-      stroke: '#000000',
-      strokeThickness: 4,
+    const gearText = text(this, 16, this.scale.height - 200, gear.join(' · '), {
+      size: 'caption',
+      color: C.amberDim,
+      stroke: C.shadow,
+      strokeThickness: STROKE.text,
+    })
+
+    const identityText = text(this, 16, 94, `${this.career.profile.driverName.toUpperCase()} · WEAPONS ${this.career.profile.weaponsEnabled ? 'ON' : 'OFF'}`, {
+      size: 'caption', color: this.career.profile.liveryColor, stroke: C.shadow, strokeThickness: STROKE.text,
     })
 
     const hudChildren: Phaser.GameObjects.GameObject[] = [
@@ -2143,6 +2190,7 @@ export class RaceScene extends Phaser.Scene {
       plates,
       hint,
       gearText,
+      identityText,
       ...barLabels,
       this.cashText,
       this.speedText,
@@ -2154,14 +2202,12 @@ export class RaceScene extends Phaser.Scene {
     ]
 
     for (let i = 0; i < 4; i++) {
-      const t = this.add.text(right, 170 + i * 30, '', {
-        fontFamily: 'monospace',
-        fontSize: '20px',
-        color: '#e8e8f0',
-        stroke: '#000000',
-        strokeThickness: 4,
+      const t = text(this, right, 170 + i * 30, '', {
+        size: 'bodySm',
+        stroke: C.shadow,
+        strokeThickness: STROKE.text,
+        origin: [1, 0],
       })
-      t.setOrigin(1, 0)
       this.standingsTexts.push(t)
       hudChildren.push(t)
     }
@@ -2180,31 +2226,24 @@ export class RaceScene extends Phaser.Scene {
     }
 
     // status bars: damage / ammo / turbo (labels sit above each bar)
-    const bx = 28
+    const bx = 100 // clears the inline DMG / AMMO / TURBO labels at x=28
     const by = this.scale.height - 150
-    const bw = 272
+    const bw = 200
     const bh = 12
-    const bars: Array<[string, number, number]> = [
-      ['DMG', player.damage / 100, player.damage > 75 ? 0xd23c2f : player.damage > 40 ? 0xd0b435 : 0x3fd07f],
-      ['AMMO', player.ammo / GUN.ammoMax, 0xffd75e],
-      ['TURBO', player.turbo, 0x4fc3f7],
+    const bars: Array<[number, number]> = [
+      [player.damage / 100, damageColor(player.damage)],
+      [player.ammo / GUN.ammoMax, C.ammo],
+      [player.turbo, C.turbo],
     ]
     this.hudBars.clear()
-    bars.forEach(([label, ratio, color], i) => {
-      const y = by + i * 28
-      this.hudBars.fillStyle(0x000000, 0.55)
-      this.hudBars.fillRect(bx - 4, y - 4, bw + 8, bh + 8)
-      this.hudBars.fillStyle(0x2a2a33, 1)
-      this.hudBars.fillRect(bx, y, bw, bh)
-      this.hudBars.fillStyle(color as number, 1)
-      this.hudBars.fillRect(bx, y, bw * Phaser.Math.Clamp(ratio as number, 0, 1), bh)
-      void label
+    bars.forEach(([ratio, color], i) => {
+      statBar(this.hudBars, bx, by + i * 28, bw, bh, Phaser.Math.Clamp(ratio, 0, 1), color, { backdrop: true })
     })
     // mine stock as dots under the bars (original-style ordnance pips)
     for (let i = 0; i < player.mines; i++) {
       this.hudBars.fillStyle(0x1c1c24, 1)
       this.hudBars.fillCircle(bx + 8 + i * 22, by + 3 * 28 + 4, 7)
-      this.hudBars.fillStyle(0xd23c2f, 1)
+      this.hudBars.fillStyle(C.danger, 1)
       this.hudBars.fillCircle(bx + 8 + i * 22, by + 3 * 28 + 4, 3)
     }
 
@@ -2213,10 +2252,10 @@ export class RaceScene extends Phaser.Scene {
 
     this.placementOrder.forEach((id, i) => {
       const car = this.cars.find((c) => c.id === id)!
-      const text = this.standingsTexts[i]
+      const row = this.standingsTexts[i]
       const status = car.wrecked ? ' ✗' : car.finishedAt !== null ? ' *' : ` ${Math.round(car.damage)}%`
-      text.setText(`${i + 1}. ${car.isPlayer ? 'YOU' : car.name}${status}`)
-      text.setColor(car.isPlayer ? '#f2a33c' : `#${car.color.toString(16).padStart(6, '0')}`)
+      row.setText(`${i + 1}. ${car.name}${status}`)
+      row.setColor(hex(car.isPlayer ? C.amber : car.color))
     })
 
     if (this.debugText) {
@@ -2375,11 +2414,7 @@ export class RaceScene extends Phaser.Scene {
       this.cameras.cameras[1]?.ignore(gfx)
     }
 
-    this.debugText = this.add.text(16, 120, '', {
-      fontFamily: 'monospace',
-      fontSize: '15px',
-      color: '#7fe0a8',
-    })
+    this.debugText = text(this, 16, 120, '', { size: 'micro', color: C.money })
     this.hudContainer.add(this.debugText)
   }
 }

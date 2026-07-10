@@ -5,6 +5,8 @@ import type { UpgradeKind } from '../../data/economy'
 import { buyCar, carNetPrice, tradeInValue } from '../../core/economy/garage'
 import type { CareerState } from '../../core/progression/career'
 import { loadCareer, saveCareer } from '../state/saveGame'
+import { C, hex } from '../ui/theme'
+import { heading, hintBar, subheading, text } from '../ui/widgets'
 
 const MPH_PER_PX = 0.14
 
@@ -51,102 +53,60 @@ export class CarDealerScene extends Phaser.Scene {
 
     const cx = GAME_WIDTH / 2
 
-    this.add
-      .text(cx, 70, 'CAR DEALER', {
-        fontFamily: 'monospace',
-        fontSize: '56px',
-        color: '#f2a33c',
-        stroke: '#000000',
-        strokeThickness: 8,
-      })
-      .setOrigin(0.5)
-
-    this.add
-      .text(cx, 132, 'Every chassis on the ladder. The marker on each bar is the car you own.', {
-        fontFamily: 'monospace',
-        fontSize: '20px',
-        color: '#9aa0ac',
-      })
-      .setOrigin(0.5)
+    heading(this, cx, 70, 'CAR DEALER')
+    subheading(this, cx, 132, 'Every chassis on the ladder. The marker on each bar is the car you own.')
 
     // hero sprite, flanked by the browse arrows
     this.carImage = this.add.image(cx, 300, `car-${CAR_CATALOG[this.idx].id}`).setScale(2.0).setAngle(-90)
     this.tweens.add({ targets: this.carImage, y: '-=8', duration: 1500, yoyo: true, repeat: -1, ease: 'sine.inout' })
 
     this.arrows = [-1, 1].map((dir) => {
-      const arrow = this.add
-        .text(cx + dir * 420, 300, dir < 0 ? '◄' : '►', {
-          fontFamily: 'monospace',
-          fontSize: '54px',
-          color: '#f2a33c',
-        })
-        .setOrigin(0.5)
-        .setInteractive({ useHandCursor: true })
+      // arrows stay mono: Oswald has no ◄ / ► glyph
+      const arrow = text(this, cx + dir * 420, 300, dir < 0 ? '◄' : '►', {
+        size: 'title',
+        color: C.amber,
+        origin: [0.5, 0.5],
+      }).setInteractive({ useHandCursor: true })
       arrow.on('pointerdown', () => this.browse(dir))
       this.tweens.add({ targets: arrow, alpha: 0.35, duration: 900, yoyo: true, repeat: -1 })
       return arrow
     })
 
-    this.nameText = this.add
-      .text(cx, 462, '', { fontFamily: 'monospace', fontSize: '40px', color: '#e8e8f0' })
-      .setOrigin(0.5)
-    this.priceText = this.add
-      .text(cx, 524, '', {
-        fontFamily: 'monospace',
-        fontSize: '24px',
-        color: '#7fe0a8',
-        align: 'center',
-        lineSpacing: 6,
-      })
-      .setOrigin(0.5)
+    this.nameText = text(this, cx, 462, '', { size: 'heading', origin: [0.5, 0.5] })
+    this.priceText = text(this, cx, 524, '', {
+      size: 'action',
+      color: C.money,
+      align: 'center',
+      lineSpacing: 6,
+      origin: [0.5, 0.5],
+    })
 
     // stat bars
     this.barsGfx = this.add.graphics()
     STATS.forEach((stat, row) => {
       const y = this.barY(row)
-      this.add.text(BAR_X - 190, y - 4, stat.label, {
-        fontFamily: 'monospace',
-        fontSize: '20px',
-        color: '#9aa0ac',
-      })
-      this.statValueTexts.push(
-        this.add.text(BAR_X + BAR_W + 24, y - 4, '', {
-          fontFamily: 'monospace',
-          fontSize: '20px',
-          color: '#e8e8f0',
-        }),
-      )
+      text(this, BAR_X - 190, y - 4, stat.label, { size: 'bodySm', color: C.textSecondary })
+      this.statValueTexts.push(text(this, BAR_X + BAR_W + 24, y - 4, '', { size: 'bodySm' }))
     })
 
-    this.capsText = this.add.text(GAME_WIDTH - 640, this.barY(0) - 4, '', {
-      fontFamily: 'monospace',
-      fontSize: '20px',
-      color: '#9aa0ac',
+    this.capsText = text(this, GAME_WIDTH - 640, this.barY(0) - 4, '', {
+      size: 'bodySm',
+      color: C.textSecondary,
       lineSpacing: 8,
     })
 
-    this.blurbText = this.add
-      .text(cx, GAME_HEIGHT - 210, '', {
-        fontFamily: 'monospace',
-        fontSize: '21px',
-        color: '#c8c8d4',
-        align: 'center',
-        wordWrap: { width: 1100 },
-        lineSpacing: 6,
-      })
-      .setOrigin(0.5, 0)
-
-    this.hintText = this.add
-      .text(cx, GAME_HEIGHT - 70, '', { fontFamily: 'monospace', fontSize: '22px', color: '#e8e8f0' })
-      .setOrigin(0.5)
-
-    this.add.text(16, 16, '←/→ browse · Enter buy · Esc garage', {
-      fontFamily: 'monospace',
-      fontSize: '18px',
-      color: '#e8e8f0',
-      backgroundColor: '#000000aa',
-      padding: { x: 10, y: 6 },
+    this.blurbText = text(this, cx, GAME_HEIGHT - 210, '', {
+      size: 'body',
+      color: C.textBody,
+      align: 'center',
+      wordWrapWidth: 1100,
+      lineSpacing: 6,
+      origin: [0.5, 0],
     })
+
+    this.hintText = text(this, cx, GAME_HEIGHT - 70, '', { size: 'body', origin: [0.5, 0.5] })
+
+    hintBar(this, '←/→ browse · Enter buy · Esc garage')
 
     const kb = this.input.keyboard!
     kb.on('keydown-LEFT', () => this.browse(-1))
@@ -219,13 +179,13 @@ export class CarDealerScene extends Phaser.Scene {
     this.blurbText.setText(showing.blurb)
 
     if (isOwned) {
-      this.priceText.setText(`Trade-in value $${tradeInValue(this.career)}  ·  Cash $${this.career.cash}`).setColor('#f2a33c')
+      this.priceText.setText(`Trade-in value $${tradeInValue(this.career)}  ·  Cash $${this.career.cash}`).setColor(hex(C.amber))
     } else {
       this.priceText
         .setText(
           `$${showing.price}  −  trade-in $${tradeInValue(this.career)}  =  $${net}\nCash $${this.career.cash}  ·  upgrades do not transfer`,
         )
-        .setColor(affordable ? '#7fe0a8' : '#d23c2f')
+        .setColor(hex(affordable ? C.money : C.danger))
     }
 
     this.hintText.setText(
@@ -235,30 +195,32 @@ export class CarDealerScene extends Phaser.Scene {
           ? 'ENTER: BUY THIS CAR'
           : `You are $${net - this.career.cash} short.`,
     )
-    this.hintText.setColor(isOwned ? '#70707e' : affordable ? '#7fe0a8' : '#d23c2f')
+    this.hintText.setColor(hex(isOwned ? C.textMuted : affordable ? C.money : C.danger))
 
     // bars: browsed car filled, a marker where the owned car sits
     this.barsGfx.clear()
     STATS.forEach((stat, row) => {
       const y = this.barY(row)
       const value = showing[stat.key] as number
-      this.barsGfx.fillStyle(0x14141c, 1)
+      this.barsGfx.fillStyle(C.surfaceTile, 1)
       this.barsGfx.fillRect(BAR_X - 3, y - 3, BAR_W + 6, BAR_H + 6)
-      this.barsGfx.fillStyle(0x2a2a33, 1)
+      this.barsGfx.fillStyle(C.surfaceTrack, 1)
       this.barsGfx.fillRect(BAR_X, y, BAR_W, BAR_H)
-      this.barsGfx.fillStyle(isOwned ? 0xf2a33c : 0x4f8fd0, 1)
+      this.barsGfx.fillStyle(isOwned ? C.amber : C.tierPro, 1)
       this.barsGfx.fillRect(BAR_X, y, BAR_W * this.ratio(stat.key, value), BAR_H)
 
       if (!isOwned) {
         // where your current car sits on this axis
         const mx = BAR_X + BAR_W * this.ratio(stat.key, owned[stat.key] as number)
-        this.barsGfx.fillStyle(0xf2a33c, 1)
+        this.barsGfx.fillStyle(C.amber, 1)
         this.barsGfx.fillRect(mx - 2, y - 6, 4, BAR_H + 12)
       }
 
       const delta = isOwned ? '' : this.deltaLabel(value, owned[stat.key] as number)
       this.statValueTexts[row].setText(`${this.statValue(stat.key, showing)}${delta}`)
-      this.statValueTexts[row].setColor(delta.startsWith(' ▲') ? '#7fe0a8' : delta.startsWith(' ▼') ? '#d23c2f' : '#e8e8f0')
+      this.statValueTexts[row].setColor(
+        hex(delta.startsWith(' ▲') ? C.money : delta.startsWith(' ▼') ? C.danger : C.textPrimary),
+      )
     })
 
     const caps = (['engine', 'tires', 'armor'] as UpgradeKind[])

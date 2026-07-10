@@ -13,6 +13,8 @@ import { buyMines } from '../../core/economy/garage'
 import { itemLabel } from '../../core/economy/upgradeEffects'
 import type { CareerState } from '../../core/progression/career'
 import { loadCareer, saveCareer } from '../state/saveGame'
+import { C } from '../ui/theme'
+import { flavor, heading, hintBar, text, tile, type TileHandle } from '../ui/widgets'
 
 interface Tile {
   id: 'mines' | 'plating' | 'overturbo' | 'sabotage' | 'loan' | 'back'
@@ -41,8 +43,7 @@ export class BlackMarketScene extends Phaser.Scene {
   private infoText!: Phaser.GameObjects.Text
   private statusText!: Phaser.GameObjects.Text
   private cashText!: Phaser.GameObjects.Text
-  private tileTexts: Phaser.GameObjects.Text[] = []
-  private tileRects: Phaser.GameObjects.Rectangle[] = []
+  private tiles: TileHandle[] = []
 
   constructor() {
     super('BlackMarket')
@@ -50,82 +51,47 @@ export class BlackMarketScene extends Phaser.Scene {
 
   create() {
     this.career = loadCareer()
+    if (!this.career.profile.weaponsEnabled) {
+      this.scene.start('Garage')
+      return
+    }
     this.selected = 0
-    this.tileTexts = []
-    this.tileRects = []
+    this.tiles = []
 
     const cx = GAME_WIDTH / 2
 
-    this.add
-      .text(cx, 80, 'BLACK MARKET', {
-        fontFamily: 'monospace',
-        fontSize: '56px',
-        color: '#d23c2f',
-        stroke: '#000000',
-        strokeThickness: 8,
-      })
-      .setOrigin(0.5)
+    heading(this, cx, 80, 'BLACK MARKET', { color: C.danger })
 
-    this.cashText = this.add
-      .text(cx, 150, '', { fontFamily: 'monospace', fontSize: '24px', color: '#7fe0a8' })
-      .setOrigin(0.5)
+    this.cashText = text(this, cx, 150, '', { size: 'action', color: C.money, origin: [0.5, 0.5] })
 
     // what's already strapped to the car for the next race
-    this.statusText = this.add
-      .text(cx, 230, '', {
-        fontFamily: 'monospace',
-        fontSize: '22px',
-        color: '#f2a33c',
-        align: 'center',
-        lineSpacing: 8,
-      })
-      .setOrigin(0.5, 0)
+    this.statusText = text(this, cx, 230, '', {
+      size: 'body',
+      color: C.amber,
+      align: 'center',
+      lineSpacing: 8,
+      origin: [0.5, 0],
+    })
 
-    this.infoText = this.add
-      .text(cx, 480, '', {
-        fontFamily: 'monospace',
-        fontSize: '24px',
-        color: '#c8c8d4',
-        align: 'center',
-        wordWrap: { width: 1000 },
-        lineSpacing: 8,
-      })
-      .setOrigin(0.5, 0)
+    this.infoText = text(this, cx, 480, '', {
+      size: 'action',
+      color: C.textBody,
+      align: 'center',
+      wordWrapWidth: 1000,
+      lineSpacing: 8,
+      origin: [0.5, 0],
+    })
 
     const tileW = 250
     const totalW = TILES.length * tileW + (TILES.length - 1) * 16
-    TILES.forEach((tile, i) => {
+    TILES.forEach((def, i) => {
       const x = cx - totalW / 2 + i * (tileW + 16) + tileW / 2
-      const rect = this.add
-        .rectangle(x, GAME_HEIGHT - 180, tileW, 100, 0x14141c, 0.95)
-        .setStrokeStyle(3, 0x3a3a46, 1)
-      const text = this.add
-        .text(x, GAME_HEIGHT - 180, tile.label, {
-          fontFamily: 'monospace',
-          fontSize: '24px',
-          color: '#e8e8f0',
-          align: 'center',
-        })
-        .setOrigin(0.5)
-      this.tileRects.push(rect)
-      this.tileTexts.push(text)
+      this.tiles.push(tile(this, x, GAME_HEIGHT - 180, tileW, 100, def.label, { select: C.danger }))
     })
 
-    this.add
-      .text(cx, GAME_HEIGHT - 60, Phaser.Math.RND.pick(FLAVOR), {
-        fontFamily: 'monospace',
-        fontSize: '18px',
-        color: '#70707e',
-      })
-      .setOrigin(0.5)
+    flavor(this, cx, GAME_HEIGHT - 60, Phaser.Math.RND.pick(FLAVOR))
 
-    this.add.text(16, 16, '←/→ select · Enter buy · Esc garage', {
-      fontFamily: 'monospace',
-      fontSize: '18px',
-      color: '#e8e8f0',
-      backgroundColor: '#000000aa',
-      padding: { x: 10, y: 6 },
-    })
+    hintBar(this, '←/→ select · Enter buy · Esc garage')
 
     const kb = this.input.keyboard!
     kb.on('keydown-LEFT', () => this.move(-1))
@@ -192,6 +158,7 @@ export class BlackMarketScene extends Phaser.Scene {
       case 'plating': {
         if (c.ramPlating)
           return { cost: 'FITTED', info: 'Spiked plating bolted on. Trade paint generously.', enabled: false }
+        if (!this.inStock('plating')) return { cost: 'OUT', info: 'The plating truck missed tonight. Stock rotates after each race.', enabled: false }
         return {
           cost: `$${RAM_PLATING.price}`,
           info: `${itemLabel('ramPlating')}\nSpiked plating, one race. Trade paint generously.`,
@@ -201,6 +168,7 @@ export class BlackMarketScene extends Phaser.Scene {
       case 'overturbo': {
         if (c.overTurbo)
           return { cost: 'LOADED', info: 'The fuel mix sloshes ominously in the tank.', enabled: false }
+        if (!this.inStock('overturbo')) return { cost: 'OUT', info: 'No volatile mix tonight. Stock rotates after each race.', enabled: false }
         return {
           cost: `$${OVERCHARGED_TURBO.price}`,
           info: `${itemLabel('overTurbo')}\nVolatile fuel mix, one race. Boosting cooks your own engine. It CAN wreck you.`,
@@ -210,6 +178,7 @@ export class BlackMarketScene extends Phaser.Scene {
       case 'sabotage': {
         if (c.sabotage)
           return { cost: 'ARRANGED', info: 'Somewhere, a mechanic is being paid to look away.', enabled: false }
+        if (!this.inStock('sabotage')) return { cost: 'OUT', info: 'The fixer is lying low. Stock rotates after each race.', enabled: false }
         return {
           cost: `$${SABOTAGE.price}`,
           info: `${itemLabel('sabotage')}\nA quiet visit tonight, to the best car on your next grid.`,
@@ -235,6 +204,12 @@ export class BlackMarketScene extends Phaser.Scene {
     }
   }
 
+  /** Two specialist deals are available per round; staples and loans remain. */
+  private inStock(id: 'plating' | 'overturbo' | 'sabotage'): boolean {
+    const rotating = ['plating', 'overturbo', 'sabotage'] as const
+    return id !== rotating[this.career.racesRun % rotating.length]
+  }
+
   private refresh() {
     const c = this.career
     this.cashText.setText(`$${c.cash}`)
@@ -253,13 +228,10 @@ export class BlackMarketScene extends Phaser.Scene {
         .join('\n'),
     )
 
-    TILES.forEach((tile, i) => {
-      const { cost, enabled } = this.tileCaption(tile)
-      const selected = i === this.selected
-      this.tileRects[i].setStrokeStyle(3, selected ? 0xd23c2f : 0x3a3a46, 1)
-      this.tileRects[i].setFillStyle(selected ? 0x1c1c26 : 0x14141c, 0.95)
-      this.tileTexts[i].setText(cost ? `${tile.label}\n${cost}` : tile.label)
-      this.tileTexts[i].setColor(enabled ? (selected ? '#d23c2f' : '#e8e8f0') : '#55555f')
+    TILES.forEach((def, i) => {
+      const { cost, enabled } = this.tileCaption(def)
+      this.tiles[i].label.setText(cost ? `${def.label}\n${cost}` : def.label)
+      this.tiles[i].setState(i === this.selected, enabled)
     })
 
     this.infoText.setText(this.tileCaption(TILES[this.selected]).info)

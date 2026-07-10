@@ -2,6 +2,8 @@ import Phaser from 'phaser'
 import { GAME_HEIGHT, GAME_WIDTH } from '../../config/game'
 import { formatTime } from '../../core/race/format'
 import { ordinal } from '../../core/race/placement'
+import { C } from '../ui/theme'
+import { heading, modal, prompt, text } from '../ui/widgets'
 
 export interface StandingEntry {
   name: string
@@ -9,10 +11,13 @@ export interface StandingEntry {
   /** finish time, or null if still on track when the race ended */
   timeMs: number | null
   wrecked: boolean
+  dnf?: boolean
 }
 
 export interface RaceResults {
+  trackId: string
   trackName: string
+  driverName: string
   laps: number
   totalMs: number
   bestLapMs: number | null
@@ -20,6 +25,7 @@ export interface RaceResults {
   standings: StandingEntry[]
   playerPosition: number
   playerWrecked: boolean
+  abandoned?: boolean
   cashCollected: number
   prizeCash: number
   pointsEarned: number
@@ -28,6 +34,8 @@ export interface RaceResults {
   duelLost?: boolean
   /** loanshark status line, when a loan is running or just came due */
   loanNote?: string
+  newRecords?: string[]
+  seed?: number
 }
 
 export class ResultsScene extends Phaser.Scene {
@@ -38,71 +46,58 @@ export class ResultsScene extends Phaser.Scene {
   create(results: RaceResults) {
     const cx = GAME_WIDTH / 2
 
-    this.add.rectangle(cx, GAME_HEIGHT * 0.55, 860, 620, 0x0c0c14, 0.92).setStrokeStyle(3, 0xf2a33c, 0.8)
+    modal(this, cx, GAME_HEIGHT * 0.55, 860, 620)
 
-    const title = results.playerWrecked
+    const title = results.abandoned
+      ? 'RACE ABANDONED — DNF'
+      : results.playerWrecked
       ? 'WRECKED — OUT OF THE RACE'
       : results.duelLost
         ? 'THE CHAMPION KEEPS THE CROWN'
         : `YOU FINISHED ${ordinal(results.playerPosition).toUpperCase()}`
-    this.add
-      .text(cx, GAME_HEIGHT * 0.16, title, {
-        fontFamily: 'monospace',
-        fontSize: '54px',
-        color: results.playerWrecked ? '#d23c2f' : '#f2a33c',
-        stroke: '#000000',
-        strokeThickness: 8,
-      })
-      .setOrigin(0.5)
+    heading(this, cx, GAME_HEIGHT * 0.16, title, {
+      color: results.playerWrecked ? C.danger : C.amber,
+    })
 
-    this.add
-      .text(cx, GAME_HEIGHT * 0.24, `${results.trackName} — ${results.laps} laps`, {
-        fontFamily: 'monospace',
-        fontSize: '24px',
-        color: '#9aa0ac',
-      })
-      .setOrigin(0.5)
+    text(this, cx, GAME_HEIGHT * 0.24, `${results.trackName} — ${results.laps} laps`, {
+      size: 'action',
+      color: C.textSecondary,
+      origin: [0.5, 0.5],
+    })
 
     const standingLines = results.standings.map((s, i) => {
-      const time = s.wrecked ? 'WRECKED' : s.timeMs !== null ? formatTime(s.timeMs) : '   —   '
-      const name = (s.isPlayer ? 'YOU' : s.name).padEnd(12)
+      const time = s.dnf ? 'DNF' : s.wrecked ? 'WRECKED' : s.timeMs !== null ? formatTime(s.timeMs) : '   —   '
+      const name = (s.isPlayer ? results.driverName : s.name).padEnd(12)
       return `${i + 1}.  ${name} ${time}`
     })
-    this.add
-      .text(cx, GAME_HEIGHT * 0.42, standingLines.join('\n'), {
-        fontFamily: 'monospace',
-        fontSize: '30px',
-        color: '#e8e8f0',
-        lineSpacing: 12,
-        align: 'left',
-      })
-      .setOrigin(0.5)
+    text(this, cx, GAME_HEIGHT * 0.42, standingLines.join('\n'), {
+      size: 'subtitle',
+      lineSpacing: 12,
+      align: 'left',
+      origin: [0.5, 0.5],
+    })
 
     const lapLines = [
       `Prize    $${results.prizeCash}   Points  +${results.pointsEarned}`,
       `Pickups  $${results.cashCollected}   Bank    $${results.careerCash}`,
       ...(results.bestLapMs !== null ? [`Best lap ${formatTime(results.bestLapMs)}`] : []),
       ...(results.loanNote ? ['', results.loanNote] : []),
+      ...(results.newRecords?.length ? ['', `NEW RECORD: ${results.newRecords.join(' · ')}`] : []),
+      ...(results.seed !== undefined ? [`Race seed ${results.seed}`] : []),
     ]
-    this.add
-      .text(cx, GAME_HEIGHT * 0.65, lapLines.join('\n'), {
-        fontFamily: 'monospace',
-        fontSize: '24px',
-        color: '#9aa0ac',
-        lineSpacing: 8,
-        align: 'left',
-      })
-      .setOrigin(0.5)
+    text(this, cx, GAME_HEIGHT * 0.65, lapLines.join('\n'), {
+      size: 'action',
+      color: C.textSecondary,
+      lineSpacing: 8,
+      align: 'left',
+      origin: [0.5, 0.5],
+    })
 
-    const prompt = this.add
-      .text(cx, GAME_HEIGHT * 0.82, 'ENTER: STANDINGS', {
-        fontFamily: 'monospace',
-        fontSize: '26px',
-        color: '#e8e8f0',
-      })
-      .setOrigin(0.5)
-    this.tweens.add({ targets: prompt, alpha: 0.3, duration: 700, yoyo: true, repeat: -1 })
+    prompt(this, cx, GAME_HEIGHT * 0.82, 'ENTER: STANDINGS')
 
-    this.input.keyboard?.once('keydown-ENTER', () => this.scene.start('Ranking'))
+    const kb = this.input.keyboard!
+    const next = () => this.scene.start('Ranking')
+    kb.on('keydown-ENTER', next)
+    this.events.once('shutdown', () => kb.off('keydown-ENTER', next))
   }
 }

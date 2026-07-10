@@ -11,6 +11,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@fontsource/jetbrains-mono": "^5.2.8",
+    "@fontsource/oswald": "^5.2.8",
     "phaser": "^3.87.0"
   },
   "devDependencies": {

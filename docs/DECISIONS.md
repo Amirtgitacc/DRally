@@ -74,8 +74,20 @@ Death tier still lost. Two causes, both structural.
 | D-041 | 2026-07-09 | With real machinery behind them, the rank pace band **narrows to 0.94–1.00** (was 0.94–1.09) and the rubber-band ceiling drops 1.10 → **1.06**. | D-017 says difficulty comes from machinery, not cheats. Left as-was, a rank-1 ace on a built car with the band behind them would run down a leading player at 955 px/s in a 758 px/s car. The multiplier shrinks precisely because the machinery gap is now real. |
 | — | 2026-07-09 | Rejected: "average speed = 95% of top". | Probing proved the ceiling is grip, not courage. Cutting cornering caution from 0.16 to 0.05 moved the aces from 80% to 84% of top and no further — 95% would mean taking hairpins flat. Real racing sits at 70–85%. The right lever was to make the top speed (and the grip under it) bigger, not the fraction. |
 
+### UX-complete vertical slice 2.0 (2026-07-10)
+
+| # | Date | Decision | Why |
+|---|---|---|---|
+| D-042 | 2026-07-10 | `Esc` during a race opens pause and never returns directly to a menu. Confirmed abandon is a DNF: no prize, points, or pickup cash; current damage persists; a start and loanshark tick are recorded; one-race gear is consumed. | Removes the free-reset exploit and gives every destructive action an explicit confirmation. |
+| D-043 | 2026-07-10 | `N` and New Career open profile creation; an existing career is overwritten only after final confirmation. | A stray key can no longer erase progression. |
+| D-044 | 2026-07-10 | Career schema v2 lives at `deathrally-career-v2`; v1 is migrated once with safe defaults. Settings remain separate at `deathrally-settings-v1`. | Career reset must not erase controls/accessibility, and old saves must remain valid. |
+| D-045 | 2026-07-10 | Weapons default on. A weapons-off career disables guns, mines, AI combat, and black-market access. | Preserves a clean-racing career choice as a coherent mode rather than a cosmetic flag. |
+| D-046 | 2026-07-10 | Race offers carry a seed; simulation-affecting randomness uses that source and results expose it. | Makes tuning runs reproducible without changing the current single-player rules. |
+| D-047 | 2026-07-10 | Abandoned races cannot set venue records. Difficulty changes rival pace only; it does not modify economy or player vehicle specs. | Prevents record exploits and keeps the difficulty contract legible. |
+| D-048 | 2026-07-10 | Keyboard bindings, volume, hold/toggle input, reduced shake, and reduced flash are player settings. Gamepad uses a conventional fixed layout in this pass. | Delivers remappable keyboard play while avoiding a second, confusing binding editor for gamepad in v1. |
+| D-049 | 2026-07-10 | Presentation remains original: industrial night racing, tier colours, technical panels, procedural track dressing, and original copy. | Reference material informs information architecture only; no original names, branding, copy, assets, or exact layouts are reused. |
+
 ## Open questions
 - Art asset pipeline for the "4K" bar: AI-generated sprites (e.g. Higgsfield), procedural only, CC0 packs, or commissioned art — decide before Milestone 7.
 - Release name and final tone of original flavor writing.
-- Whether the "weapons OFF" pacifist mode from the original is worth carrying over (post-slice call).
-- Gamepad support priority.
+- Whether a future desktop wrapper is worth the release/maintenance cost.

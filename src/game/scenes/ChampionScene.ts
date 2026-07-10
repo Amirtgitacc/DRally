@@ -3,6 +3,8 @@ import { GAME_HEIGHT, GAME_WIDTH } from '../../config/game'
 import { BOSS } from '../../data/boss'
 import { carById } from '../../data/cars'
 import { loadCareer } from '../state/saveGame'
+import { C } from '../ui/theme'
+import { flavor, heading, prompt, text } from '../ui/widgets'
 
 /** The career's ending — shown once, after beating the champion 1-v-1. */
 export class ChampionScene extends Phaser.Scene {
@@ -28,68 +30,43 @@ export class ChampionScene extends Phaser.Scene {
       blendMode: Phaser.BlendModes.ADD,
     })
 
-    const title = this.add
-      .text(cx, GAME_HEIGHT * 0.22, 'CHAMPION', {
-        fontFamily: 'monospace',
-        fontSize: '120px',
-        color: '#c9a227',
-        stroke: '#000000',
-        strokeThickness: 12,
-      })
-      .setOrigin(0.5)
-    if (this.game.renderer.type === Phaser.WEBGL) {
-      title.postFX.addGlow(0xc9a227, 4, 0, false, 0.1, 20)
-    }
+    heading(this, cx, GAME_HEIGHT * 0.22, 'CHAMPION', {
+      size: 'display',
+      color: C.gold,
+      strokeThickness: 12,
+      glow: true,
+    })
 
-    this.add
-      .text(cx, GAME_HEIGHT * 0.33, `${BOSS.name} is beaten. The ladder is yours, top to bottom.`, {
-        fontFamily: 'monospace',
-        fontSize: '26px',
-        color: '#e8e8f0',
-      })
-      .setOrigin(0.5)
+    text(this, cx, GAME_HEIGHT * 0.33, `${career.profile.driverName}, ${BOSS.name} is beaten. The ladder is yours.`, {
+      size: 'bodyLg',
+      origin: [0.5, 0.5],
+    })
 
     // the winning car, front and center
-    const car = this.add.image(cx, GAME_HEIGHT * 0.47, `car-${career.carId}`).setScale(1.9).setAngle(-90)
+    const car = this.add.image(cx, GAME_HEIGHT * 0.47, `car-${career.carId}`).setScale(1.9).setAngle(-90).setTint(career.profile.liveryColor)
     this.tweens.add({ targets: car, y: '-=12', duration: 1500, yoyo: true, repeat: -1, ease: 'sine.inout' })
 
-    this.add
-      .text(
-        cx,
-        GAME_HEIGHT * 0.7,
-        [
-          `Purse            $${BOSS.prizeCash}`,
-          `Career winnings  $${career.cash} in the bank`,
-          `Record           ${career.wins} wins in ${career.racesRun} races`,
-          `Machine          ${carById(career.carId).name}`,
-        ].join('\n'),
-        {
-          fontFamily: 'monospace',
-          fontSize: '26px',
-          color: '#9aa0ac',
-          lineSpacing: 10,
-          align: 'left',
-        },
-      )
-      .setOrigin(0.5)
+    const record = [
+      `Purse            $${BOSS.prizeCash}`,
+      `Career winnings  $${career.cash} in the bank`,
+      `Record           ${career.wins} wins in ${career.racesRun} races`,
+      `Machine          ${carById(career.carId).name}`,
+    ].join('\n')
+    text(this, cx, GAME_HEIGHT * 0.7, record, {
+      size: 'bodyLg',
+      color: C.textSecondary,
+      lineSpacing: 10,
+      align: 'left',
+      origin: [0.5, 0.5],
+    })
 
-    this.add
-      .text(cx, GAME_HEIGHT * 0.8, 'They will come for your crown now. Every last one of them.', {
-        fontFamily: 'monospace',
-        fontSize: '20px',
-        color: '#70707e',
-      })
-      .setOrigin(0.5)
+    flavor(this, cx, GAME_HEIGHT * 0.8, 'They will come for your crown now. Every last one of them.')
 
-    const prompt = this.add
-      .text(cx, GAME_HEIGHT * 0.88, 'ENTER: MENU', {
-        fontFamily: 'monospace',
-        fontSize: '26px',
-        color: '#e8e8f0',
-      })
-      .setOrigin(0.5)
-    this.tweens.add({ targets: prompt, alpha: 0.3, duration: 700, yoyo: true, repeat: -1 })
+    prompt(this, cx, GAME_HEIGHT * 0.88, 'ENTER: MENU')
 
-    this.input.keyboard?.once('keydown-ENTER', () => this.scene.start('Menu'))
+    const kb = this.input.keyboard!
+    const back = () => this.scene.start('Menu')
+    kb.on('keydown-ENTER', back)
+    this.events.once('shutdown', () => kb.off('keydown-ENTER', back))
   }
 }

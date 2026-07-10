@@ -12,10 +12,11 @@ import { duelAvailable } from '../../core/progression/duel'
 import { BOSS } from '../../data/boss'
 import { loadCareer } from '../state/saveGame'
 import { setCurrentOffer } from '../state/roundState'
+import { C, STROKE, TIER_COLOR, TIER_LABEL } from '../ui/theme'
+import { flavor, heading, panel, subheading, text } from '../ui/widgets'
+import { randomSeed } from '../../core/race/random'
 
 const TIERS: RaceTier[] = ['street', 'pro', 'death']
-const TIER_LABEL: Record<RaceTier, string> = { street: 'STREET', pro: 'PRO', death: 'DEATH' }
-const TIER_COLOR: Record<RaceTier, number> = { street: 0x3fd07f, pro: 0x4f8fd0, death: 0xd23c2f }
 
 export class SignUpScene extends Phaser.Scene {
   private selected = 1 // default to the middle (pro) card
@@ -51,22 +52,8 @@ export class SignUpScene extends Phaser.Scene {
     }
 
     const cx = GAME_WIDTH / 2
-    this.add
-      .text(cx, 80, 'RACE SIGN-UP', {
-        fontFamily: 'monospace',
-        fontSize: '56px',
-        color: '#f2a33c',
-        stroke: '#000000',
-        strokeThickness: 8,
-      })
-      .setOrigin(0.5)
-    this.add
-      .text(cx, 140, `Rank #${playerRank(career.ladder, career.points)} · $${career.cash} · pick your fight`, {
-        fontFamily: 'monospace',
-        fontSize: '22px',
-        color: '#9aa0ac',
-      })
-      .setOrigin(0.5)
+    heading(this, cx, 80, 'RACE SIGN-UP')
+    subheading(this, cx, 140, `Rank #${playerRank(career.ladder, career.points)} · $${career.cash} · pick your fight`)
 
     const cardW = 520
     const cardH = 800
@@ -79,18 +66,14 @@ export class SignUpScene extends Phaser.Scene {
       const track = this.trackByTier[tier]
       const rewards = RACE_REWARDS[tier]
 
-      const card = this.add.rectangle(x, y, cardW, cardH, 0x0c0c14, 0.92)
+      const card = this.add.rectangle(x, y, cardW, cardH, C.surfaceSunken, 0.92)
       this.cards.push(card)
 
-      this.add
-        .text(x, top + 46, TIER_LABEL[tier], {
-          fontFamily: 'monospace',
-          fontSize: '40px',
-          color: `#${TIER_COLOR[tier].toString(16).padStart(6, '0')}`,
-          stroke: '#000000',
-          strokeThickness: 6,
-        })
-        .setOrigin(0.5)
+      heading(this, x, top + 46, TIER_LABEL[tier], {
+        size: 'heading',
+        color: TIER_COLOR[tier],
+        strokeThickness: STROKE.heading,
+      })
 
       // the layout is the decision — draw it big enough to actually read
       drawTrackMap(mapGfx, track, {
@@ -103,51 +86,38 @@ export class SignUpScene extends Phaser.Scene {
         showSurface: true,
       })
 
-      this.add
-        .text(x, top + 380, [track.name, `${track.laps} laps`].join('\n'), {
-          fontFamily: 'monospace',
-          fontSize: '24px',
-          color: '#e8e8f0',
-          align: 'center',
-          lineSpacing: 6,
-        })
-        .setOrigin(0.5, 0)
+      text(this, x, top + 380, [track.name, `${track.laps} laps`].join('\n'), {
+        size: 'action',
+        align: 'center',
+        lineSpacing: 6,
+        origin: [0.5, 0],
+      })
 
-      this.add
-        .text(
-          x,
-          top + 470,
-          [
-            `1st  $${rewards[0].cash}  +${rewards[0].points} pts`,
-            `2nd  $${rewards[1].cash}  +${rewards[1].points} pts`,
-            `3rd  $${rewards[2].cash}  +${rewards[2].points} pts`,
-          ].join('\n'),
-          { fontFamily: 'monospace', fontSize: '22px', color: '#e8e8f0', align: 'center', lineSpacing: 8 },
-        )
-        .setOrigin(0.5, 0)
+      const payouts = [
+        `1st  $${rewards[0].cash}  +${rewards[0].points} pts`,
+        `2nd  $${rewards[1].cash}  +${rewards[1].points} pts`,
+        `3rd  $${rewards[2].cash}  +${rewards[2].points} pts`,
+      ].join('\n')
+      text(this, x, top + 470, payouts, { size: 'body', align: 'center', lineSpacing: 8, origin: [0.5, 0] })
 
       // grid, with each rival's permanent talent grade in stars
-      const entrants = this.rivalsByTier[tier].map(
-        (id, n) => `${n + 2}. ${rosterById(id).name.padEnd(14)}${starsFor(talentOf(id).grade)}`,
-      )
-      this.add
-        .text(x, top + 606, ['GRID', '1. YOU', ...entrants].join('\n'), {
-          fontFamily: 'monospace',
-          fontSize: '21px',
-          color: '#c8c8d4',
-          align: 'left',
-          lineSpacing: 8,
-        })
-        .setOrigin(0.5, 0)
+      const entrantLines = [
+        'GRID',
+        `1. ${career.profile.driverName}`,
+        ...this.rivalsByTier[tier].map((id, n) => `${n + 2}. ${rosterById(id).name.padEnd(14)}${starsFor(talentOf(id).grade)}`),
+      ]
+      entrantLines.forEach((line, row) => {
+        const entrant = text(this, x - 205, top + 606 + row * 36, line, { size: 'body', color: C.textBody })
+        if (row > 1) {
+          entrant.setAlpha(0)
+          this.time.delayedCall(250 + (row - 2) * 280 + i * 90, () => {
+            if (entrant.active) this.tweens.add({ targets: entrant, alpha: 1, x: entrant.x + 8, duration: 180 })
+          })
+        }
+      })
     })
 
-    this.add
-      .text(cx, GAME_HEIGHT - 60, '←/→ choose · Enter sign up · Esc garage', {
-        fontFamily: 'monospace',
-        fontSize: '20px',
-        color: '#70707e',
-      })
-      .setOrigin(0.5)
+    flavor(this, cx, GAME_HEIGHT - 60, '←/→ choose · Enter sign up · Esc garage')
 
     const kb = this.input.keyboard!
     kb.on('keydown-LEFT', () => this.move(-1))
@@ -169,66 +139,46 @@ export class SignUpScene extends Phaser.Scene {
     const cx = GAME_WIDTH / 2
     const track = DUEL_TRACK
 
-    this.add
-      .text(cx, 110, 'THE FINAL DUEL', {
-        fontFamily: 'monospace',
-        fontSize: '64px',
-        color: '#c9a227',
-        stroke: '#000000',
-        strokeThickness: 10,
-      })
-      .setOrigin(0.5)
-    this.add
-      .text(cx, 180, 'Rank #1 means one thing here: a challenge you do not get to refuse.', {
-        fontFamily: 'monospace',
-        fontSize: '22px',
-        color: '#9aa0ac',
-      })
-      .setOrigin(0.5)
+    heading(this, cx, 110, 'THE FINAL DUEL', {
+      size: 'readout',
+      color: C.gold,
+      strokeThickness: STROKE.hero,
+    })
+    subheading(this, cx, 180, 'Rank #1 means one thing here: a challenge you do not get to refuse.')
 
-    this.add
-      .rectangle(cx, GAME_HEIGHT * 0.55, 720, 540, 0x0c0c14, 0.92)
-      .setStrokeStyle(5, 0xc9a227, 1)
+    panel(this, cx, GAME_HEIGHT * 0.55, 720, 540, {
+      fillAlpha: 0.92,
+      stroke: C.gold,
+      strokeAlpha: 1,
+      strokeWidth: 5,
+    })
 
     const boss = this.add.image(cx, GAME_HEIGHT * 0.375, `car-${BOSS.id}`).setScale(1.7).setAngle(-90)
     this.tweens.add({ targets: boss, y: '-=8', duration: 1200, yoyo: true, repeat: -1, ease: 'sine.inout' })
 
-    this.add
-      .text(
-        cx,
-        GAME_HEIGHT * 0.63,
-        [
-          BOSS.name.toUpperCase(),
-          '',
-          BOSS.blurb,
-          '',
-          `${track.name} · ${track.laps} laps · 1-v-1`,
-          `Winner takes the crown — and $${BOSS.prizeCash}.`,
-          'Lose, and you limp home to try again.',
-        ].join('\n'),
-        {
-          fontFamily: 'monospace',
-          fontSize: '22px',
-          color: '#e8e8f0',
-          align: 'center',
-          lineSpacing: 8,
-          wordWrap: { width: 640 },
-        },
-      )
-      .setOrigin(0.5)
+    const pitch = [
+      BOSS.name.toUpperCase(),
+      '',
+      BOSS.blurb,
+      '',
+      `${track.name} · ${track.laps} laps · 1-v-1`,
+      `Winner takes the crown — and $${BOSS.prizeCash}.`,
+      'Lose, and you limp home to try again.',
+    ].join('\n')
+    text(this, cx, GAME_HEIGHT * 0.63, pitch, {
+      size: 'body',
+      align: 'center',
+      lineSpacing: 8,
+      wordWrapWidth: 640,
+      origin: [0.5, 0.5],
+    })
 
-    this.add
-      .text(cx, GAME_HEIGHT - 60, 'Enter accept the duel · Esc garage', {
-        fontFamily: 'monospace',
-        fontSize: '20px',
-        color: '#70707e',
-      })
-      .setOrigin(0.5)
+    flavor(this, cx, GAME_HEIGHT - 60, 'Enter accept the duel · Esc garage')
 
     const kb = this.input.keyboard!
     kb.on('keydown-ENTER', () => {
-      setCurrentOffer({ track, rivalIds: [], duel: true })
-      this.scene.start('Race')
+      setCurrentOffer({ track, rivalIds: [], duel: true, seed: randomSeed() })
+      this.scene.start('PrepareRace')
     })
     kb.on('keydown-ESC', () => this.scene.start('Garage'))
     this.events.on('shutdown', () => {
@@ -245,13 +195,13 @@ export class SignUpScene extends Phaser.Scene {
   private refresh() {
     this.cards.forEach((card, i) => {
       const tier = TIERS[i]
-      card.setStrokeStyle(i === this.selected ? 5 : 2, i === this.selected ? TIER_COLOR[tier] : 0x3a3a46, 1)
+      card.setStrokeStyle(i === this.selected ? 5 : 2, i === this.selected ? TIER_COLOR[tier] : C.border, 1)
     })
   }
 
   private confirm() {
     const tier = TIERS[this.selected]
-    setCurrentOffer({ track: this.trackByTier[tier], rivalIds: this.rivalsByTier[tier] })
-    this.scene.start('Race')
+    setCurrentOffer({ track: this.trackByTier[tier], rivalIds: this.rivalsByTier[tier], seed: randomSeed() })
+    this.scene.start('PrepareRace')
   }
 }

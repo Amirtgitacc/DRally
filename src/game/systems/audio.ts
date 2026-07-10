@@ -2,7 +2,9 @@
 // is a hook point: swap these one-liners for real samples later without
 // touching game code. Unlocks on first user gesture (browser autoplay rules).
 
-const MASTER_VOLUME = 0.35
+import type { SettingsState } from '../state/settings'
+
+const SYNTH_VOLUME = 0.5
 
 class AudioBus {
   private ctx: AudioContext | null = null
@@ -11,6 +13,8 @@ class AudioBus {
   private engineOsc: OscillatorNode | null = null
   private engineGain: GainNode | null = null
   muted = false
+  private volume = 0.7
+  private effectsVolume = 0.8
 
   /** Call from a user-gesture handler (keydown) before any playback. */
   unlock() {
@@ -24,7 +28,7 @@ class AudioBus {
       return // no audio support — every method below becomes a no-op
     }
     this.master = this.ctx.createGain()
-    this.master.gain.value = MASTER_VOLUME
+    this.master.gain.value = this.muted ? 0 : this.volume * this.effectsVolume * SYNTH_VOLUME
     this.master.connect(this.ctx.destination)
 
     const len = this.ctx.sampleRate
@@ -35,8 +39,15 @@ class AudioBus {
 
   toggleMute(): boolean {
     this.muted = !this.muted
-    if (this.master) this.master.gain.value = this.muted ? 0 : MASTER_VOLUME
+    if (this.master) this.master.gain.value = this.muted ? 0 : this.volume * this.effectsVolume * SYNTH_VOLUME
     return this.muted
+  }
+
+  applySettings(settings: Pick<SettingsState, 'masterVolume' | 'effectsVolume' | 'muted'>) {
+    this.volume = settings.masterVolume
+    this.effectsVolume = settings.effectsVolume
+    this.muted = settings.muted
+    if (this.master) this.master.gain.value = this.muted ? 0 : this.volume * this.effectsVolume * SYNTH_VOLUME
   }
 
   private noiseBurst(duration: number, filterType: BiquadFilterType, freqFrom: number, freqTo: number, gain: number) {

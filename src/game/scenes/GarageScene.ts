@@ -7,23 +7,92 @@ import { fittedDeltas, upgradeLabel } from '../../core/economy/upgradeEffects'
 import { effectiveCarSpec } from '../../core/vehicle/carSpec'
 import type { CareerState } from '../../core/progression/career'
 import { loadCareer, saveCareer } from '../state/saveGame'
+import { C, hex } from '../ui/theme'
+import {
+  flavor,
+  heading,
+  hintBar,
+  panel,
+  pips,
+  rule,
+  sectionLabel,
+  statBar,
+  text,
+  tile,
+  type TileHandle,
+} from '../ui/widgets'
 
 const MPH_PER_PX = 0.14
 
+/**
+ * Layout spine. The scene used to scatter magic offsets around `cx`; these are
+ * the two axes everything actually hangs off.
+ */
+const LX = 620 // left column: car, name, bars, info all centre here
+const PANEL_X = 1670
+const PANEL_Y = 400
+const PANEL_W = 400
+const PANEL_H = 480
+const PANEL_LEFT = PANEL_X - PANEL_W / 2 + 50
+
+const BAR_W = 340
+const BAR_X = LX - BAR_W / 2 // bar track centres on the car above it
+
+/** Middle column: what you drive, and what you're carrying into the next race. */
+const MID_X = 1150
+const CARD_W = 520
+const CARD_LEFT = MID_X - CARD_W / 2 + 30
+const CARD_RIGHT = MID_X + CARD_W / 2 - 30
+const LOADOUT_TOP = 570
+const LOADOUT_STEP = 34
+const BAR_TOP = 520
+const BAR_STEP = 35
+
+const PIP_TOP = 500
+const PIP_STEP = 40
+
+const TILE_Y = 880
+const TILE_H = 96
+const TILE_W = 180
+const RACE_W = 240
+const TILE_GAP = 12
+const GROUP_GAP = 40
+
+/** `group` drives the gaps in the tile row: buying, then navigating, then racing. */
 interface Tile {
   id: 'repair' | 'engine' | 'tires' | 'armor' | 'market' | 'buycar' | 'race'
   label: string
+  group: 'buy' | 'nav' | 'go'
 }
 
 const TILES: Tile[] = [
-  { id: 'repair', label: 'REPAIR' },
-  { id: 'engine', label: 'ENGINE' },
-  { id: 'tires', label: 'TIRES' },
-  { id: 'armor', label: 'ARMOR' },
-  { id: 'market', label: 'MARKET' },
-  { id: 'buycar', label: 'BUY CAR' },
-  { id: 'race', label: 'RACE' },
+  { id: 'repair', label: 'REPAIR', group: 'buy' },
+  { id: 'engine', label: 'ENGINE', group: 'buy' },
+  { id: 'tires', label: 'TIRES', group: 'buy' },
+  { id: 'armor', label: 'ARMOR', group: 'buy' },
+  { id: 'market', label: 'MARKET', group: 'nav' },
+  { id: 'buycar', label: 'BUY CAR', group: 'nav' },
+  { id: 'race', label: 'RACE', group: 'go' },
 ]
+
+/** Lay the row out once: widths differ, and groups are separated by a wider gap. */
+function tileLayout(): Array<{ x: number; w: number }> {
+  const widths: number[] = TILES.map((t) => (t.id === 'race' ? RACE_W : TILE_W))
+  const gaps: number[] = TILES.map((t, i) =>
+    i === TILES.length - 1 ? 0 : TILES[i + 1].group !== t.group ? GROUP_GAP : TILE_GAP,
+  )
+  const total = widths.reduce((a, b) => a + b, 0) + gaps.reduce((a, b) => a + b, 0)
+
+  let cursor = (GAME_WIDTH - total) / 2
+  return widths.map((w, i) => {
+    const x = cursor + w / 2
+    cursor += w + gaps[i]
+    return { x, w }
+  })
+}
+
+/** Race-affecting gear, always on screen — it used to hide inside the MARKET tile caption. */
+const LOADOUT_ROWS = ['MINES', 'RAM PLATING', 'OVERCHARGE', 'SABOTAGE', 'LOANSHARK'] as const
 
 const FLAVOR = [
   'The mechanic wipes his hands on your invoice.',
@@ -46,9 +115,12 @@ export class GarageScene extends Phaser.Scene {
   private statsText!: Phaser.GameObjects.Text
   private pipsGfx!: Phaser.GameObjects.Graphics
   private compareGfx!: Phaser.GameObjects.Graphics
-  private tileTexts: Phaser.GameObjects.Text[] = []
-  private tileRects: Phaser.GameObjects.Rectangle[] = []
+  private tiles: TileHandle[] = []
   private fittedTexts: Phaser.GameObjects.Text[] = []
+  private blurbText!: Phaser.GameObjects.Text
+  private massText!: Phaser.GameObjects.Text
+  private capsText!: Phaser.GameObjects.Text
+  private loadoutValues: Phaser.GameObjects.Text[] = []
   /** animated bar fills, tweened toward the real ratios after a purchase */
   private barFill: Record<BarStat, number> = { topSpeed: 0, accel: 0, grip: 0 }
 
@@ -59,113 +131,99 @@ export class GarageScene extends Phaser.Scene {
   create() {
     this.career = loadCareer()
     this.selected = 0
-    this.tileTexts = []
-    this.tileRects = []
+    this.tiles = []
     this.fittedTexts = []
+    this.loadoutValues = []
 
     const cx = GAME_WIDTH / 2
 
-    this.add
-      .text(cx, 70, 'THE GARAGE', {
-        fontFamily: 'monospace',
-        fontSize: '56px',
-        color: '#f2a33c',
-        stroke: '#000000',
-        strokeThickness: 8,
-      })
-      .setOrigin(0.5)
+    heading(this, cx, 70, 'THE GARAGE')
 
-    // car display
-    this.carImage = this.add.image(cx - 200, 340, `car-${this.career.carId}`).setScale(2.6)
-    this.carNameText = this.add
-      .text(cx - 200, 470, '', { fontFamily: 'monospace', fontSize: '30px', color: '#e8e8f0' })
-      .setOrigin(0.5)
+    // car display — the left column's anchor
+    this.carImage = this.add.image(LX, 330, `car-${this.career.carId}`).setScale(3.2)
+    this.carNameText = text(this, LX, 470, '', { size: 'subtitle', origin: [0.5, 0.5] })
 
     // your car's stat bars, with the exact gain each fitted upgrade bought you
     this.compareGfx = this.add.graphics()
     const statLabels = ['SPEED', 'ACCEL', 'GRIP']
     statLabels.forEach((label, row) => {
-      this.add.text(cx - 470, 496 + row * 30, label.padEnd(6), {
-        fontFamily: 'monospace',
-        fontSize: '17px',
-        color: '#9aa0ac',
-      })
-      this.fittedTexts.push(
-        this.add.text(cx + 10, 496 + row * 30, '', {
-          fontFamily: 'monospace',
-          fontSize: '17px',
-          color: '#7fe0a8',
-        }),
-      )
+      const y = BAR_TOP + row * BAR_STEP
+      text(this, BAR_X - 90, y - 4, label, { size: 'label', color: C.textSecondary })
+      this.fittedTexts.push(text(this, BAR_X + BAR_W + 20, y - 4, '', { size: 'label', color: C.money }))
     })
 
-    // center info box
-    this.infoText = this.add
-      .text(cx - 200, 600, '', {
-        fontFamily: 'monospace',
-        fontSize: '22px',
-        color: '#c8c8d4',
-        align: 'center',
-        wordWrap: { width: 700 },
-      })
-      .setOrigin(0.5, 0)
-
-    // right "character sheet" panel
-    this.add.rectangle(GAME_WIDTH - 250, 430, 400, 560, 0x0c0c14, 0.85).setStrokeStyle(2, 0xf2a33c, 0.6)
-    this.statsText = this.add.text(GAME_WIDTH - 420, 180, '', {
-      fontFamily: 'monospace',
-      fontSize: '22px',
-      color: '#e8e8f0',
-      lineSpacing: 10,
+    // info box, directly under the bars it describes. The wrap width is bounded
+    // by the CHASSIS card's left edge — 660 ran text underneath it.
+    this.infoText = text(this, LX, 650, '', {
+      size: 'body',
+      color: C.textBody,
+      align: 'center',
+      wordWrapWidth: 520,
+      origin: [0.5, 0],
     })
+
+    // ---- middle column: chassis dossier ----
+    panel(this, MID_X, 330, CARD_W, 300, { stroke: C.border, strokeAlpha: 1 })
+    sectionLabel(this, CARD_LEFT, 205, 'CHASSIS')
+    this.blurbText = text(this, CARD_LEFT, 248, '', {
+      size: 'caption',
+      color: C.textBody,
+      wordWrapWidth: CARD_W - 60,
+      lineSpacing: 6,
+    })
+    rule(this, CARD_LEFT, CARD_RIGHT, 358)
+    text(this, CARD_LEFT, 375, 'MASS', { size: 'label', color: C.textSecondary })
+    this.massText = text(this, CARD_LEFT + 180, 375, '', { size: 'label' })
+    text(this, CARD_LEFT, 407, 'UPGRADE CAPS', { size: 'label', color: C.textSecondary })
+    this.capsText = text(this, CARD_LEFT + 180, 407, '', { size: 'label' })
+
+    // ---- middle column: what you carry into the next race ----
+    panel(this, MID_X, 630, CARD_W, 260, { stroke: C.border, strokeAlpha: 1 })
+    sectionLabel(this, CARD_LEFT, 525, 'LOADOUT')
+    LOADOUT_ROWS.forEach((label, row) => {
+      const y = LOADOUT_TOP + row * LOADOUT_STEP
+      text(this, CARD_LEFT, y, label, { size: 'label', color: C.textSecondary })
+      this.loadoutValues.push(text(this, CARD_LEFT + 180, y, '', { size: 'label' }))
+    })
+
+    // right "character sheet" panel — pips now live inside it
+    panel(this, PANEL_X, PANEL_Y, PANEL_W, PANEL_H)
+    this.statsText = text(this, PANEL_LEFT, 200, '', { size: 'body', lineSpacing: 10 })
     this.pipsGfx = this.add.graphics()
+
+    rule(this, PANEL_LEFT, PANEL_X + PANEL_W / 2 - 50, PIP_TOP - 26)
 
     // pip row labels. These live in create(), not refresh(): scene `data`
     // survives a scene restart, so a "create once" guard there would skip
     // them on every visit after the first.
     ;(['engine', 'tires', 'armor'] as UpgradeKind[]).forEach((kind, row) => {
-      this.add.text(GAME_WIDTH - 420, 470 + row * 34, kind.toUpperCase().padEnd(6), {
-        fontFamily: 'monospace',
-        fontSize: '20px',
-        color: '#9aa0ac',
+      text(this, PANEL_LEFT, PIP_TOP + row * PIP_STEP - 2, kind.toUpperCase(), {
+        size: 'bodySm',
+        color: C.textSecondary,
       })
     })
 
-    // tiles
-    const tileW = 200
-    const totalW = TILES.length * tileW + (TILES.length - 1) * 16
-    TILES.forEach((tile, i) => {
-      const x = cx - totalW / 2 + i * (tileW + 16) + tileW / 2
-      const rect = this.add
-        .rectangle(x, GAME_HEIGHT - 150, tileW, 90, 0x14141c, 0.95)
-        .setStrokeStyle(3, 0x3a3a46, 1)
-      const text = this.add
-        .text(x, GAME_HEIGHT - 150, tile.label, {
-          fontFamily: 'monospace',
-          fontSize: '24px',
-          color: '#e8e8f0',
-          align: 'center',
-        })
-        .setOrigin(0.5)
-      this.tileRects.push(rect)
-      this.tileTexts.push(text)
+    // separates "what you own" from "what you do about it"
+    rule(this, 260, GAME_WIDTH - 260, 790)
+
+    const slots = tileLayout()
+    TILES.forEach((def, i) => {
+      const { x, w } = slots[i]
+      const primary = def.group === 'go'
+      this.tiles.push(
+        tile(this, x, TILE_Y, w, TILE_H, def.label, {
+          accent: primary ? C.amberDim : undefined,
+          face: primary ? 'display' : 'mono',
+          weight: primary ? 600 : undefined,
+          letterSpacing: primary ? 4 : undefined,
+          size: primary ? 'subtitle' : 'action',
+        }),
+      )
     })
 
-    this.add
-      .text(cx, GAME_HEIGHT - 60, Phaser.Math.RND.pick(FLAVOR), {
-        fontFamily: 'monospace',
-        fontSize: '18px',
-        color: '#70707e',
-      })
-      .setOrigin(0.5)
+    flavor(this, cx, GAME_HEIGHT - 60, Phaser.Math.RND.pick(FLAVOR))
 
-    this.add.text(16, 16, '←/→ select · Enter confirm · Esc menu', {
-      fontFamily: 'monospace',
-      fontSize: '18px',
-      color: '#e8e8f0',
-      backgroundColor: '#000000aa',
-      padding: { x: 10, y: 6 },
-    })
+    hintBar(this, '←/→ select · Enter confirm · Esc menu')
 
     const kb = this.input.keyboard!
     kb.on('keydown-LEFT', () => this.moveSelection(-1))
@@ -190,18 +248,19 @@ export class GarageScene extends Phaser.Scene {
   }
 
   private activate() {
-    const tile = TILES[this.selected]
+    const def = TILES[this.selected]
     let next: CareerState | null = null
-    switch (tile.id) {
+    switch (def.id) {
       case 'repair':
         next = repairStep(this.career)
         break
       case 'engine':
       case 'tires':
       case 'armor':
-        next = buyUpgrade(this.career, tile.id)
+        next = buyUpgrade(this.career, def.id)
         break
       case 'market':
+        if (!this.career.profile.weaponsEnabled) return
         this.scene.start('BlackMarket')
         return
       case 'buycar':
@@ -258,9 +317,9 @@ export class GarageScene extends Phaser.Scene {
     return Phaser.Math.Clamp(0.08 + 0.92 * ((value - min) / (max - min)), 0, 1)
   }
 
-  private tileCaption(tile: Tile): { cost: string; info: string; enabled: boolean } {
+  private tileCaption(def: Tile): { cost: string; info: string; enabled: boolean } {
     const c = this.career
-    switch (tile.id) {
+    switch (def.id) {
       case 'repair': {
         if (c.damage <= 0) return { cost: '', info: 'No damage. The bodywork gleams, suspiciously.', enabled: false }
         const cost = repairStepCost(c.damage)
@@ -273,7 +332,7 @@ export class GarageScene extends Phaser.Scene {
       case 'engine':
       case 'tires':
       case 'armor': {
-        const kind = tile.id as UpgradeKind
+        const kind = def.id as UpgradeKind
         const cost = upgradeCost(c, kind)
         const cap = carById(c.carId).upgradeCaps[kind]
         if (cost === null) {
@@ -289,20 +348,14 @@ export class GarageScene extends Phaser.Scene {
           enabled: c.cash >= cost,
         }
       }
-      case 'market': {
-        const gear: string[] = []
-        if (c.mines > 0) gear.push(`${c.mines} mines`)
-        if (c.ramPlating) gear.push('plating')
-        if (c.overTurbo) gear.push('overcharge')
-        if (c.sabotage) gear.push('sabotage')
-        const carrying = gear.length > 0 ? ` Carrying: ${gear.join(', ')}.` : ''
-        const loan = c.loan ? ` LOAN DUE: $${c.loan.owed} in ${c.loan.racesLeft}.` : ''
+      // what you're carrying now lives permanently in the LOADOUT card, so the
+      // caption only has to sell the shop.
+      case 'market':
         return {
           cost: '',
-          info: `The black market: mines, plating, overcharged fuel, sabotage — and a loanshark.${carrying}${loan}`,
-          enabled: true,
+          info: c.profile.weaponsEnabled ? 'The black market: mines, plating, overcharged fuel, sabotage — and a loanshark.' : 'Unavailable in a weapons-off career.',
+          enabled: c.profile.weaponsEnabled,
         }
-      }
       case 'buycar':
         return {
           cost: '',
@@ -320,13 +373,10 @@ export class GarageScene extends Phaser.Scene {
     this.carImage.setTexture(`car-${showing.id}`)
     this.carNameText.setText(`${showing.name}  (yours)`)
 
-    TILES.forEach((tile, i) => {
-      const { cost, enabled } = this.tileCaption(tile)
-      const selected = i === this.selected
-      this.tileRects[i].setStrokeStyle(3, selected ? 0xf2a33c : 0x3a3a46, 1)
-      this.tileRects[i].setFillStyle(selected ? 0x1c1c26 : 0x14141c, 0.95)
-      this.tileTexts[i].setText(cost ? `${tile.label}\n${cost}` : tile.label)
-      this.tileTexts[i].setColor(enabled ? (selected ? '#f2a33c' : '#e8e8f0') : '#55555f')
+    TILES.forEach((def, i) => {
+      const { cost, enabled } = this.tileCaption(def)
+      this.tiles[i].label.setText(cost ? `${def.label}\n${cost}` : def.label)
+      this.tiles[i].setState(i === this.selected, enabled)
     })
 
     this.infoText.setText(this.tileCaption(TILES[this.selected]).info)
@@ -341,9 +391,28 @@ export class GarageScene extends Phaser.Scene {
       this.fittedTexts[row].setText(delta ? delta.text : '')
     })
 
+    // chassis dossier
+    this.blurbText.setText(showing.blurb)
+    this.massText.setText(`${showing.mass.toFixed(2)}×`)
+    const caps = showing.upgradeCaps
+    this.capsText.setText(`ENG ${caps.engine} · TIR ${caps.tires} · ARM ${caps.armor}`)
+
+    // loadout: gear you are carrying, and the debt you are carrying with it
+    const rows: Array<[string, number]> = [
+      c.mines > 0 ? [`${c.mines}`, C.ammo] : ['—', C.textDisabled],
+      c.ramPlating ? ['FITTED', C.money] : ['—', C.textDisabled],
+      c.overTurbo ? ['FITTED', C.warn] : ['—', C.textDisabled],
+      c.sabotage ? ['ARMED', C.danger] : ['—', C.textDisabled],
+      c.loan ? [`$${c.loan.owed} · ${c.loan.racesLeft} races`, C.danger] : ['CLEAN', C.textDisabled],
+    ]
+    rows.forEach(([label, color], i) => {
+      this.loadoutValues[i].setText(label).setColor(hex(color))
+    })
+
     const spec = effectiveCarSpec(carById(c.carId), c.upgrades)
     this.statsText.setText(
       [
+        `DRIVER    ${c.profile.driverName}`,
         `CASH      $${c.cash}`,
         `CAR       ${carById(c.carId).name}`,
         `TOP SPEED ${Math.round(spec.topSpeed * MPH_PER_PX)} mph`,
@@ -359,26 +428,15 @@ export class GarageScene extends Phaser.Scene {
     this.pipsGfx.clear()
     ;(['engine', 'tires', 'armor'] as UpgradeKind[]).forEach((kind, row) => {
       const cap = carById(c.carId).upgradeCaps[kind]
-      const owned = c.upgrades[kind]
-      const y = 470 + row * 34
-      for (let t = 0; t < cap; t++) {
-        this.pipsGfx.fillStyle(t < owned ? 0xf2a33c : 0x33333e, 1)
-        this.pipsGfx.fillRect(GAME_WIDTH - 260 + t * 26, y, 20, 20)
-      }
+      pips(this.pipsGfx, PANEL_LEFT + 160, PIP_TOP + row * PIP_STEP, c.upgrades[kind], cap)
     })
   }
 
   /** Bars for the car as it stands, drawn from the animated fill values. */
   private drawBars() {
-    const barX = GAME_WIDTH / 2 - 380
-    const barW = 360
     this.compareGfx.clear()
     BAR_STATS.forEach((stat, row) => {
-      const y = 500 + row * 30
-      this.compareGfx.fillStyle(0x2a2a33, 1)
-      this.compareGfx.fillRect(barX, y, barW, 12)
-      this.compareGfx.fillStyle(0xf2a33c, 1)
-      this.compareGfx.fillRect(barX, y, barW * this.barFill[stat], 12)
+      statBar(this.compareGfx, BAR_X, BAR_TOP + row * BAR_STEP, BAR_W, 12, this.barFill[stat], C.amber)
     })
   }
 }

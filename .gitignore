@@ -6,3 +6,6 @@ dist/
 # copyrighted reference material — research only, never ship or publish
 manual-death rally.pdf
 Screenshot*.png
+
+# before/after captures from UI refactor passes
+.shots/

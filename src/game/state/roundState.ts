@@ -9,6 +9,8 @@ export interface RaceOffer {
   rivalIds: string[]
   /** rank-1 final duel: 1-v-1 against the champion, no ladder points */
   duel?: boolean
+  /** persisted for the lifetime of this offer so restarting it is reproducible */
+  seed?: number
 }
 
 let currentOffer: RaceOffer | null = null
