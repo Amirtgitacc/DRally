@@ -16,18 +16,6 @@ export function paintGlowTexture(scene: Phaser.Scene) {
   tex.refresh()
 }
 
-export function paintPoleTexture(scene: Phaser.Scene) {
-  const g = scene.add.graphics()
-  g.fillStyle(0x0a0a0e, 1)
-  g.fillCircle(8, 8, 7)
-  g.fillStyle(0xc8c8d4, 1)
-  g.fillCircle(8, 8, 5)
-  g.fillStyle(0xfff2c0, 1)
-  g.fillCircle(8, 8, 3)
-  g.generateTexture('pole', 16, 16)
-  g.destroy()
-}
-
 export function paintChevronTexture(scene: Phaser.Scene) {
   const g = scene.add.graphics()
   g.fillStyle(0x16161c, 1)

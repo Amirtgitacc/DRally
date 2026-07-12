@@ -1,7 +1,7 @@
 import Phaser from 'phaser'
-import type { PickupType } from '../../core/track/pickups'
 
-// Procedural combat & pickup textures. Same swap-later policy as the rest.
+// Procedural combat textures. Same swap-later policy as the rest.
+// (spark and the pk-* pickups are now authored WebP art loaded in BootScene.)
 
 export function paintBulletTexture(scene: Phaser.Scene) {
   // elongated tracer: hot white head fading into an amber tail
@@ -28,19 +28,6 @@ export function paintRingTexture(scene: Phaser.Scene) {
   grad.addColorStop(0, 'rgba(255, 220, 160, 0)')
   grad.addColorStop(0.75, 'rgba(255, 220, 160, 0.9)')
   grad.addColorStop(1, 'rgba(255, 180, 90, 0)')
-  ctx.fillStyle = grad
-  ctx.fillRect(0, 0, size, size)
-  tex.refresh()
-}
-
-export function paintSparkTexture(scene: Phaser.Scene) {
-  const size = 32
-  const tex = scene.textures.createCanvas('spark', size, size)!
-  const ctx = tex.getContext()
-  const grad = ctx.createRadialGradient(size / 2, size / 2, 1, size / 2, size / 2, size / 2)
-  grad.addColorStop(0, 'rgba(255, 255, 255, 1)')
-  grad.addColorStop(0.35, 'rgba(255, 190, 90, 0.9)')
-  grad.addColorStop(1, 'rgba(255, 120, 40, 0)')
   ctx.fillStyle = grad
   ctx.fillRect(0, 0, size, size)
   tex.refresh()
@@ -129,140 +116,4 @@ export function paintEdgeFlashTexture(scene: Phaser.Scene) {
   ctx.fillStyle = grad
   ctx.fillRect(0, 0, size, size)
   tex.refresh()
-}
-
-export function paintPickupTextures(scene: Phaser.Scene) {
-  const paint = (type: PickupType, draw: (ctx: CanvasRenderingContext2D) => void, discColor: string) => {
-    const size = 44
-    const tex = scene.textures.createCanvas(`pk-${type}`, size, size)!
-    const ctx = tex.getContext()
-    // drop shadow
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.35)'
-    ctx.beginPath()
-    ctx.arc(size / 2 + 2, size / 2 + 3, 18, 0, Math.PI * 2)
-    ctx.fill()
-    // disc
-    ctx.fillStyle = discColor
-    ctx.beginPath()
-    ctx.arc(size / 2, size / 2, 18, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)'
-    ctx.lineWidth = 2
-    ctx.beginPath()
-    ctx.arc(size / 2, size / 2, 17, 0, Math.PI * 2)
-    ctx.stroke()
-    draw(ctx)
-    tex.refresh()
-  }
-
-  paint(
-    'ammo',
-    (ctx) => {
-      ctx.fillStyle = '#ffd75e'
-      for (let i = 0; i < 3; i++) ctx.fillRect(15 + i * 6, 14, 4, 12)
-      ctx.fillStyle = '#b8862e'
-      for (let i = 0; i < 3; i++) ctx.fillRect(15 + i * 6, 24, 4, 4)
-    },
-    '#4a3b28',
-  )
-
-  paint(
-    'turbo',
-    (ctx) => {
-      ctx.fillStyle = '#ffffff'
-      ctx.beginPath()
-      ctx.moveTo(25, 10)
-      ctx.lineTo(16, 24)
-      ctx.lineTo(21, 24)
-      ctx.lineTo(18, 34)
-      ctx.lineTo(28, 20)
-      ctx.lineTo(23, 20)
-      ctx.closePath()
-      ctx.fill()
-    },
-    '#1d6f86',
-  )
-
-  paint(
-    'repair',
-    (ctx) => {
-      ctx.strokeStyle = '#e8e8f0'
-      ctx.lineWidth = 5
-      ctx.lineCap = 'round'
-      ctx.beginPath()
-      ctx.moveTo(15, 29)
-      ctx.lineTo(29, 15)
-      ctx.stroke()
-      ctx.lineWidth = 2
-      ctx.beginPath()
-      ctx.arc(29, 15, 6, Math.PI * 0.6, Math.PI * 1.7, true)
-      ctx.stroke()
-    },
-    '#2e6b3e',
-  )
-
-  paint(
-    'cash',
-    (ctx) => {
-      ctx.fillStyle = '#eaf5ea'
-      ctx.font = 'bold 22px monospace'
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      ctx.fillText('$', 22, 23)
-    },
-    '#3f7d4a',
-  )
-
-  // the booby trap wears a skull: a pickup that hurts has to say so from a
-  // car's length away, or taking it feels like the game cheated
-  paint(
-    'trap',
-    (ctx) => {
-      const glow = ctx.createRadialGradient(22, 22, 2, 22, 22, 16)
-      glow.addColorStop(0, 'rgba(214, 140, 255, 0.55)')
-      glow.addColorStop(1, 'rgba(140, 60, 200, 0)')
-      ctx.fillStyle = glow
-      ctx.fillRect(4, 4, 36, 36)
-
-      ctx.fillStyle = '#f2ecf7'
-      // cranium
-      ctx.beginPath()
-      ctx.arc(22, 19.5, 9, Math.PI, 0)
-      ctx.lineTo(31, 24)
-      ctx.quadraticCurveTo(31, 27, 27, 27)
-      ctx.lineTo(17, 27)
-      ctx.quadraticCurveTo(13, 27, 13, 24)
-      ctx.closePath()
-      ctx.fill()
-      // jaw
-      ctx.beginPath()
-      ctx.moveTo(17, 27)
-      ctx.lineTo(27, 27)
-      ctx.lineTo(26, 32)
-      ctx.lineTo(18, 32)
-      ctx.closePath()
-      ctx.fill()
-
-      ctx.fillStyle = '#2a0f3d'
-      // eye sockets, angled inward for a scowl
-      ctx.beginPath()
-      ctx.ellipse(18.2, 19.5, 3.4, 3.8, 0.25, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.beginPath()
-      ctx.ellipse(25.8, 19.5, 3.4, 3.8, -0.25, 0, Math.PI * 2)
-      ctx.fill()
-      // nose
-      ctx.beginPath()
-      ctx.moveTo(22, 21.5)
-      ctx.lineTo(24, 25)
-      ctx.lineTo(20, 25)
-      ctx.closePath()
-      ctx.fill()
-      // teeth
-      ctx.fillRect(21.4, 27, 1.3, 5)
-      ctx.fillRect(18.6, 27, 1.2, 5)
-      ctx.fillRect(24.2, 27, 1.2, 5)
-    },
-    '#5a2a80',
-  )
 }
