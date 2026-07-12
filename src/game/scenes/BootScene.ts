@@ -3,10 +3,7 @@ import { CAR_CATALOG } from '../../data/cars'
 import { ROSTER } from '../../data/roster'
 import { BOSS } from '../../data/boss'
 import { paintCarTexture } from '../textures/vehicleTextures'
-import {
-  paintSkidStampTexture,
-  paintSmokeTexture,
-} from '../textures/environmentTextures'
+import { paintSkidStampTexture } from '../textures/environmentTextures'
 import {
   paintBulletTexture,
   paintEdgeFlashTexture,
@@ -14,14 +11,13 @@ import {
   paintMineTexture,
   paintRingTexture,
   paintScorchTexture,
-  paintSparkTexture,
 } from '../textures/combatTextures'
 import {
   paintChevronTexture,
   paintDebrisTexture,
   paintGlowTexture,
 } from '../textures/lightTextures'
-import { LOADED_TEXTURES } from '../textures/loadedAssets'
+import { LOADED_TEXTURES, LOADED_FX_TEXTURES } from '../textures/loadedAssets'
 
 // Authored WebP art (BootScene.preload) replaces the matching procedural
 // texture keys; every key NOT loaded stays painted below.
@@ -31,7 +27,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   preload() {
-    for (const t of LOADED_TEXTURES) this.load.image(t.key, t.url)
+    for (const t of [...LOADED_TEXTURES, ...LOADED_FX_TEXTURES]) this.load.image(t.key, t.url)
   }
 
   create() {
@@ -46,13 +42,12 @@ export class BootScene extends Phaser.Scene {
       }
     }
     paintCarTexture(this, `car-${BOSS.id}`, BOSS.bodyColor, BOSS.accentColor, 'sleek')
-    // asphalt, dirt, tire-wall, pole, and pk-* now loaded as WebP (LOADED_TEXTURES)
-    paintSmokeTexture(this)
+    // asphalt, dirt, tire-wall, pole, pk-*, spark, and smoke now loaded as WebP
+    // (LOADED_TEXTURES / LOADED_FX_TEXTURES)
     paintSkidStampTexture(this)
     paintBulletTexture(this)
     paintMineTexture(this)
     paintRingTexture(this)
-    paintSparkTexture(this)
     paintScorchTexture(this)
     paintFlameConeTexture(this)
     paintEdgeFlashTexture(this)
