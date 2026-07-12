@@ -4,18 +4,14 @@ import { ROSTER } from '../../data/roster'
 import { BOSS } from '../../data/boss'
 import { paintCarTexture } from '../textures/vehicleTextures'
 import {
-  paintAsphaltTexture,
-  paintDirtTexture,
   paintSkidStampTexture,
   paintSmokeTexture,
-  paintTireWallTexture,
 } from '../textures/environmentTextures'
 import {
   paintBulletTexture,
   paintEdgeFlashTexture,
   paintFlameConeTexture,
   paintMineTexture,
-  paintPickupTextures,
   paintRingTexture,
   paintScorchTexture,
   paintSparkTexture,
@@ -24,14 +20,18 @@ import {
   paintChevronTexture,
   paintDebrisTexture,
   paintGlowTexture,
-  paintPoleTexture,
 } from '../textures/lightTextures'
+import { LOADED_TEXTURES } from '../textures/loadedAssets'
 
-// All current assets are procedural placeholders generated here.
-// Authored art replaces these texture keys later without touching game code.
+// Authored WebP art (BootScene.preload) replaces the matching procedural
+// texture keys; every key NOT loaded stays painted below.
 export class BootScene extends Phaser.Scene {
   constructor() {
     super('Boot')
+  }
+
+  preload() {
+    for (const t of LOADED_TEXTURES) this.load.image(t.key, t.url)
   }
 
   create() {
@@ -46,11 +46,9 @@ export class BootScene extends Phaser.Scene {
       }
     }
     paintCarTexture(this, `car-${BOSS.id}`, BOSS.bodyColor, BOSS.accentColor, 'sleek')
-    paintAsphaltTexture(this)
-    paintDirtTexture(this)
+    // asphalt, dirt, tire-wall, pole, and pk-* now loaded as WebP (LOADED_TEXTURES)
     paintSmokeTexture(this)
     paintSkidStampTexture(this)
-    paintTireWallTexture(this)
     paintBulletTexture(this)
     paintMineTexture(this)
     paintRingTexture(this)
@@ -58,9 +56,7 @@ export class BootScene extends Phaser.Scene {
     paintScorchTexture(this)
     paintFlameConeTexture(this)
     paintEdgeFlashTexture(this)
-    paintPickupTextures(this)
-    paintGlowTexture(this)
-    paintPoleTexture(this)
+    paintGlowTexture(this) // glow-soft: cat-eye reflectors + light pools, kept (separate from pole)
     paintChevronTexture(this)
     paintDebrisTexture(this)
     this.scene.start('Menu')
