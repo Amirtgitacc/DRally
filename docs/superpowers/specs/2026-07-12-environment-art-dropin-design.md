@@ -64,14 +64,13 @@ Note: `paintPickupTextures` creates all six `pk-*` keys in one call; since all s
 | `pk-cash` | `pickup_cash_money.png` | pickup sprite | ~96² |
 | `pk-repair` | `pickup_repair_wrench.png` | pickup sprite | ~96² |
 | `pk-turbo` | `pickup_turbo_boost.png` | pickup sprite | ~96² |
-| `pk-mine` | `pickup_mine.png` | pickup sprite | ~96² |
-| `pk-hazard` | `pickup_hazard_skull_booby_trap.png` | pickup sprite | ~96² |
+| `pk-trap` | `pickup_hazard_skull_booby_trap.png` | pickup sprite (`trap` = booby-trap) | ~96² |
 | `spark` | `fx_spark_burst.png` | FX, may use ADD blend | ~128² |
 | `smoke` | `fx_smoke_puff.png` | particle emitter texture | ~128² |
 
 **Verify-and-revert rule:** `spark` and `smoke` are the risky ones (particle/blend usage). Include them; if either reads wrong in the browser (e.g. baked color fights ADD blend, or the detailed texture looks noisy at particle scale), revert that single key back to its `paint*` call. Everything else is a plain opaque/alpha sprite and should be a safe swap.
 
-Confirm the six `PickupType` values match the six pickup files during implementation (`ammo`, `cash`, `repair`, `turbo`, `mine`, `hazard`).
+`PickupType` has **five** values (`ammo`, `turbo`, `repair`, `cash`, `trap`), so five `pk-*` keys are swapped. `pickup_mine.png` has no matching pickup type and is **left unused** this pass (the in-world deployed-mine key `mine` is a different, procedural texture and stays procedural).
 
 ## Error handling / edge cases
 
