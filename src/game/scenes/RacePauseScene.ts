@@ -37,7 +37,7 @@ export class RacePauseScene extends Phaser.Scene {
     text(this, GAME_WIDTH / 2, 250, `${this.pauseData.trackName} · lap ${this.pauseData.lap}/${this.pauseData.laps} · position ${this.pauseData.position || '—'} · weapons ${this.pauseData.weaponsFree ? 'free' : 'locked'}`, {
       size: 'body', color: C.textSecondary, origin: [0.5, 0.5],
     })
-    ITEMS.forEach((label, i) => this.handles.push(tile(this, 620, 390 + i * 105, 500, 74, label, { select: i === 2 ? C.danger : C.amber })))
+    ITEMS.forEach((label, i) => this.handles.push(tile(this, 620, 390 + i * 105, 500, 74, label, { select: i === 2 ? C.danger : C.oxide })))
     this.helpText = text(this, 1050, 350, '', { size: 'bodySm', color: C.textBody, lineSpacing: 8 })
     this.warning = text(this, GAME_WIDTH / 2, 790, '', { size: 'body', color: C.danger, align: 'center', origin: [0.5, 0.5] })
 

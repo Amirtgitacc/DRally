@@ -27,9 +27,9 @@ export class SettingsScene extends Phaser.Scene {
   create() {
     this.settings = loadSettings(); this.selected = 0; this.rebinding = null; this.settingTiles = []; this.bindTiles = []
     heading(this, GAME_WIDTH / 2, 65, 'SETTINGS / CONTROLS')
-    text(this, 450, 130, 'GAME', { size: 'subtitle', color: C.amber })
+    text(this, 450, 130, 'GAME', { size: 'subtitle', color: C.oxide })
     SETTINGS.forEach((row, i) => this.settingTiles.push(tile(this, 450, 190 + i * 78, 700, 58, row.label, { size: 'bodySm' })))
-    text(this, 1360, 130, 'RACE BINDINGS', { size: 'subtitle', color: C.amber })
+    text(this, 1360, 130, 'RACE BINDINGS', { size: 'subtitle', color: C.oxide })
     this.gamepadText = text(this, 1740, 138, '', { size: 'caption', color: C.textSecondary, origin: [1, 0.5] })
     GAME_ACTIONS.forEach((action, i) => this.bindTiles.push(tile(this, 1360, 200 + i * 79, 820, 58, ACTION_LABELS[action], { size: 'bodySm' })))
     flavor(this, GAME_WIDTH / 2, GAME_HEIGHT - 48, '↑/↓ navigate · ←/→ adjust · Enter select/rebind · Esc save and back')

@@ -72,7 +72,7 @@ export function text(scene: Phaser.Scene, x: number, y: number, content: string,
   return obj
 }
 
-/** The amber scene title: condensed, tracked out, heavy black outline. */
+/** The oxide scene title: condensed, tracked out, heavy black outline. */
 export function heading(
   scene: Phaser.Scene,
   x: number,
@@ -246,7 +246,7 @@ export function tile(
     face?: 'display' | 'mono'
     weight?: number
     letterSpacing?: number
-    /** selection colour — the black market picks in red, not amber */
+    /** selection colour — the black market picks in red, not the oxide default */
     select?: number
   } = {},
 ): TileHandle {

@@ -40,7 +40,7 @@ export class RankingScene extends Phaser.Scene {
         const label = `${String(rankNum).padStart(2, ' ')}. ${name.padEnd(15)}${String(row.points).padStart(4, ' ')} pts`
         const rowText = text(this, x, y, label, {
           size: 'action',
-          color: row.isPlayer ? C.amber : C.textPrimary,
+          color: row.isPlayer ? C.oxide : C.textPrimary,
           ...(row.isPlayer ? { stroke: C.shadow, strokeThickness: STROKE.text } : {}),
         })
         if (row.isPlayer) {

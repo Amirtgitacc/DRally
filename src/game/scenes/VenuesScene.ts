@@ -37,7 +37,7 @@ export class VenuesScene extends Phaser.Scene {
       // arrows stay mono: Oswald has no glyph for ◄ / ► and would fall back mid-string
       const arrow = text(this, cx + dir * 700, GAME_HEIGHT * 0.48, dir < 0 ? '◄' : '►', {
         size: 'title',
-        color: C.amber,
+        color: C.oxide,
         origin: [0.5, 0.5],
       }).setInteractive({ useHandCursor: true })
       arrow.on('pointerdown', () => this.browse(dir))
@@ -106,7 +106,7 @@ export class VenuesScene extends Phaser.Scene {
     const dotY = GAME_HEIGHT - 105
     const startX = GAME_WIDTH / 2 - ((ALL_TRACKS.length - 1) * 26) / 2
     ALL_TRACKS.forEach((_, i) => {
-      this.dotsGfx.fillStyle(i === this.idx ? C.amber : C.border, 1)
+      this.dotsGfx.fillStyle(i === this.idx ? C.oxide : C.border, 1)
       this.dotsGfx.fillCircle(startX + i * 26, dotY, i === this.idx ? 7 : 5)
     })
   }

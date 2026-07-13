@@ -67,7 +67,7 @@ export class BlackMarketScene extends Phaser.Scene {
     // what's already strapped to the car for the next race
     this.statusText = text(this, cx, 230, '', {
       size: 'body',
-      color: C.amber,
+      color: C.oxide,
       align: 'center',
       lineSpacing: 8,
       origin: [0.5, 0],

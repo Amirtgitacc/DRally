@@ -69,7 +69,7 @@ export class MenuScene extends Phaser.Scene {
 
     ITEMS.forEach((item, i) => {
       const y = 250 + i * 88
-      this.handles.push(tile(this, 1230, y, 720, 68, item.label, { size: 'action', accent: i === 0 ? C.amberDim : undefined }))
+      this.handles.push(tile(this, 1230, y, 720, 68, item.label, { size: 'action', accent: i === 0 ? C.oxideDim : undefined }))
     })
     flavor(this, cx, GAME_HEIGHT - 42, '↑/↓ navigate · Enter select · V venues · L ladder · N new career')
 

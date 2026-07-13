@@ -51,7 +51,7 @@ export class NewCareerScene extends Phaser.Scene {
     this.info = text(this, 520, 670, '', { size: 'body', color: C.textBody, align: 'center', lineSpacing: 9, origin: [0.5, 0] })
 
     ;['DRIVER NAME', 'PORTRAIT ID', 'LIVERY', 'WEAPONS', 'DIFFICULTY', 'START CAREER'].forEach((label, i) => {
-      this.rows.push(tile(this, 1320, 265 + i * 105, 760, 76, label, { accent: i === 5 ? C.amberDim : undefined }))
+      this.rows.push(tile(this, 1320, 265 + i * 105, 760, 76, label, { accent: i === 5 ? C.oxideDim : undefined }))
     })
 
     flavor(this, cx, GAME_HEIGHT - 52, 'Type to edit name · ←/→ change · ↑/↓ navigate · Enter confirm · Esc back')

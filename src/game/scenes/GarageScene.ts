@@ -218,7 +218,7 @@ export class GarageScene extends Phaser.Scene {
       const primary = def.group === 'go'
       this.tiles.push(
         tile(this, x, TILE_Y, w, TILE_H, def.label, {
-          accent: primary ? C.amberDim : undefined,
+          accent: primary ? C.oxideDim : undefined,
           face: primary ? 'display' : 'mono',
           weight: primary ? 600 : undefined,
           letterSpacing: primary ? 4 : undefined,
