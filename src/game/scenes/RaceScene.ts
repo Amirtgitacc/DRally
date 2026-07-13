@@ -546,7 +546,7 @@ export class RaceScene extends Phaser.Scene {
     audioBus.explosion()
     this.explosionSmoke.explode(16, mine.x, mine.y)
     this.hitSparks.explode(8, mine.x, mine.y)
-    this.blastEffects(mine.x, mine.y, 1)
+    this.blastEffects(mine.x, mine.y, 1, 'mine-blast')
     this.scorchStamp.setPosition(mine.x, mine.y).setRotation(this.random() * Math.PI)
     this.skidRT.draw(this.scorchStamp)
 
@@ -629,7 +629,7 @@ export class RaceScene extends Phaser.Scene {
   }
 
   /** Shockwave ring + fireball flash shared by mine blasts and wrecks. */
-  private blastEffects(x: number, y: number, scale: number) {
+  private blastEffects(x: number, y: number, scale: number, blastKey: string) {
     const ring = this.add
       .image(x, y, 'ring')
       .setScale(0.3 * scale)
@@ -659,6 +659,22 @@ export class RaceScene extends Phaser.Scene {
       alpha: 0,
       duration: 300,
       onComplete: () => fireball.destroy(),
+    })
+    // authored fireball art layered over the procedural bloom (NORMAL blend:
+    // the baked art carries its own dark smoke; ADD is the tuning fallback)
+    const boom = this.add
+      .image(x, y, blastKey)
+      .setScale(0.5 * scale)
+      .setDepth(7.15)
+      .setBlendMode(Phaser.BlendModes.NORMAL)
+    this.cameras.cameras[1]?.ignore(boom)
+    this.tweens.add({
+      targets: boom,
+      scale: 1.2 * scale,
+      alpha: 0,
+      duration: 280,
+      ease: 'quad.out',
+      onComplete: () => boom.destroy(),
     })
   }
 
@@ -807,7 +823,7 @@ export class RaceScene extends Phaser.Scene {
 
     audioBus.explosion()
     this.explosionSmoke.explode(30, car.state.x, car.state.y)
-    this.blastEffects(car.state.x, car.state.y, 1.6)
+    this.blastEffects(car.state.x, car.state.y, 1.6, 'explosion')
 
     // flying debris chunks
     for (let i = 0; i < 8; i++) {
