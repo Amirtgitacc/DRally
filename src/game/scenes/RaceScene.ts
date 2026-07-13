@@ -2317,7 +2317,7 @@ export class RaceScene extends Phaser.Scene {
 
     this.speedText = text(this, 28, this.scale.height - 28, '0 MPH', {
       size: 'speed',
-      color: C.amber,
+      color: C.oxide,
       stroke: C.shadow,
       strokeThickness: STROKE.heading,
       origin: [0, 1],
@@ -2327,7 +2327,7 @@ export class RaceScene extends Phaser.Scene {
 
     this.positionText = text(this, this.scale.width - 28, this.scale.height - 30, '4th', {
       size: 'readout',
-      color: C.amber,
+      color: C.oxide,
       stroke: C.shadow,
       strokeThickness: STROKE.title,
       origin: [1, 1],
@@ -2361,7 +2361,7 @@ export class RaceScene extends Phaser.Scene {
     if (this.hasPlating) gear.push('RAM PLATING')
     const gearText = text(this, 16, this.scale.height - 254, gear.join(' · '), {
       size: 'caption',
-      color: C.amberDim,
+      color: C.oxideDim,
       stroke: C.shadow,
       strokeThickness: STROKE.text,
     })
@@ -2452,7 +2452,7 @@ export class RaceScene extends Phaser.Scene {
       const row = this.standingsTexts[i]
       const status = car.wrecked ? ' ✗' : car.finishedAt !== null ? ' *' : ` ${Math.round(car.damage)}%`
       row.setText(`${i + 1}. ${car.name}${status}`)
-      row.setColor(hex(car.isPlayer ? C.amber : car.color))
+      row.setColor(hex(car.isPlayer ? C.oxide : car.color))
     })
 
     if (this.debugText) {
