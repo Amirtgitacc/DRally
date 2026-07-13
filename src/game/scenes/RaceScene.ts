@@ -26,6 +26,7 @@ import {
   spacedPointsAlong,
   turnAmount,
   type Gate,
+  type Pose,
   type Vec2,
 } from '../../core/track/geometry'
 import { placeSpritesAlong, scatterImages } from '../track/placement'
@@ -1853,6 +1854,7 @@ export class RaceScene extends Phaser.Scene {
     // gameplay (pickup/trap) RNG stream, while staying reproducible per seed
     const decorRng = createSeededRandom(this.raceSeed ^ 0x9e3779b9)
     this.scatterDecals(halfW, decorRng)
+    this.placeFurniture(shoulderHalf, decorRng)
   }
 
   /** Seeded flat decals (oil, skid, crack, patch) scattered on the track surface. */
@@ -1874,6 +1876,58 @@ export class RaceScene extends Phaser.Scene {
       maxScale: 0.55,
       jitter: Math.PI,
       alpha: 0.85,
+    })
+  }
+
+  /** Seeded non-colliding furniture: boundary props + a start-line cluster. */
+  private placeFurniture(shoulderHalf: number, rng: () => number) {
+    // tyre stacks + sandbags on the dirt just beyond the shoulder, both sides
+    const boundaryKeys = ['tyre-0', 'tyre-1', 'sandbag-0', 'sandbag-1']
+    for (const side of [1, -1]) {
+      const line = offsetClosedPolyline(this.centerline, side * (shoulderHalf + 70))
+      const poses = scatterPointsAlong(line, 4, rng, {
+        halfWidth: 0,
+        lateralFrac: 0,
+        minGap: 400,
+      })
+      scatterImages(this, poses, boundaryKeys, rng, {
+        depth: 3,
+        minScale: 0.45,
+        maxScale: 0.6,
+        jitter: 0.4,
+      })
+    }
+
+    // start/finish cluster on the shoulder: a short row of cones + one barricade
+    const gate = this.gates[0]
+    const t = gate.tangent
+    const angle = Math.atan2(t.y, t.x)
+    const nx = -t.y // left normal
+    const ny = t.x
+    const sideOff = shoulderHalf - 10
+    const cones: Pose[] = []
+    for (let i = 0; i < 4; i++) {
+      const back = 40 + i * 55 // stepped back from the gate along -travel
+      cones.push({
+        x: gate.center.x - t.x * back + nx * sideOff,
+        y: gate.center.y - t.y * back + ny * sideOff,
+        angle,
+      })
+    }
+    scatterImages(this, cones, ['cone-0', 'cone-1'], rng, {
+      depth: 3,
+      minScale: 0.45,
+      maxScale: 0.5,
+    })
+    const barricade: Pose = {
+      x: gate.center.x - t.x * 20 + nx * (sideOff + 20),
+      y: gate.center.y - t.y * 20 + ny * (sideOff + 20),
+      angle,
+    }
+    scatterImages(this, [barricade], ['barricade-0', 'barricade-1'], rng, {
+      depth: 3,
+      minScale: 0.5,
+      maxScale: 0.5,
     })
   }
 
