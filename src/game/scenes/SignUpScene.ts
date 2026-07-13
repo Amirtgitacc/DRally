@@ -13,7 +13,7 @@ import { BOSS } from '../../data/boss'
 import { loadCareer } from '../state/saveGame'
 import { setCurrentOffer } from '../state/roundState'
 import { C, STROKE, TIER_COLOR, TIER_LABEL } from '../ui/theme'
-import { flavor, heading, panel, subheading, text } from '../ui/widgets'
+import { fitImage, flavor, heading, panel, subheading, text } from '../ui/widgets'
 import { randomSeed } from '../../core/race/random'
 
 const TIERS: RaceTier[] = ['street', 'pro', 'death']
@@ -153,7 +153,8 @@ export class SignUpScene extends Phaser.Scene {
       strokeWidth: 5,
     })
 
-    const boss = this.add.image(cx, GAME_HEIGHT * 0.375, `car-${BOSS.id}`).setScale(1.7).setAngle(-90)
+    const boss = this.add.image(cx, GAME_HEIGHT * 0.375, 'car-hero-sovereign')
+    fitImage(boss, 340, 240)
     this.tweens.add({ targets: boss, y: '-=8', duration: 1200, yoyo: true, repeat: -1, ease: 'sine.inout' })
 
     const pitch = [
