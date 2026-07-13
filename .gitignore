@@ -12,3 +12,7 @@ Screenshot*.png
 
 # Superpowers brainstorm companion (local mockups, do not commit)
 .superpowers/
+
+# Project B source car art (green-screen renders) — research/local, never commit
+cars/
+.playwright-cli/
