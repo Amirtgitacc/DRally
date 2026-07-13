@@ -24,18 +24,18 @@ const JOBS = [
   { src: 'red_white_kerb_tile.png',                    out: 'env/kerb.webp',         w: 128, fit: 'inside', q: 85, trim: true },
   { src: 'start_finish_checkered_tile.png',            out: 'env/start-finish.webp', w: 256, fit: 'inside', q: 85, trim: true },
   // --- Phase 2 decals (track_surface_decal_set.png, 1536x1024, 3 cols x 4 rows, cell 512x256) ---
-  { src: 'track_surface_decal_set.png', out: 'decals/oil-0.webp',   w: 256, fit: 'inside', q: 85, extract: { left: 0,    top: 0,   width: 512, height: 256 } },
-  { src: 'track_surface_decal_set.png', out: 'decals/oil-1.webp',   w: 256, fit: 'inside', q: 85, extract: { left: 512,  top: 0,   width: 512, height: 256 } },
-  { src: 'track_surface_decal_set.png', out: 'decals/oil-2.webp',   w: 256, fit: 'inside', q: 85, extract: { left: 1024, top: 0,   width: 512, height: 256 } },
-  { src: 'track_surface_decal_set.png', out: 'decals/skid-0.webp',  w: 256, fit: 'inside', q: 85, extract: { left: 0,    top: 256, width: 512, height: 256 } },
-  { src: 'track_surface_decal_set.png', out: 'decals/skid-1.webp',  w: 256, fit: 'inside', q: 85, extract: { left: 512,  top: 256, width: 512, height: 256 } },
-  { src: 'track_surface_decal_set.png', out: 'decals/skid-2.webp',  w: 256, fit: 'inside', q: 85, extract: { left: 1024, top: 256, width: 512, height: 256 } },
-  { src: 'track_surface_decal_set.png', out: 'decals/crack-0.webp', w: 256, fit: 'inside', q: 85, extract: { left: 0,    top: 512, width: 512, height: 256 } },
-  { src: 'track_surface_decal_set.png', out: 'decals/crack-1.webp', w: 256, fit: 'inside', q: 85, extract: { left: 512,  top: 512, width: 512, height: 256 } },
-  { src: 'track_surface_decal_set.png', out: 'decals/crack-2.webp', w: 256, fit: 'inside', q: 85, extract: { left: 1024, top: 512, width: 512, height: 256 } },
-  { src: 'track_surface_decal_set.png', out: 'decals/patch-0.webp', w: 256, fit: 'inside', q: 85, extract: { left: 0,    top: 768, width: 512, height: 256 } },
-  { src: 'track_surface_decal_set.png', out: 'decals/patch-1.webp', w: 256, fit: 'inside', q: 85, extract: { left: 512,  top: 768, width: 512, height: 256 } },
-  { src: 'track_surface_decal_set.png', out: 'decals/patch-2.webp', w: 256, fit: 'inside', q: 85, extract: { left: 1024, top: 768, width: 512, height: 256 } },
+  { src: 'track_surface_decal_set.png', out: 'decals/oil-0.webp',   w: 256, fit: 'inside', q: 85, extract: { left: 0,    top: 0,   width: 512, height: 256 }, trim: true },
+  { src: 'track_surface_decal_set.png', out: 'decals/oil-1.webp',   w: 256, fit: 'inside', q: 85, extract: { left: 512,  top: 0,   width: 512, height: 256 }, trim: true },
+  { src: 'track_surface_decal_set.png', out: 'decals/oil-2.webp',   w: 256, fit: 'inside', q: 85, extract: { left: 1024, top: 0,   width: 512, height: 256 }, trim: true },
+  { src: 'track_surface_decal_set.png', out: 'decals/skid-0.webp',  w: 256, fit: 'inside', q: 85, extract: { left: 0,    top: 256, width: 512, height: 256 }, trim: true },
+  { src: 'track_surface_decal_set.png', out: 'decals/skid-1.webp',  w: 256, fit: 'inside', q: 85, extract: { left: 512,  top: 256, width: 512, height: 256 }, trim: true },
+  { src: 'track_surface_decal_set.png', out: 'decals/skid-2.webp',  w: 256, fit: 'inside', q: 85, extract: { left: 1024, top: 256, width: 512, height: 256 }, trim: true },
+  { src: 'track_surface_decal_set.png', out: 'decals/crack-0.webp', w: 256, fit: 'inside', q: 85, extract: { left: 0,    top: 512, width: 512, height: 256 }, trim: true },
+  { src: 'track_surface_decal_set.png', out: 'decals/crack-1.webp', w: 256, fit: 'inside', q: 85, extract: { left: 512,  top: 512, width: 512, height: 256 }, trim: true },
+  { src: 'track_surface_decal_set.png', out: 'decals/crack-2.webp', w: 256, fit: 'inside', q: 85, extract: { left: 1024, top: 512, width: 512, height: 256 }, trim: true },
+  { src: 'track_surface_decal_set.png', out: 'decals/patch-0.webp', w: 256, fit: 'inside', q: 85, extract: { left: 0,    top: 768, width: 512, height: 256 }, trim: true },
+  { src: 'track_surface_decal_set.png', out: 'decals/patch-1.webp', w: 256, fit: 'inside', q: 85, extract: { left: 512,  top: 768, width: 512, height: 256 }, trim: true },
+  { src: 'track_surface_decal_set.png', out: 'decals/patch-2.webp', w: 256, fit: 'inside', q: 85, extract: { left: 1024, top: 768, width: 512, height: 256 }, trim: true },
 ]
 
 for (const j of JOBS) {
@@ -44,9 +44,17 @@ for (const j of JOBS) {
   const resize = j.h
     ? { width: j.w, height: j.h, fit: j.fit }
     : { width: j.w, fit: j.fit }
-  let pipe = sharp(join(SRC, j.src))
-  if (j.extract) pipe = pipe.extract(j.extract)
-  if (j.trim) pipe = pipe.trim({ threshold: 16 })
+  let pipe
+  if (j.extract && j.trim) {
+    // sharp can't reliably extract+trim in one pipeline (throws "bad extract
+    // area" on some regions); materialize the crop to a buffer, then trim.
+    const cut = await sharp(join(SRC, j.src)).extract(j.extract).png().toBuffer()
+    pipe = sharp(cut).trim({ threshold: 16 })
+  } else {
+    pipe = sharp(join(SRC, j.src))
+    if (j.extract) pipe = pipe.extract(j.extract)
+    if (j.trim) pipe = pipe.trim({ threshold: 16 })
+  }
   await pipe.resize(resize).webp({ quality: j.q }).toFile(dest)
   console.log('wrote', dest)
 }
