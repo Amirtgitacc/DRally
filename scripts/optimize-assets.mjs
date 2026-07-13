@@ -56,6 +56,16 @@ const JOBS = [
   { src: 'car_hero_harrier.png',   out: 'cars/hero/harrier.webp',   w: 460, fit: 'inside', q: 88, trim: true },
   { src: 'car_hero_basilisk.png',  out: 'cars/hero/basilisk.webp',  w: 460, fit: 'inside', q: 88, trim: true },
   { src: 'car_hero_leviathan.png', out: 'cars/hero/leviathan.webp', w: 460, fit: 'inside', q: 88, trim: true },
+  // --- Project B: Iranian top-down race sprites (roof view, nose +x, transparent) ---
+  { src: 'car_top_jackal.png',    out: 'cars/top/jackal.webp',    w: 220, fit: 'inside', q: 88, trim: true },
+  { src: 'car_top_vandal.png',    out: 'cars/top/vandal.webp',    w: 220, fit: 'inside', q: 88, trim: true },
+  { src: 'car_top_marauder.png',  out: 'cars/top/marauder.webp',  w: 220, fit: 'inside', q: 88, trim: true },
+  { src: 'car_top_harrier.png',   out: 'cars/top/harrier.webp',   w: 220, fit: 'inside', q: 88, trim: true },
+  { src: 'car_top_basilisk.png',  out: 'cars/top/basilisk.webp',  w: 220, fit: 'inside', q: 88, trim: true },
+  { src: 'car_top_leviathan.png', out: 'cars/top/leviathan.webp', w: 220, fit: 'inside', q: 88, trim: true },
+  { src: 'car_top_sovereign.png', out: 'cars/top/sovereign.webp', w: 220, fit: 'inside', q: 88, trim: true },
+  // Boss 3/4 hero for the pre-duel reveal (matches the hero pipeline)
+  { src: 'car_hero_sovereign.png', out: 'cars/hero/boss.webp',    w: 460, fit: 'inside', q: 88, trim: true },
 ]
 
 for (const j of JOBS) {

@@ -58,4 +58,18 @@ export const LOADED_HERO_TEXTURES: LoadedTexture[] = [
   { key: 'car-hero-harrier', url: 'assets/cars/hero/harrier.webp' },
   { key: 'car-hero-basilisk', url: 'assets/cars/hero/basilisk.webp' },
   { key: 'car-hero-leviathan', url: 'assets/cars/hero/leviathan.webp' },
+  // Project B: boss pre-duel reveal render (3/4 hero, distinct armoured car)
+  { key: 'car-hero-sovereign', url: 'assets/cars/hero/boss.webp' },
+]
+
+// Project B: real top-down roof-view race sprites, one per chassis + the boss.
+// Replace the procedural car-<id> keys the race used to paint at boot.
+export const LOADED_TOP_TEXTURES: LoadedTexture[] = [
+  { key: 'car-top-jackal', url: 'assets/cars/top/jackal.webp' },
+  { key: 'car-top-vandal', url: 'assets/cars/top/vandal.webp' },
+  { key: 'car-top-marauder', url: 'assets/cars/top/marauder.webp' },
+  { key: 'car-top-harrier', url: 'assets/cars/top/harrier.webp' },
+  { key: 'car-top-basilisk', url: 'assets/cars/top/basilisk.webp' },
+  { key: 'car-top-leviathan', url: 'assets/cars/top/leviathan.webp' },
+  { key: 'car-top-sovereign', url: 'assets/cars/top/sovereign.webp' },
 ]
