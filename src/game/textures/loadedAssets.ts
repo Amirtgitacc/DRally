@@ -14,6 +14,9 @@ export const LOADED_TEXTURES: LoadedTexture[] = [
   { key: 'pk-repair', url: 'assets/pickups/repair.webp' },
   { key: 'pk-cash', url: 'assets/pickups/cash.webp' },
   { key: 'pk-trap', url: 'assets/pickups/trap.webp' },
+  { key: 'edge-line', url: 'assets/env/edge-line.webp' },
+  { key: 'kerb', url: 'assets/env/kerb.webp' },
+  { key: 'start-finish', url: 'assets/env/start-finish.webp' },
 ]
 
 // Blend/particle-sensitive; wired in Task 3 (verify-and-revert).

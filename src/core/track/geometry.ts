@@ -107,6 +107,32 @@ export function spacedPointsAlong(points: Vec2[], spacing: number): Vec2[] {
   return out
 }
 
+export interface Pose {
+  x: number
+  y: number
+  angle: number
+}
+
+/** Like spacedPointsAlong, but each pose also carries the segment tangent angle (radians). */
+export function spacedPosesAlong(points: Vec2[], spacing: number): Pose[] {
+  const out: Pose[] = []
+  let carried = 0
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i]
+    const b = points[(i + 1) % points.length]
+    const segLen = Math.hypot(b.x - a.x, b.y - a.y)
+    const angle = Math.atan2(b.y - a.y, b.x - a.x)
+    let d = spacing - carried
+    while (d <= segLen) {
+      const t = d / segLen
+      out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, angle })
+      d += spacing
+    }
+    carried = (carried + segLen) % spacing
+  }
+  return out
+}
+
 function pointSegmentDistance(p: Vec2, a: Vec2, b: Vec2): number {
   const abx = b.x - a.x
   const aby = b.y - a.y

@@ -109,6 +109,8 @@ export const AI_MINES = {
 export const TURBO = {
   drainPerSec: 0.4,
   rechargePerSec: 0.05,
+  /** after emptying, release boost until this much has recovered */
+  restartThreshold: 0.1,
   accelScale: 1.9,
   topSpeedScale: 1.25,
 }
@@ -155,11 +157,17 @@ export const TURBO_FX = {
 }
 
 export const PICKUPS = {
-  respawnMs: 10000,
+  /** Six active slots total: four bonuses and two risks. */
+  types: ['ammo', 'turbo', 'repair', 'cash', 'trap', 'trap'] as const,
+  respawnMs: 18000,
   radius: 42,
-  ammoAmount: 50,
-  repairAmount: 25,
-  cashAmount: 200,
+  ammoAmount: 25,
+  turboAmount: 0.35,
+  repairAmount: 15,
+  cashAmount: 100,
+  lateralOffsets: [-80, -40, 0, 40, 80],
+  clearRadiusAroundStart: 450,
+  minDistance: 360,
   /** the skull-marked orb swims your camera for long enough to cost a corner */
   trapDurationMs: 4500,
 }

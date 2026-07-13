@@ -7,6 +7,7 @@ import {
   offsetClosedPolyline,
   segmentsIntersect,
   spacedPointsAlong,
+  spacedPosesAlong,
 } from '../../../src/core/track/geometry'
 
 const square = [
@@ -67,6 +68,31 @@ describe('spacedPointsAlong', () => {
   it('emits points at roughly even arc spacing', () => {
     const pts = spacedPointsAlong(square, 50) // perimeter 400
     expect(pts.length).toBe(8)
+  })
+})
+
+describe('spacedPosesAlong', () => {
+  const square = [
+    { x: 0, y: 0 },
+    { x: 100, y: 0 },
+    { x: 100, y: 100 },
+    { x: 0, y: 100 },
+  ]
+
+  it('emits the same count and positions as spacedPointsAlong', () => {
+    const poses = spacedPosesAlong(square, 50)
+    expect(poses.length).toBe(8)
+    expect(poses[0]).toMatchObject({ x: 50, y: 0 })
+    expect(poses[1]).toMatchObject({ x: 100, y: 0 })
+  })
+
+  it('carries the segment tangent angle', () => {
+    const poses = spacedPosesAlong(square, 50)
+    // first edge runs +x → angle 0
+    expect(poses[0].angle).toBeCloseTo(0)
+    // point (100,50) sits on the +y edge → angle π/2
+    expect(poses[2]).toMatchObject({ x: 100, y: 50 })
+    expect(poses[2].angle).toBeCloseTo(Math.PI / 2)
   })
 })
 

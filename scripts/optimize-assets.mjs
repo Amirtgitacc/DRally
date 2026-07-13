@@ -20,6 +20,9 @@ const JOBS = [
   { src: 'pickup_hazard_skull_booby_trap.png',   out: 'pickups/trap.webp',     w: 128, h: 128, fit: 'inside', q: 85 },
   { src: 'fx_spark_burst.png',                   out: 'fx/spark.webp',         w: 128, h: 128, fit: 'inside', q: 85 },
   { src: 'fx_smoke_puff.png',                    out: 'fx/smoke.webp',         w: 128, h: 128, fit: 'inside', q: 85 },
+  { src: 'worn_white_edge_and_dashed_line_pieces.png', out: 'env/edge-line.webp',    w: 128, fit: 'inside', q: 85, extract: { left: 324, top: 382, width: 281, height: 62 } },
+  { src: 'red_white_kerb_tile.png',                    out: 'env/kerb.webp',         w: 128, fit: 'inside', q: 85, trim: true },
+  { src: 'start_finish_checkered_tile.png',            out: 'env/start-finish.webp', w: 256, fit: 'inside', q: 85, trim: true },
 ]
 
 for (const j of JOBS) {
@@ -28,7 +31,10 @@ for (const j of JOBS) {
   const resize = j.h
     ? { width: j.w, height: j.h, fit: j.fit }
     : { width: j.w, fit: j.fit }
-  await sharp(join(SRC, j.src)).resize(resize).webp({ quality: j.q }).toFile(dest)
+  let pipe = sharp(join(SRC, j.src))
+  if (j.extract) pipe = pipe.extract(j.extract)
+  if (j.trim) pipe = pipe.trim({ threshold: 16 })
+  await pipe.resize(resize).webp({ quality: j.q }).toFile(dest)
   console.log('wrote', dest)
 }
 console.log(`done: ${JOBS.length} assets`)

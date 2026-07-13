@@ -27,6 +27,7 @@ import {
   type Gate,
   type Vec2,
 } from '../../core/track/geometry'
+import { placeSpritesAlong } from '../track/placement'
 import {
   applyGateCrossing,
   createProgress,
@@ -35,7 +36,7 @@ import {
 } from '../../core/race/progress'
 import { ordinal } from '../../core/race/placement'
 import { applyDamage, impactDamage, repairDamage } from '../../core/combat/damage'
-import { layoutPickups, type PickupType } from '../../core/track/pickups'
+import { randomPickupLayout, randomPickupSpot, type PickupType } from '../../core/track/pickups'
 import { aiDrive, lookAheadFor, wrapAngle, type AiTuning } from '../../core/ai/driver'
 import {
   talentAimSpread,
@@ -102,6 +103,7 @@ import { createSeededRandom, randomSeed } from '../../core/race/random'
 import type { RacePhase } from '../race/raceRuntime'
 import { simulationDeltaSeconds } from '../race/raceSimulation'
 import { racePlacements } from '../race/placementSystem'
+import { stepTurboMeter } from '../../core/vehicle/turboMeter'
 
 const CAR_SCALE = 0.75
 const CAR_RADIUS = 34
@@ -150,6 +152,7 @@ interface CarUnit {
   wrecked: boolean
   ammo: number
   turbo: number
+  turboDepleted: boolean
   gunCooldown: number
   /** AI burst discipline: when the current burst ends, and when the rest ends */
   burstEndsAt: number
@@ -194,6 +197,7 @@ interface PickupInstance {
   y: number
   sprite: Phaser.GameObjects.Image
   respawnAt: number | null
+  pulse: Phaser.Tweens.Tween
 }
 
 interface DriveOverride extends CarInput {
@@ -262,6 +266,8 @@ export class RaceScene extends Phaser.Scene {
   private lapText!: Phaser.GameObjects.Text
   private timeText!: Phaser.GameObjects.Text
   private bestText!: Phaser.GameObjects.Text
+  private hudStatusLabels: Phaser.GameObjects.Text[] = []
+  private hudStatusValues: Phaser.GameObjects.Text[] = []
   private standingsTexts: Phaser.GameObjects.Text[] = []
   private countdownText!: Phaser.GameObjects.Text
   private lightsGfx!: Phaser.GameObjects.Graphics
@@ -287,6 +293,8 @@ export class RaceScene extends Phaser.Scene {
     this.pickups = []
     this.barriers = []
     this.standingsTexts = []
+    this.hudStatusLabels = []
+    this.hudStatusValues = []
     this.trapUntil = 0
     this.allRivalsDoneAt = null
     this.resultCommitted = false
@@ -377,12 +385,21 @@ export class RaceScene extends Phaser.Scene {
         }
       }
 
-      // turbo meter — a turbo needs tarmac to push against
-      const turboActive = wantsTurbo && car.turbo > 0 && !car.wrecked && !locked && !isAirborne(car.state)
-      if (car.isPlayer) this.playerTurboActive = turboActive
+      // Empty turbo stays locked while the button is held. Without that latch,
+      // a zero tank alternated recharge/boost every frame and left the VFX on.
       const overcharged = car.isPlayer && this.hasOverTurbo
       const drain = TURBO.drainPerSec * (overcharged ? OVERCHARGED_TURBO.drainScale : 1)
-      car.turbo = Phaser.Math.Clamp(car.turbo + (turboActive ? -drain : TURBO.rechargePerSec) * dt, 0, 1)
+      const turboStep = stepTurboMeter(
+        { charge: car.turbo, depleted: car.turboDepleted },
+        wantsTurbo,
+        !car.wrecked && !locked && !isAirborne(car.state),
+        dt,
+        { drainPerSec: drain, rechargePerSec: TURBO.rechargePerSec, restartThreshold: TURBO.restartThreshold },
+      )
+      car.turbo = turboStep.state.charge
+      car.turboDepleted = turboStep.state.depleted
+      const turboActive = turboStep.active
+      if (car.isPlayer) this.playerTurboActive = turboActive
       // the overcharged mix cooks your own engine while boosting — it can wreck you
       if (turboActive && overcharged) {
         this.damageCar(car, OVERCHARGED_TURBO.selfDamagePerSec * dt, null)
@@ -941,30 +958,47 @@ export class RaceScene extends Phaser.Scene {
   // ---------------------------------------------------------------- pickups
 
   private buildPickups() {
-    const spots = layoutPickups(this.centerline, {
-      spacingSamples: 16,
-      lateralOffsets: [-70, 0, 70],
-      pattern: ['ammo', 'cash', 'turbo', 'repair', 'cash', 'trap', 'ammo', 'turbo'],
-      clearRadiusAroundStart: 350,
-    })
+    const spots = randomPickupLayout(
+      this.centerline,
+      [...PICKUPS.types],
+      {
+        lateralOffsets: [...PICKUPS.lateralOffsets],
+        clearRadiusAroundStart: PICKUPS.clearRadiusAroundStart,
+        minDistance: PICKUPS.minDistance,
+      },
+      this.random,
+    )
     for (const spot of spots) {
       const sprite = this.add.image(spot.x, spot.y, `pk-${spot.type}`).setDepth(2.5)
-      this.tweens.add({
-        targets: sprite,
-        scale: 1.12,
-        duration: 600 + this.random() * 300,
-        yoyo: true,
-        repeat: -1,
-        ease: 'sine.inout',
-      })
-      this.pickups.push({ type: spot.type, x: spot.x, y: spot.y, sprite, respawnAt: null })
+      const pulse = this.startPickupPulse(sprite, spot.type)
+      this.pickups.push({ type: spot.type, x: spot.x, y: spot.y, sprite, respawnAt: null, pulse })
     }
+  }
+
+  /** The skull trap art fills its frame more than the other icons — shrink it to match. */
+  private pickupBaseScale(type: PickupType): number {
+    return type === 'trap' ? 0.62 : 1
+  }
+
+  /** Set the sprite to its type's base scale and (re)start its idle pulse tween. */
+  private startPickupPulse(sprite: Phaser.GameObjects.Image, type: PickupType): Phaser.Tweens.Tween {
+    const base = this.pickupBaseScale(type)
+    sprite.setScale(base)
+    return this.tweens.add({
+      targets: sprite,
+      scale: base * 1.12,
+      duration: 600 + this.random() * 300,
+      yoyo: true,
+      repeat: -1,
+      ease: 'sine.inout',
+    })
   }
 
   private updatePickups(now: number) {
     for (const p of this.pickups) {
       if (p.respawnAt !== null) {
         if (now >= p.respawnAt) {
+          this.relocatePickup(p)
           p.respawnAt = null
           p.sprite.setVisible(true).setAlpha(0)
           this.tweens.add({ targets: p.sprite, alpha: 1, duration: 400 })
@@ -988,7 +1022,8 @@ export class RaceScene extends Phaser.Scene {
         car.ammo = Math.min(GUN.ammoMax, car.ammo + PICKUPS.ammoAmount)
         break
       case 'turbo':
-        car.turbo = 1
+        car.turbo = Math.min(1, car.turbo + PICKUPS.turboAmount)
+        if (car.turbo >= TURBO.restartThreshold) car.turboDepleted = false
         break
       case 'repair':
         car.damage = repairDamage(car.damage, PICKUPS.repairAmount)
@@ -1003,7 +1038,7 @@ export class RaceScene extends Phaser.Scene {
     if (car.isPlayer) {
       const toasts: Record<PickupType, [string, number]> = {
         ammo: [`+${PICKUPS.ammoAmount} AMMO`, C.ammo],
-        turbo: ['TURBO FULL', C.turbo],
+        turbo: [`+${Math.round(PICKUPS.turboAmount * 100)}% TURBO`, C.turbo],
         repair: [`-${PICKUPS.repairAmount}% DMG`, C.money],
         cash: [`+$${PICKUPS.cashAmount}`, C.money],
         trap: ['TRAPPED!', 0xd68cff],
@@ -1013,6 +1048,43 @@ export class RaceScene extends Phaser.Scene {
     p.respawnAt = now + PICKUPS.respawnMs
     p.sprite.setVisible(false)
     this.hitSparks.explode(4, p.x, p.y)
+  }
+
+  private relocatePickup(pickup: PickupInstance) {
+    const occupied = this.pickups
+      .filter((other) => other !== pickup && other.respawnAt === null)
+      .map((other) => ({ x: other.x, y: other.y }))
+    const position = randomPickupSpot(
+      this.centerline,
+      {
+        lateralOffsets: [...PICKUPS.lateralOffsets],
+        clearRadiusAroundStart: PICKUPS.clearRadiusAroundStart,
+        minDistance: PICKUPS.minDistance,
+      },
+      this.random,
+      occupied,
+    )
+    pickup.type = this.nextPickupType(pickup)
+    pickup.x = position.x
+    pickup.y = position.y
+    pickup.sprite.setPosition(position.x, position.y).setTexture(`pk-${pickup.type}`)
+    // texture may have changed type; restart the pulse at the new type's base scale
+    pickup.pulse.stop()
+    pickup.pulse = this.startPickupPulse(pickup.sprite, pickup.type)
+  }
+
+  /** Preserve the sparse type mix even as individual slots respawn. */
+  private nextPickupType(respawning: PickupInstance): PickupType {
+    const active = this.pickups.filter((pickup) => pickup !== respawning && pickup.respawnAt === null)
+    const caps = new Map<PickupType, number>()
+    PICKUPS.types.forEach((type) => caps.set(type, (caps.get(type) ?? 0) + 1))
+    const start = Math.floor(this.random() * PICKUPS.types.length)
+    for (let offset = 0; offset < PICKUPS.types.length; offset++) {
+      const type = PICKUPS.types[(start + offset) % PICKUPS.types.length]
+      const count = active.filter((pickup) => pickup.type === type).length
+      if (count < (caps.get(type) ?? 0)) return type
+    }
+    return 'trap'
   }
 
   // ---------------------------------------------------------------- cars
@@ -1148,6 +1220,7 @@ export class RaceScene extends Phaser.Scene {
         wrecked: false,
         ammo: GUN.ammoMax,
         turbo: 1,
+        turboDepleted: false,
         gunCooldown: 0,
         burstEndsAt: 0,
         restEndsAt: 0,
@@ -1735,10 +1808,31 @@ export class RaceScene extends Phaser.Scene {
     const marks = this.add.graphics().setDepth(1.5)
     marks.lineStyle(60, 0x000000, 0.1)
     marks.strokePoints(this.centerline, true, true)
-    marks.lineStyle(6, 0xe8e8f0, 0.35)
-    marks.strokePoints(offsetClosedPolyline(this.centerline, halfW - 10), true, true)
-    marks.strokePoints(offsetClosedPolyline(this.centerline, -(halfW - 10)), true, true)
-    this.drawStartLine(marks)
+    for (const side of [1, -1]) {
+      const edge = offsetClosedPolyline(this.centerline, side * (halfW - 10))
+      placeSpritesAlong(this, edge, 'edge-line', 40, 1.5, 0.4)
+    }
+
+    // red/white kerbs through sharp corners only (mirrors the chevron-sign gate)
+    const clN = this.centerline.length
+    let lastKerbAt = -100
+    for (let i = 0; i < clN; i += 4) {
+      if (turnAmount(this.centerline, i, 10) < 0.55 || i - lastKerbAt < 24) continue
+      lastKerbAt = i
+      for (const side of [1, -1]) {
+        const edge = offsetClosedPolyline(this.centerline, side * (halfW - 4))
+        for (let j = -8; j <= 8; j += 4) {
+          const k = (i + j + clN) % clN
+          const t = lineTangentAt(this.centerline, k)
+          this.add
+            .image(edge[k].x, edge[k].y, 'kerb')
+            .setRotation(Math.atan2(t.y, t.x))
+            .setScale(0.4)
+            .setDepth(1.5)
+        }
+      }
+    }
+    this.drawStartLine()
 
     this.skidRT = this.add.renderTexture(0, 0, w, h).setOrigin(0).setDepth(2)
     this.skidStamp = this.add.image(0, 0, 'skid-stamp').setVisible(false)
@@ -1771,7 +1865,7 @@ export class RaceScene extends Phaser.Scene {
       }
     }
 
-    // street lights along the outer boundary with warm ground pools
+    // warm ground pools along the outer boundary (night lighting; pole sprite dropped)
     const poleLine = offsetClosedPolyline(this.centerline, shoulderHalf + 70)
     for (const p of spacedPointsAlong(poleLine, 620)) {
       this.add
@@ -1781,7 +1875,6 @@ export class RaceScene extends Phaser.Scene {
         .setAlpha(0.2)
         .setBlendMode(Phaser.BlendModes.ADD)
         .setDepth(1.7)
-      this.add.image(p.x, p.y, 'pole').setDepth(3.2)
     }
 
     // chevron warning signs on the outside of sharp corners
@@ -1806,30 +1899,17 @@ export class RaceScene extends Phaser.Scene {
     }
   }
 
-  private drawStartLine(gfx: Phaser.GameObjects.Graphics) {
+  /** Single authored checkered strip spanning the start gate, rotated to travel dir. */
+  private drawStartLine() {
     const gate = this.gates[0]
-    const across = { x: gate.b.x - gate.a.x, y: gate.b.y - gate.a.y }
-    const len = Math.hypot(across.x, across.y)
-    const ux = across.x / len
-    const uy = across.y / len
-    const cell = 20
-    const cells = Math.floor(len / cell)
-    for (let row = 0; row < 2; row++) {
-      for (let i = 0; i < cells; i++) {
-        gfx.fillStyle((i + row) % 2 === 0 ? 0xe8e8f0 : 0x14141a, 0.85)
-        const bx = gate.a.x + ux * i * cell + gate.tangent.x * row * cell
-        const by = gate.a.y + uy * i * cell + gate.tangent.y * row * cell
-        gfx.fillPoints(
-          [
-            { x: bx, y: by },
-            { x: bx + ux * cell, y: by + uy * cell },
-            { x: bx + ux * cell + gate.tangent.x * cell, y: by + uy * cell + gate.tangent.y * cell },
-            { x: bx + gate.tangent.x * cell, y: by + gate.tangent.y * cell },
-          ],
-          true,
-        )
-      }
-    }
+    const width = Math.hypot(gate.b.x - gate.a.x, gate.b.y - gate.a.y)
+    const strip = this.add
+      .image(gate.center.x, gate.center.y, 'start-finish')
+      // strip runs ACROSS the track (along a→b), i.e. perpendicular to travel
+      .setRotation(Math.atan2(gate.b.y - gate.a.y, gate.b.x - gate.a.x))
+      .setDepth(1.5)
+    // stretch the tile across the full gate width; keep its native aspect for depth
+    strip.setDisplaySize(width, strip.height * (width / strip.width))
   }
 
   private buildSharedEffects() {
@@ -2082,11 +2162,13 @@ export class RaceScene extends Phaser.Scene {
     this.events.once('shutdown', () => {
       audioBus.engineStop()
       this.input.keyboard?.off('keydown', onKey)
+      this.inputManager.destroy()
     })
   }
 
   private openPause() {
     audioBus.engineStop()
+    this.inputManager.reset()
     const position = this.placementOrder.indexOf('player') + 1
     this.scene.launch('RacePause', {
       trackName: this.track.name,
@@ -2110,17 +2192,21 @@ export class RaceScene extends Phaser.Scene {
       .setAlpha(0)
 
     const plates = this.add.graphics()
-    plate(plates, 14, this.scale.height - 172, 300, 156) // status (bottom-left)
+    plate(plates, 14, this.scale.height - 226, 390, 210) // status (bottom-left)
     plate(plates, this.scale.width - 320, 160, 306, 138) // standings (right)
 
     const hint = hintBar(this, 'Configured controls active · Esc pause/help · M mute')
 
-    // labels sit inline-left of each bar, as in the garage. Stacking them above
-    // each bar only fits if the label is shorter than the row gap, which it is
-    // not once a real webfont replaces the system mono.
-    const barLabels = ['DMG', 'AMMO', 'TURBO'].map((label, i) =>
-      text(this, 28, this.scale.height - 152 + i * 28, label, { size: 'micro', color: C.textSecondary }),
-    )
+    const statusRows = ['HULL', 'AMMO', this.hasOverTurbo ? 'OVERCHARGE' : 'TURBO', 'MINES']
+    statusRows.forEach((label, i) => {
+      const y = this.scale.height - 202 + i * 36
+      this.hudStatusLabels.push(text(this, 28, y, label, {
+        size: 'micro', color: i === 2 && this.hasOverTurbo ? C.warn : C.textSecondary,
+      }))
+      this.hudStatusValues.push(text(this, 386, y - 2, '', {
+        size: 'micro', color: C.textPrimary, origin: [1, 0],
+      }))
+    })
 
     this.cashText = text(this, 16, 62, '$0', {
       size: 'action',
@@ -2129,7 +2215,7 @@ export class RaceScene extends Phaser.Scene {
       strokeThickness: STROKE.text,
     })
 
-    this.speedText = text(this, 28, this.scale.height - 34, '0 MPH', {
+    this.speedText = text(this, 28, this.scale.height - 28, '0 MPH', {
       size: 'speed',
       color: C.amber,
       stroke: C.shadow,
@@ -2169,11 +2255,11 @@ export class RaceScene extends Phaser.Scene {
       origin: [1, 0],
     })
 
-    // black-market gear fitted for this race, shown above the status plate
+    // black-market gear fitted for this race, shown above the status plate.
+    // Overcharge is named directly on the boost bar instead of hidden here.
     const gear: string[] = []
     if (this.hasPlating) gear.push('RAM PLATING')
-    if (this.hasOverTurbo) gear.push('OVERCHARGE')
-    const gearText = text(this, 16, this.scale.height - 200, gear.join(' · '), {
+    const gearText = text(this, 16, this.scale.height - 254, gear.join(' · '), {
       size: 'caption',
       color: C.amberDim,
       stroke: C.shadow,
@@ -2191,7 +2277,8 @@ export class RaceScene extends Phaser.Scene {
       hint,
       gearText,
       identityText,
-      ...barLabels,
+      ...this.hudStatusLabels,
+      ...this.hudStatusValues,
       this.cashText,
       this.speedText,
       this.hudBars,
@@ -2225,27 +2312,37 @@ export class RaceScene extends Phaser.Scene {
       this.bestText.setText(`BEST ${formatTime(Math.min(...player.lapTimes))}`)
     }
 
-    // status bars: damage / ammo / turbo (labels sit above each bar)
-    const bx = 100 // clears the inline DMG / AMMO / TURBO labels at x=28
-    const by = this.scale.height - 150
-    const bw = 200
-    const bh = 12
+    // HULL fills with safety remaining (not damage taken), so every bar answers
+    // "how much do I have left?" in the same direction.
+    const bx = 130
+    const by = this.scale.height - 200
+    const bw = 170
+    const bh = 14
+    const hullRemaining = Math.max(0, 100 - player.damage)
     const bars: Array<[number, number]> = [
-      [player.damage / 100, damageColor(player.damage)],
+      [hullRemaining / 100, damageColor(player.damage)],
       [player.ammo / GUN.ammoMax, C.ammo],
-      [player.turbo, C.turbo],
+      [player.turbo, this.hasOverTurbo ? C.warn : C.turbo],
     ]
     this.hudBars.clear()
     bars.forEach(([ratio, color], i) => {
-      statBar(this.hudBars, bx, by + i * 28, bw, bh, Phaser.Math.Clamp(ratio, 0, 1), color, { backdrop: true })
+      statBar(this.hudBars, bx, by + i * 36, bw, bh, Phaser.Math.Clamp(ratio, 0, 1), color, { backdrop: true })
     })
-    // mine stock as dots under the bars (original-style ordnance pips)
-    for (let i = 0; i < player.mines; i++) {
-      this.hudBars.fillStyle(0x1c1c24, 1)
-      this.hudBars.fillCircle(bx + 8 + i * 22, by + 3 * 28 + 4, 7)
-      this.hudBars.fillStyle(C.danger, 1)
-      this.hudBars.fillCircle(bx + 8 + i * 22, by + 3 * 28 + 4, 3)
+    // Always draw the full mine capacity: an empty row now visibly means zero.
+    for (let i = 0; i < MINES.count; i++) {
+      const x = bx + 8 + i * 25
+      const y = by + 3 * 36 + 6
+      this.hudBars.fillStyle(i < player.mines ? C.danger : C.surfaceTrack, 1)
+      this.hudBars.fillCircle(x, y, 7)
+      this.hudBars.lineStyle(2, i < player.mines ? C.warn : C.border, 0.9)
+      this.hudBars.strokeCircle(x, y, 7)
     }
+
+    const weapons = this.career.profile.weaponsEnabled
+    this.hudStatusValues[0].setText(`${Math.round(hullRemaining)}% LEFT`).setColor(hex(damageColor(player.damage)))
+    this.hudStatusValues[1].setText(weapons ? `${player.ammo} / ${GUN.ammoMax}` : 'DISABLED').setColor(hex(weapons ? C.ammo : C.textDisabled))
+    this.hudStatusValues[2].setText(`${Math.round(player.turbo * 100)}%`).setColor(hex(this.hasOverTurbo ? C.warn : C.turbo))
+    this.hudStatusValues[3].setText(weapons ? `${player.mines} / ${MINES.count}` : 'DISABLED').setColor(hex(weapons ? C.danger : C.textDisabled))
 
     const playerPos = this.placementOrder.indexOf('player') + 1
     if (playerPos > 0) this.positionText.setText(player.wrecked ? 'OUT' : ordinal(playerPos))
@@ -2298,6 +2395,7 @@ export class RaceScene extends Phaser.Scene {
         damage: Math.round(c.damage * 10) / 10,
         ammo: c.ammo,
         turbo: Math.round(c.turbo * 100) / 100,
+        turboDepleted: c.turboDepleted,
         cash: c.cash,
         wrecked: c.wrecked,
         mines: c.mines,
@@ -2306,6 +2404,7 @@ export class RaceScene extends Phaser.Scene {
         pace: c.ai ? Math.round(c.ai.speedScale * 1000) / 1000 : undefined,
       })),
       track: this.track.id,
+      turboActive: this.playerTurboActive,
       bullets: this.bullets.length,
       minesOnTrack: this.mines.length,
       pickupsActive: this.pickups.filter((p) => p.respawnAt === null).length,
