@@ -107,7 +107,7 @@ import { simulationDeltaSeconds } from '../race/raceSimulation'
 import { racePlacements } from '../race/placementSystem'
 import { stepTurboMeter } from '../../core/vehicle/turboMeter'
 
-const CAR_SCALE = 0.75
+const CAR_SCALE = 0.44
 const CAR_RADIUS = 34
 const CAR_BODY_RADIUS = 30
 const TIRE_RADIUS = 24
@@ -787,7 +787,6 @@ export class RaceScene extends Phaser.Scene {
       // clearTint() leaves tintFill set, which would paint the car solid white
       car.sprite.tintFill = false
       if (car.wrecked) car.sprite.setTint(0x2c2c30)
-      else if (car.isPlayer) car.sprite.setTint(this.career.profile.liveryColor)
       else car.sprite.clearTint()
     })
   }
@@ -1254,8 +1253,7 @@ export class RaceScene extends Phaser.Scene {
     }
 
     const playerCar = carById(this.career.carId)
-    const player = makeUnit(0, 'player', this.career.profile.driverName, this.career.profile.liveryColor, `car-${playerCar.id}`, null)
-    player.sprite.setTint(this.career.profile.liveryColor)
+    const player = makeUnit(0, 'player', this.career.profile.driverName, this.career.profile.liveryColor, `car-top-${playerCar.id}`, null)
     player.damage = this.career.damage // persistent damage carries into the race
     player.mines = this.career.profile.weaponsEnabled ? this.career.mines : 0
     player.ammo = this.career.profile.weaponsEnabled ? GUN.ammoMax : 0
@@ -1272,7 +1270,7 @@ export class RaceScene extends Phaser.Scene {
       // 1-v-1 against the champion: one-off machine, charger style, ace hands
       const talent = talentOf(BOSS.id)
       const style = DRIVING_STYLES[0]
-      const boss = makeUnit(1, BOSS.id, BOSS.name, BOSS.bodyColor, `car-${BOSS.id}`, {
+      const boss = makeUnit(1, BOSS.id, BOSS.name, BOSS.bodyColor, `car-top-${BOSS.id}`, {
         lineIdx: 0,
         lookAheadSamples: style.lookAheadSamples,
         speedScale: BOSS.paceScale * this.difficultyPaceScale(),
@@ -1297,7 +1295,7 @@ export class RaceScene extends Phaser.Scene {
         // rivals build their cars too — a stock chassis has stock tires, and the
         // player's tier-3 rubber out-corners any amount of pace tuning
         const upgrades = rivalUpgrades(rank)
-        const rival = makeUnit(i + 1, id, driver.name, driver.bodyColor, `car-${id}-${chassis.variant}`, {
+        const rival = makeUnit(i + 1, id, driver.name, driver.bodyColor, `car-top-${chassis.id}`, {
           lineIdx: 0,
           lookAheadSamples: style.lookAheadSamples,
           speedScale: talentPace(rivalStrength(rank), talent) * this.difficultyPaceScale(),
