@@ -21,13 +21,14 @@ import {
   distanceToClosedPolyline,
   lineTangentAt,
   offsetClosedPolyline,
+  scatterPointsAlong,
   segmentsIntersect,
   spacedPointsAlong,
   turnAmount,
   type Gate,
   type Vec2,
 } from '../../core/track/geometry'
-import { placeSpritesAlong } from '../track/placement'
+import { placeSpritesAlong, scatterImages } from '../track/placement'
 import {
   applyGateCrossing,
   createProgress,
@@ -1847,6 +1848,33 @@ export class RaceScene extends Phaser.Scene {
     }
 
     this.dressTrackForNight(halfW, shoulderHalf)
+
+    // cosmetic dressing uses its own seeded RNG so it never disturbs the
+    // gameplay (pickup/trap) RNG stream, while staying reproducible per seed
+    const decorRng = createSeededRandom(this.raceSeed ^ 0x9e3779b9)
+    this.scatterDecals(halfW, decorRng)
+  }
+
+  /** Seeded flat decals (oil, skid, crack, patch) scattered on the track surface. */
+  private scatterDecals(halfW: number, rng: () => number) {
+    const keys = [
+      'oil-0', 'oil-1', 'oil-2',
+      'skid-0', 'skid-1', 'skid-2',
+      'crack-0', 'crack-1', 'crack-2',
+      'patch-0', 'patch-1', 'patch-2',
+    ]
+    const poses = scatterPointsAlong(this.centerline, 10, rng, {
+      halfWidth: halfW,
+      lateralFrac: 0.7,
+      minGap: 220,
+    })
+    scatterImages(this, poses, keys, rng, {
+      depth: 1.8,
+      minScale: 0.35,
+      maxScale: 0.55,
+      jitter: Math.PI,
+      alpha: 0.85,
+    })
   }
 
   /** Night-race dressing: cat-eye reflectors, corner chevrons, light poles. */
