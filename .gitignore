@@ -9,3 +9,6 @@ Screenshot*.png
 
 # before/after captures from UI refactor passes
 .shots/
+
+# Superpowers brainstorm companion (local mockups, do not commit)
+.superpowers/
