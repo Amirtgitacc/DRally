@@ -6,6 +6,21 @@
 import Phaser from 'phaser'
 import { C, FONT_DISPLAY, FONT_MONO, RADIUS, STROKE, TYPE, hex, type TypeToken } from './theme'
 
+/** Bake a small greyscale noise tile once; reused by every metalGrain() call. */
+function ensureGrainTexture(scene: Phaser.Scene): string {
+  const KEY = 'ui-grain'
+  if (scene.textures.exists(KEY)) return KEY
+  const g = scene.make.graphics({ x: 0, y: 0 }, false)
+  for (let i = 0; i < 900; i++) {
+    const v = 0x40 + Math.floor(Math.random() * 0x40)
+    g.fillStyle((v << 16) | (v << 8) | v, 1)
+    g.fillRect(Math.floor(Math.random() * 96), Math.floor(Math.random() * 96), 1, 1)
+  }
+  g.generateTexture(KEY, 96, 96)
+  g.destroy()
+  return KEY
+}
+
 interface TextOpts {
   size?: TypeToken
   color?: number
@@ -65,7 +80,7 @@ export function heading(
   content: string,
   opts: { color?: number; size?: TypeToken; strokeThickness?: number; glow?: boolean } = {},
 ) {
-  const { color = C.amber, size = 'title', strokeThickness = STROKE.title, glow = false } = opts
+  const { color = C.oxide, size = 'title', strokeThickness = STROKE.title, glow = false } = opts
   const obj = text(scene, x, y, content, {
     size,
     face: 'display',
@@ -91,7 +106,7 @@ export function prompt(scene: Phaser.Scene, x: number, y: number, content: strin
 }
 
 /** Small tracked-out header that names a card or a block of content. */
-export function sectionLabel(scene: Phaser.Scene, x: number, y: number, content: string, color = C.amber) {
+export function sectionLabel(scene: Phaser.Scene, x: number, y: number, content: string, color = C.oxide) {
   return text(scene, x, y, content, {
     size: 'caption',
     face: 'display',
@@ -131,8 +146,9 @@ export function panel(
   h: number,
   opts: { fill?: number; fillAlpha?: number; stroke?: number; strokeAlpha?: number; strokeWidth?: number } = {},
 ) {
-  const { fill = C.surfaceSunken, fillAlpha = 0.85, stroke = C.amber, strokeAlpha = 0.6, strokeWidth = 2 } = opts
-  return scene.add.rectangle(x, y, w, h, fill, fillAlpha).setStrokeStyle(strokeWidth, stroke, strokeAlpha)
+  const { fill = C.surfacePlate, fillAlpha = 0.92, stroke = C.line, strokeAlpha = 1, strokeWidth = 2 } = opts
+  const rect = scene.add.rectangle(x, y, w, h, fill, fillAlpha).setStrokeStyle(strokeWidth, stroke, strokeAlpha)
+  return rect
 }
 
 /** The big centred plate that Results and Ranking build their content on. */
@@ -144,7 +160,7 @@ export function modal(scene: Phaser.Scene, x: number, y: number, w: number, h: n
 export function plate(gfx: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number) {
   gfx.fillStyle(C.surfaceHud, 0.65)
   gfx.fillRoundedRect(x, y, w, h, RADIUS.md)
-  gfx.lineStyle(2, C.amber, 0.35)
+  gfx.lineStyle(2, C.oxide, 0.35)
   gfx.strokeRoundedRect(x, y, w, h, RADIUS.md)
 }
 
@@ -188,7 +204,7 @@ export function pips(
   total: number,
   opts: { size?: number; gap?: number; color?: number } = {},
 ) {
-  const { size = 20, gap = 6, color = C.amber } = opts
+  const { size = 20, gap = 6, color = C.oxide } = opts
   for (let i = 0; i < total; i++) {
     gfx.fillStyle(i < filled ? color : 0x33333e, 1)
     gfx.fillRect(x + i * (size + gap), y, size, size)
@@ -235,7 +251,7 @@ export function tile(
   } = {},
 ): TileHandle {
   const restStroke = opts.accent ?? C.border
-  const selectColor = opts.select ?? C.amber
+  const selectColor = opts.select ?? C.oxide
   const rect = scene.add.rectangle(x, y, w, h, C.surfaceTile, 0.95).setStrokeStyle(3, restStroke, 1)
   const label = text(scene, x, y, content, {
     size: opts.size ?? 'action',
@@ -255,4 +271,31 @@ export function tile(
       label.setColor(hex(enabled ? (selected ? selectColor : C.textPrimary) : C.textDisabled))
     },
   }
+}
+
+/** Faint scratched-metal overlay for a panel region. */
+export function metalGrain(scene: Phaser.Scene, x: number, y: number, w: number, h: number, alpha = 0.06) {
+  const key = ensureGrainTexture(scene)
+  return scene.add
+    .tileSprite(x, y, w, h, key)
+    .setOrigin(0.5, 0.5)
+    .setAlpha(alpha)
+    .setBlendMode(Phaser.BlendModes.OVERLAY)
+}
+
+/** The single restrained hazard-stripe accent. */
+export function hazardBar(scene: Phaser.Scene, x: number, y: number, w: number, h = 6) {
+  const gfx = scene.add.graphics()
+  const stripe = 12
+  for (let i = 0; i * stripe < w; i++) {
+    gfx.fillStyle(i % 2 === 0 ? C.oxide : C.surfacePlate2, 0.85)
+    gfx.fillRect(x + i * stripe, y, stripe, h)
+  }
+  return gfx
+}
+
+/** Scale an image to fit maxW×maxH, preserving aspect ratio. */
+export function fitImage(img: Phaser.GameObjects.Image, maxW: number, maxH: number) {
+  const s = Math.min(maxW / img.width, maxH / img.height)
+  return img.setScale(s)
 }
