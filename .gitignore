@@ -13,6 +13,7 @@ Screenshot*.png
 # Superpowers brainstorm companion (local mockups, do not commit)
 .superpowers/
 
-# Project B source car art (green-screen renders) — research/local, never commit
-cars/
-.playwright-cli/
+# Project B source car art (green-screen renders) — research/local, never commit.
+# Anchored to repo root so it does NOT match public/assets/cars/ (shipped WebP).
+/cars/
+/.playwright-cli/
