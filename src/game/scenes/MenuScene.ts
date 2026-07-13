@@ -6,7 +6,7 @@ import { audioBus } from '../systems/audio'
 import { hasSavedCareer, readCareer } from '../state/saveGame'
 import { loadSettings } from '../state/settings'
 import { C, STROKE } from '../ui/theme'
-import { flavor, heading, text, tile, type TileHandle } from '../ui/widgets'
+import { fitImage, flavor, heading, metalGrain, text, tile, type TileHandle } from '../ui/widgets'
 
 interface MenuItem {
   label: string
@@ -47,6 +47,8 @@ export class MenuScene extends Phaser.Scene {
     this.handles = []
     const cx = GAME_WIDTH / 2
 
+    metalGrain(this, GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0.05).setDepth(-100)
+
     this.add.particles(0, 0, 'smoke', {
       x: { min: 0, max: GAME_WIDTH }, y: { min: 0, max: GAME_HEIGHT },
       speedX: { min: 8, max: 30 }, speedY: { min: -4, max: 4 },
@@ -57,7 +59,8 @@ export class MenuScene extends Phaser.Scene {
     heading(this, cx, 105, 'DEATHRALLY', { size: 'hero', strokeThickness: STROKE.hero, glow: true })
     flavor(this, cx, 170, 'working title · original combat racing')
 
-    const car = this.add.image(490, 405, `car-${career.carId}`).setScale(2.5).setAngle(-90).setTint(career.profile.liveryColor)
+    const car = this.add.image(490, 405, `car-hero-${career.carId}`)
+    fitImage(car, 600, 320)
     this.tweens.add({ targets: car, y: '-=10', duration: 1400, yoyo: true, repeat: -1, ease: 'sine.inout' })
     const rank = career.champion ? 'CHAMPION' : `Rank #${playerRank(career.ladder, career.points)}`
     text(this, 490, 570, [career.profile.driverName, `${rank} · ${carById(career.carId).name}`, `$${career.cash} · ${career.points} pts`, `${career.wins} wins / ${career.racesRun} starts`].join('\n'), {
