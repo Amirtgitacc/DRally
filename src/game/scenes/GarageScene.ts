@@ -9,9 +9,12 @@ import type { CareerState } from '../../core/progression/career'
 import { loadCareer, saveCareer } from '../state/saveGame'
 import { C, hex } from '../ui/theme'
 import {
+  fitImage,
   flavor,
+  hazardBar,
   heading,
   hintBar,
+  metalGrain,
   panel,
   pips,
   rule,
@@ -130,6 +133,7 @@ export class GarageScene extends Phaser.Scene {
 
   create() {
     this.career = loadCareer()
+    metalGrain(this, GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0.05).setDepth(-100)
     this.selected = 0
     this.tiles = []
     this.fittedTexts = []
@@ -138,9 +142,11 @@ export class GarageScene extends Phaser.Scene {
     const cx = GAME_WIDTH / 2
 
     heading(this, cx, 70, 'THE GARAGE')
+    hazardBar(this, cx - 240, 108, 480)
 
     // car display — the left column's anchor
-    this.carImage = this.add.image(LX, 330, `car-${this.career.carId}`).setScale(3.2)
+    this.carImage = this.add.image(LX, 320, `car-hero-${this.career.carId}`)
+    fitImage(this.carImage, 520, 300)
     this.carNameText = text(this, LX, 470, '', { size: 'subtitle', origin: [0.5, 0.5] })
 
     // your car's stat bars, with the exact gain each fitted upgrade bought you
@@ -370,7 +376,8 @@ export class GarageScene extends Phaser.Scene {
   private refresh() {
     const c = this.career
     const showing = carById(c.carId)
-    this.carImage.setTexture(`car-${showing.id}`)
+    this.carImage.setTexture(`car-hero-${showing.id}`)
+    fitImage(this.carImage, 520, 300)
     this.carNameText.setText(`${showing.name}  (yours)`)
 
     TILES.forEach((def, i) => {
@@ -436,7 +443,7 @@ export class GarageScene extends Phaser.Scene {
   private drawBars() {
     this.compareGfx.clear()
     BAR_STATS.forEach((stat, row) => {
-      statBar(this.compareGfx, BAR_X, BAR_TOP + row * BAR_STEP, BAR_W, 12, this.barFill[stat], C.amber)
+      statBar(this.compareGfx, BAR_X, BAR_TOP + row * BAR_STEP, BAR_W, 12, this.barFill[stat], C.oxide)
     })
   }
 }
