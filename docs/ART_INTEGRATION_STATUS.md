@@ -110,6 +110,8 @@ Each needs slicing into frames (manual coordinates or a texture packer) before a
 
 ## 5. The big one — CARS (not generated, hardest problem)
 
+> **Update 2026-07-13 (Project A, branch `project-a-oxide-theme`):** Superseded for the pre-game screens. Rather than tintable greyscale chassis, the game now uses **specific pre-coloured Iranian 3/4 hero renders** (`car-hero-<id>` keys) for Garage/CarDealer/Menu/Champion, alongside a global "Oxide, grittier" re-theme. See spec `docs/superpowers/specs/2026-07-13-oxide-theme-and-hero-cars-design.md`, plan `docs/superpowers/plans/2026-07-13-oxide-theme-and-hero-cars.md`, and D-052. The **in-race** cars are untouched and remain the deferred **Project B** (true top-down roof-view sprites — note: overhead source renders for these already exist in `cars/green/`). The tint discussion below applies only to Project B.
+
 Cars are still 100% procedural (`paintCarTexture`) and were deliberately left out of this pass. They are **not** a simple drop-in, for one reason:
 
 > The game **recolors cars at runtime**. The player's livery and all 20 rivals get their colour by `setTint` over a grey silhouette, across 3 chassis variants (compact / muscle / sleek). A flat painted PNG can't be recoloured that cleanly.
