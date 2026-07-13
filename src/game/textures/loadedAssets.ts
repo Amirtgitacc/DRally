@@ -48,3 +48,14 @@ export const LOADED_FX_TEXTURES: LoadedTexture[] = [
   { key: 'explosion',  url: 'assets/fx/explosion.webp' },
   { key: 'mine-blast', url: 'assets/fx/mine-blast.webp' },
 ]
+
+// Project A: 3/4 hero renders for pre-game screens. Separate from the
+// procedural car-<id> keys the race still uses — nothing here touches the race.
+export const LOADED_HERO_TEXTURES: LoadedTexture[] = [
+  { key: 'car-hero-jackal', url: 'assets/cars/hero/jackal.webp' },
+  { key: 'car-hero-vandal', url: 'assets/cars/hero/vandal.webp' },
+  { key: 'car-hero-marauder', url: 'assets/cars/hero/marauder.webp' },
+  { key: 'car-hero-harrier', url: 'assets/cars/hero/harrier.webp' },
+  { key: 'car-hero-basilisk', url: 'assets/cars/hero/basilisk.webp' },
+  { key: 'car-hero-leviathan', url: 'assets/cars/hero/leviathan.webp' },
+]

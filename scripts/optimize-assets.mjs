@@ -49,6 +49,13 @@ const JOBS = [
   { src: 'track_furniture_set.png', out: 'furniture/tyre-1.webp',      w: 160, fit: 'inside', q: 85, extract: { left: 520,  top: 620, width: 250, height: 290 }, trim: true },
   { src: 'track_furniture_set.png', out: 'furniture/sandbag-0.webp',   w: 160, fit: 'inside', q: 85, extract: { left: 780,  top: 630, width: 240, height: 270 }, trim: true },
   { src: 'track_furniture_set.png', out: 'furniture/sandbag-1.webp',   w: 160, fit: 'inside', q: 85, extract: { left: 1020, top: 630, width: 250, height: 270 }, trim: true },
+  // --- Project A: Iranian hero car renders (3/4 angle, transparent) ---
+  { src: 'car_hero_jackal.png',    out: 'cars/hero/jackal.webp',    w: 460, fit: 'inside', q: 88, trim: true },
+  { src: 'car_hero_vandal.png',    out: 'cars/hero/vandal.webp',    w: 460, fit: 'inside', q: 88, trim: true },
+  { src: 'car_hero_marauder.png',  out: 'cars/hero/marauder.webp',  w: 460, fit: 'inside', q: 88, trim: true },
+  { src: 'car_hero_harrier.png',   out: 'cars/hero/harrier.webp',   w: 460, fit: 'inside', q: 88, trim: true },
+  { src: 'car_hero_basilisk.png',  out: 'cars/hero/basilisk.webp',  w: 460, fit: 'inside', q: 88, trim: true },
+  { src: 'car_hero_leviathan.png', out: 'cars/hero/leviathan.webp', w: 460, fit: 'inside', q: 88, trim: true },
 ]
 
 for (const j of JOBS) {

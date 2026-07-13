@@ -16,7 +16,7 @@ import {
   paintDebrisTexture,
   paintGlowTexture,
 } from '../textures/lightTextures'
-import { LOADED_TEXTURES, LOADED_FX_TEXTURES } from '../textures/loadedAssets'
+import { LOADED_TEXTURES, LOADED_FX_TEXTURES, LOADED_HERO_TEXTURES } from '../textures/loadedAssets'
 
 // Authored WebP art (BootScene.preload) replaces the matching procedural
 // texture keys; every key NOT loaded stays painted below.
@@ -26,7 +26,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   preload() {
-    for (const t of [...LOADED_TEXTURES, ...LOADED_FX_TEXTURES]) this.load.image(t.key, t.url)
+    for (const t of [...LOADED_TEXTURES, ...LOADED_FX_TEXTURES, ...LOADED_HERO_TEXTURES]) this.load.image(t.key, t.url)
   }
 
   create() {
