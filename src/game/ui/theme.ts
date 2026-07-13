@@ -12,6 +12,18 @@ export const C = {
   amberDim: 0xd07a35,
   /** champion state only */
   gold: 0xc9a227,
+  /** oxide-orange — new lead accent (titles, actions, focus) */
+  oxide: 0xe07a3c,
+  oxideDim: 0xb45e2c,
+  /** funds and gains; aligns with the existing gold */
+  brass: 0xc9a227,
+  /** secondary data text / stat values */
+  concrete: 0x8a8478,
+  /** riveted-plate surface gradient */
+  surfacePlate: 0x191712,
+  surfacePlate2: 0x141210,
+  /** warm plate border (replaces the cool `border` where plates are used) */
+  line: 0x332e26,
 
   textPrimary: 0xe8e8f0,
   /** slightly dimmed body copy — info/description blocks */
