@@ -1851,7 +1851,9 @@ export class RaceScene extends Phaser.Scene {
     this.dressTrackForNight(halfW, shoulderHalf)
 
     // cosmetic dressing uses its own seeded RNG so it never disturbs the
-    // gameplay (pickup/trap) RNG stream, while staying reproducible per seed
+    // gameplay (pickup/trap) RNG stream, while staying reproducible per seed.
+    // Order-sensitive: these two calls (and the draws inside them) consume
+    // decorRng in sequence — reordering changes the dressing layout for a seed.
     const decorRng = createSeededRandom(this.raceSeed ^ 0x9e3779b9)
     this.scatterDecals(halfW, decorRng)
     this.placeFurniture(shoulderHalf, decorRng)
@@ -1872,10 +1874,10 @@ export class RaceScene extends Phaser.Scene {
     })
     scatterImages(this, poses, keys, rng, {
       depth: 1.8,
-      minScale: 0.35,
-      maxScale: 0.55,
+      minScale: 0.42,
+      maxScale: 0.68,
       jitter: Math.PI,
-      alpha: 0.85,
+      alpha: 1,
     })
   }
 

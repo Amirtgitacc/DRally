@@ -40,7 +40,8 @@ export function scatterImages(
 ): Phaser.GameObjects.Image[] {
   const images: Phaser.GameObjects.Image[] = []
   for (const pose of poses) {
-    const key = keys[Math.floor(rng() * keys.length)]
+    // clamp guards the rng()===1 edge so the index can never fall off the end
+    const key = keys[Math.min(keys.length - 1, Math.floor(rng() * keys.length))]
     const scale = opts.minScale + rng() * (opts.maxScale - opts.minScale)
     const rot = pose.angle + (opts.jitter ? (rng() * 2 - 1) * opts.jitter : 0)
     images.push(
