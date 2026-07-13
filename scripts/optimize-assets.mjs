@@ -36,6 +36,15 @@ const JOBS = [
   { src: 'track_surface_decal_set.png', out: 'decals/patch-0.webp', w: 256, fit: 'inside', q: 85, extract: { left: 0,    top: 768, width: 512, height: 256 }, trim: true },
   { src: 'track_surface_decal_set.png', out: 'decals/patch-1.webp', w: 256, fit: 'inside', q: 85, extract: { left: 512,  top: 768, width: 512, height: 256 }, trim: true },
   { src: 'track_surface_decal_set.png', out: 'decals/patch-2.webp', w: 256, fit: 'inside', q: 85, extract: { left: 1024, top: 768, width: 512, height: 256 }, trim: true },
+  // --- Phase 2 furniture (track_furniture_set.png, 1536x1024; per-item rects + trim) ---
+  { src: 'track_furniture_set.png', out: 'furniture/cone-0.webp',      w: 160, fit: 'inside', q: 85, extract: { left: 300,  top: 70,  width: 260, height: 220 }, trim: true },
+  { src: 'track_furniture_set.png', out: 'furniture/cone-1.webp',      w: 160, fit: 'inside', q: 85, extract: { left: 1020, top: 70,  width: 260, height: 220 }, trim: true },
+  { src: 'track_furniture_set.png', out: 'furniture/barricade-0.webp', w: 200, fit: 'inside', q: 85, extract: { left: 330,  top: 340, width: 440, height: 250 }, trim: true },
+  { src: 'track_furniture_set.png', out: 'furniture/barricade-1.webp', w: 200, fit: 'inside', q: 85, extract: { left: 810,  top: 340, width: 440, height: 250 }, trim: true },
+  { src: 'track_furniture_set.png', out: 'furniture/tyre-0.webp',      w: 160, fit: 'inside', q: 85, extract: { left: 270,  top: 620, width: 250, height: 290 }, trim: true },
+  { src: 'track_furniture_set.png', out: 'furniture/tyre-1.webp',      w: 160, fit: 'inside', q: 85, extract: { left: 520,  top: 620, width: 250, height: 290 }, trim: true },
+  { src: 'track_furniture_set.png', out: 'furniture/sandbag-0.webp',   w: 160, fit: 'inside', q: 85, extract: { left: 780,  top: 630, width: 240, height: 270 }, trim: true },
+  { src: 'track_furniture_set.png', out: 'furniture/sandbag-1.webp',   w: 160, fit: 'inside', q: 85, extract: { left: 1020, top: 630, width: 250, height: 270 }, trim: true },
 ]
 
 for (const j of JOBS) {

@@ -29,6 +29,14 @@ export const LOADED_TEXTURES: LoadedTexture[] = [
   { key: 'patch-0', url: 'assets/decals/patch-0.webp' },
   { key: 'patch-1', url: 'assets/decals/patch-1.webp' },
   { key: 'patch-2', url: 'assets/decals/patch-2.webp' },
+  { key: 'cone-0', url: 'assets/furniture/cone-0.webp' },
+  { key: 'cone-1', url: 'assets/furniture/cone-1.webp' },
+  { key: 'barricade-0', url: 'assets/furniture/barricade-0.webp' },
+  { key: 'barricade-1', url: 'assets/furniture/barricade-1.webp' },
+  { key: 'tyre-0', url: 'assets/furniture/tyre-0.webp' },
+  { key: 'tyre-1', url: 'assets/furniture/tyre-1.webp' },
+  { key: 'sandbag-0', url: 'assets/furniture/sandbag-0.webp' },
+  { key: 'sandbag-1', url: 'assets/furniture/sandbag-1.webp' },
 ]
 
 // Blend/particle-sensitive; wired in Task 3 (verify-and-revert).
