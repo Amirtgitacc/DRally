@@ -43,4 +43,6 @@ export const LOADED_TEXTURES: LoadedTexture[] = [
 export const LOADED_FX_TEXTURES: LoadedTexture[] = [
   { key: 'spark', url: 'assets/fx/spark.webp' },
   { key: 'smoke', url: 'assets/fx/smoke.webp' },
+  { key: 'bullet', url: 'assets/fx/tracer.webp' },
+  { key: 'muzzle', url: 'assets/fx/muzzle.webp' },
 ]

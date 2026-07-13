@@ -694,7 +694,7 @@ export class RaceScene extends Phaser.Scene {
 
     // muzzle flash (audio hook: gunshot)
     const flash = this.add
-      .image(mx, my, 'spark')
+      .image(mx, my, 'muzzle')
       .setScale(0.8)
       .setDepth(6)
       .setBlendMode(Phaser.BlendModes.ADD)

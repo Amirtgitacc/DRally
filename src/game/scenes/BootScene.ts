@@ -5,7 +5,6 @@ import { BOSS } from '../../data/boss'
 import { paintCarTexture } from '../textures/vehicleTextures'
 import { paintSkidStampTexture } from '../textures/environmentTextures'
 import {
-  paintBulletTexture,
   paintEdgeFlashTexture,
   paintFlameConeTexture,
   paintMineTexture,
@@ -45,7 +44,6 @@ export class BootScene extends Phaser.Scene {
     // asphalt, dirt, tire-wall, pole, pk-*, spark, and smoke now loaded as WebP
     // (LOADED_TEXTURES / LOADED_FX_TEXTURES)
     paintSkidStampTexture(this)
-    paintBulletTexture(this)
     paintMineTexture(this)
     paintRingTexture(this)
     paintScorchTexture(this)
