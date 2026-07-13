@@ -17,6 +17,18 @@ export const LOADED_TEXTURES: LoadedTexture[] = [
   { key: 'edge-line', url: 'assets/env/edge-line.webp' },
   { key: 'kerb', url: 'assets/env/kerb.webp' },
   { key: 'start-finish', url: 'assets/env/start-finish.webp' },
+  { key: 'oil-0', url: 'assets/decals/oil-0.webp' },
+  { key: 'oil-1', url: 'assets/decals/oil-1.webp' },
+  { key: 'oil-2', url: 'assets/decals/oil-2.webp' },
+  { key: 'skid-0', url: 'assets/decals/skid-0.webp' },
+  { key: 'skid-1', url: 'assets/decals/skid-1.webp' },
+  { key: 'skid-2', url: 'assets/decals/skid-2.webp' },
+  { key: 'crack-0', url: 'assets/decals/crack-0.webp' },
+  { key: 'crack-1', url: 'assets/decals/crack-1.webp' },
+  { key: 'crack-2', url: 'assets/decals/crack-2.webp' },
+  { key: 'patch-0', url: 'assets/decals/patch-0.webp' },
+  { key: 'patch-1', url: 'assets/decals/patch-1.webp' },
+  { key: 'patch-2', url: 'assets/decals/patch-2.webp' },
 ]
 
 // Blend/particle-sensitive; wired in Task 3 (verify-and-revert).
