@@ -110,9 +110,11 @@ Each needs slicing into frames (manual coordinates or a texture packer) before a
 
 ## 5. The big one — CARS (not generated, hardest problem)
 
+> **Update 2026-07-14 (Project B, branch `project-b-topdown-cars`) — DONE. This §5 is now fully resolved.** The in-race cars are **real top-down roof-view sprites**, one per chassis (`car-top-<id>` for the six chassis + `car-top-sovereign` for the boss), replacing the procedural `paintCarTexture` silhouettes. The livery/tint question below was resolved in favour of the **"per-livery sprites"** row: real pre-coloured art per chassis, **no runtime `setTint`** for body colour — rival identity is carried by the colour-coded standings list instead. Sources are rotated 90° CW at cutout so the nose faces the engine's +x. New Career dropped the livery picker (shows the `car-hero-jackal` starter render); the pre-duel reveal uses the boss hero (`car-hero-sovereign`). `paintCarTexture` and its `BootScene` paint loops were deleted; `liveryColor` stays in the save with a fixed default (no schema change). See spec `docs/superpowers/specs/2026-07-13-projectB-race-topdown-cars-design.md`, plan `docs/superpowers/plans/2026-07-13-projectB-race-topdown-cars.md`, and D-053. **The tint discussion below is historical — retained for context only.**
+
 > **Update 2026-07-13 (Project A, branch `project-a-oxide-theme`):** Superseded for the pre-game screens. Rather than tintable greyscale chassis, the game now uses **specific pre-coloured Iranian 3/4 hero renders** (`car-hero-<id>` keys) for Garage/CarDealer/Menu/Champion, alongside a global "Oxide, grittier" re-theme. See spec `docs/superpowers/specs/2026-07-13-oxide-theme-and-hero-cars-design.md`, plan `docs/superpowers/plans/2026-07-13-oxide-theme-and-hero-cars.md`, and D-052. The **in-race** cars are untouched and remain the deferred **Project B** (true top-down roof-view sprites — note: overhead source renders for these already exist in `cars/green/`). The tint discussion below applies only to Project B.
 
-Cars are still 100% procedural (`paintCarTexture`) and were deliberately left out of this pass. They are **not** a simple drop-in, for one reason:
+Cars were 100% procedural (`paintCarTexture`) and were deliberately left out of the Project-A pass. They were **not** a simple drop-in, for one reason:
 
 > The game **recolors cars at runtime**. The player's livery and all 20 rivals get their colour by `setTint` over a grey silhouette, across 3 chassis variants (compact / muscle / sleek). A flat painted PNG can't be recoloured that cleanly.
 
