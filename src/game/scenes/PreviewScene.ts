@@ -3,7 +3,7 @@ import { GAME_HEIGHT, GAME_WIDTH } from '../../config/game'
 import { ALL_TRACKS } from '../../data/tracks'
 import { drawTrackMap } from '../ui/trackMap'
 import { C, TIER_COLOR, TIER_LABEL } from '../ui/theme'
-import { flavor, heading, text } from '../ui/widgets'
+import { flavor, heading, metalGrain, text } from '../ui/widgets'
 
 export class PreviewScene extends Phaser.Scene {
   private index = 0
@@ -13,6 +13,7 @@ export class PreviewScene extends Phaser.Scene {
   constructor() { super('Preview') }
   create() {
     this.index = 0
+    metalGrain(this, GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0.05).setDepth(-100)
     heading(this, GAME_WIDTH / 2, 70, 'NIGHT CIRCUIT PREVIEW')
     this.gfx = this.add.graphics()
     this.title = text(this, GAME_WIDTH / 2, 790, '', { size: 'heading', origin: [0.5, 0.5] })

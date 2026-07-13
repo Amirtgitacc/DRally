@@ -6,7 +6,7 @@ import { buyCar, carNetPrice, tradeInValue } from '../../core/economy/garage'
 import type { CareerState } from '../../core/progression/career'
 import { loadCareer, saveCareer } from '../state/saveGame'
 import { C, hex } from '../ui/theme'
-import { heading, hintBar, subheading, text } from '../ui/widgets'
+import { fitImage, heading, hintBar, metalGrain, subheading, text } from '../ui/widgets'
 
 const MPH_PER_PX = 0.14
 
@@ -53,18 +53,21 @@ export class CarDealerScene extends Phaser.Scene {
 
     const cx = GAME_WIDTH / 2
 
+    metalGrain(this, GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0.05).setDepth(-100)
+
     heading(this, cx, 70, 'CAR DEALER')
     subheading(this, cx, 132, 'Every chassis on the ladder. The marker on each bar is the car you own.')
 
     // hero sprite, flanked by the browse arrows
-    this.carImage = this.add.image(cx, 300, `car-${CAR_CATALOG[this.idx].id}`).setScale(2.0).setAngle(-90)
+    this.carImage = this.add.image(cx, 300, `car-hero-${CAR_CATALOG[this.idx].id}`)
+    fitImage(this.carImage, 620, 320)
     this.tweens.add({ targets: this.carImage, y: '-=8', duration: 1500, yoyo: true, repeat: -1, ease: 'sine.inout' })
 
     this.arrows = [-1, 1].map((dir) => {
       // arrows stay mono: Oswald has no ◄ / ► glyph
       const arrow = text(this, cx + dir * 420, 300, dir < 0 ? '◄' : '►', {
         size: 'title',
-        color: C.amber,
+        color: C.oxide,
         origin: [0.5, 0.5],
       }).setInteractive({ useHandCursor: true })
       arrow.on('pointerdown', () => this.browse(dir))
@@ -174,12 +177,13 @@ export class CarDealerScene extends Phaser.Scene {
     const net = carNetPrice(this.career, showing.id)
     const affordable = this.career.cash >= net
 
-    this.carImage.setTexture(`car-${showing.id}`)
+    this.carImage.setTexture(`car-hero-${showing.id}`)
+    fitImage(this.carImage, 620, 320)
     this.nameText.setText(`${showing.name}${isOwned ? '  (yours)' : ''}`)
     this.blurbText.setText(showing.blurb)
 
     if (isOwned) {
-      this.priceText.setText(`Trade-in value $${tradeInValue(this.career)}  ·  Cash $${this.career.cash}`).setColor(hex(C.amber))
+      this.priceText.setText(`Trade-in value $${tradeInValue(this.career)}  ·  Cash $${this.career.cash}`).setColor(hex(C.oxide))
     } else {
       this.priceText
         .setText(
@@ -206,13 +210,13 @@ export class CarDealerScene extends Phaser.Scene {
       this.barsGfx.fillRect(BAR_X - 3, y - 3, BAR_W + 6, BAR_H + 6)
       this.barsGfx.fillStyle(C.surfaceTrack, 1)
       this.barsGfx.fillRect(BAR_X, y, BAR_W, BAR_H)
-      this.barsGfx.fillStyle(isOwned ? C.amber : C.tierPro, 1)
+      this.barsGfx.fillStyle(isOwned ? C.oxide : C.tierPro, 1)
       this.barsGfx.fillRect(BAR_X, y, BAR_W * this.ratio(stat.key, value), BAR_H)
 
       if (!isOwned) {
         // where your current car sits on this axis
         const mx = BAR_X + BAR_W * this.ratio(stat.key, owned[stat.key] as number)
-        this.barsGfx.fillStyle(C.amber, 1)
+        this.barsGfx.fillStyle(C.oxide, 1)
         this.barsGfx.fillRect(mx - 2, y - 6, 4, BAR_H + 12)
       }
 
