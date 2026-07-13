@@ -5,10 +5,12 @@ import {
   closedPolylineLength,
   distanceToClosedPolyline,
   offsetClosedPolyline,
+  scatterPointsAlong,
   segmentsIntersect,
   spacedPointsAlong,
   spacedPosesAlong,
 } from '../../../src/core/track/geometry'
+import { createSeededRandom } from '../../../src/core/race/random'
 
 const square = [
   { x: 0, y: 0 },
@@ -115,6 +117,82 @@ describe('buildGates', () => {
     for (const g of gates) {
       expect(Math.hypot(g.a.x - g.b.x, g.a.y - g.b.y)).toBeCloseTo(30, 5)
       expect(Math.hypot(g.tangent.x, g.tangent.y)).toBeCloseTo(1, 5)
+    }
+  })
+})
+
+describe('scatterPointsAlong', () => {
+  const square = [
+    { x: 0, y: 0 },
+    { x: 100, y: 0 },
+    { x: 100, y: 100 },
+    { x: 0, y: 100 },
+  ] // total arc length = 400
+
+  // deterministic scripted RNG for exact-position assertions
+  const scripted = (seq: number[]) => {
+    let i = 0
+    return () => seq[i++ % seq.length]
+  }
+
+  it('places a pose at the seeded arc distance on the +x edge', () => {
+    // first rng() -> arc distance (0.1 * 400 = 40 on the +x edge); second -> lateral (unused, lateralFrac 0)
+    const poses = scatterPointsAlong(square, 1, scripted([0.1, 0.5]), {
+      halfWidth: 20,
+      lateralFrac: 0,
+      minGap: 0,
+    })
+    expect(poses.length).toBe(1)
+    expect(poses[0].x).toBeCloseTo(40)
+    expect(poses[0].y).toBeCloseTo(0)
+    expect(poses[0].angle).toBeCloseTo(0)
+  })
+
+  it('carries the +y edge tangent angle', () => {
+    // 0.375 * 400 = 150 -> 50px up the +y edge from (100,0)
+    const poses = scatterPointsAlong(square, 1, scripted([0.375, 0.5]), {
+      halfWidth: 20,
+      lateralFrac: 0,
+      minGap: 0,
+    })
+    expect(poses[0].x).toBeCloseTo(100)
+    expect(poses[0].y).toBeCloseTo(50)
+    expect(poses[0].angle).toBeCloseTo(Math.PI / 2)
+  })
+
+  it('is deterministic for the same seed', () => {
+    const opts = { halfWidth: 20, lateralFrac: 0.5, minGap: 10 }
+    const a = scatterPointsAlong(square, 5, createSeededRandom(42), opts)
+    const b = scatterPointsAlong(square, 5, createSeededRandom(42), opts)
+    expect(a).toEqual(b)
+  })
+
+  it('honours count when no gap constraint applies', () => {
+    const poses = scatterPointsAlong(square, 10, createSeededRandom(1), {
+      halfWidth: 0,
+      lateralFrac: 0,
+      minGap: 0,
+    })
+    expect(poses.length).toBe(10)
+  })
+
+  it('respects minGap (cannot fit 3 points 150 apart on a 400 loop)', () => {
+    const poses = scatterPointsAlong(square, 10, createSeededRandom(7), {
+      halfWidth: 0,
+      lateralFrac: 0,
+      minGap: 150,
+    })
+    expect(poses.length).toBeLessThanOrEqual(2)
+  })
+
+  it('keeps every pose within lateralFrac·halfWidth of the centerline', () => {
+    const poses = scatterPointsAlong(square, 8, createSeededRandom(3), {
+      halfWidth: 20,
+      lateralFrac: 0.5, // max lateral offset = 10
+      minGap: 5,
+    })
+    for (const p of poses) {
+      expect(distanceToClosedPolyline(p, square)).toBeLessThanOrEqual(10 + 1e-9)
     }
   })
 })

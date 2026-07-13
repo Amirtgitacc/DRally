@@ -133,6 +133,64 @@ export function spacedPosesAlong(points: Vec2[], spacing: number): Pose[] {
   return out
 }
 
+/** Position + tangent angle at an arc distance along a closed polyline. */
+function sampleAtArcLength(points: Vec2[], dist: number): Pose {
+  const n = points.length
+  let d = dist
+  for (let i = 0; i < n; i++) {
+    const a = points[i]
+    const b = points[(i + 1) % n]
+    const segLen = Math.hypot(b.x - a.x, b.y - a.y)
+    if (d <= segLen || i === n - 1) {
+      const t = segLen === 0 ? 0 : d / segLen
+      return {
+        x: a.x + (b.x - a.x) * t,
+        y: a.y + (b.y - a.y) * t,
+        angle: Math.atan2(b.y - a.y, b.x - a.x),
+      }
+    }
+    d -= segLen
+  }
+  const a = points[0]
+  const b = points[1 % n]
+  return { x: a.x, y: a.y, angle: Math.atan2(b.y - a.y, b.x - a.x) }
+}
+
+/**
+ * Deterministically pick `count` scattered poses along a closed polyline.
+ * Each pose sits at a seeded arc position with a lateral offset up to
+ * ±lateralFrac·halfWidth from the centerline, carrying the local tangent angle.
+ * Consecutive picks are at least `minGap` apart in arc length (wrap-aware).
+ * Determinism comes entirely from `rng`. May return fewer than `count` if the
+ * gap constraint can't be satisfied (attempts are capped so it never hangs).
+ */
+export function scatterPointsAlong(
+  points: Vec2[],
+  count: number,
+  rng: () => number,
+  opts: { halfWidth: number; lateralFrac: number; minGap: number },
+): Pose[] {
+  const total = closedPolylineLength(points)
+  if (total === 0 || count <= 0) return []
+  const chosen: number[] = []
+  const maxAttempts = count * 20
+  for (let attempt = 0; attempt < maxAttempts && chosen.length < count; attempt++) {
+    const d = rng() * total
+    const tooClose = chosen.some((c) => {
+      const raw = Math.abs(c - d)
+      return Math.min(raw, total - raw) < opts.minGap
+    })
+    if (!tooClose) chosen.push(d)
+  }
+  return chosen.map((d) => {
+    const pose = sampleAtArcLength(points, d)
+    const nx = -Math.sin(pose.angle)
+    const ny = Math.cos(pose.angle)
+    const lateral = (rng() * 2 - 1) * opts.lateralFrac * opts.halfWidth
+    return { x: pose.x + nx * lateral, y: pose.y + ny * lateral, angle: pose.angle }
+  })
+}
+
 function pointSegmentDistance(p: Vec2, a: Vec2, b: Vec2): number {
   const abx = b.x - a.x
   const aby = b.y - a.y
