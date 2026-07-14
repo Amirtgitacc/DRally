@@ -4,7 +4,7 @@ import sharp from 'sharp'
 import { mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
-const SRC = 'Cars/output/generated'
+const SRC = 'cars/output/generated'
 const OUT = 'public/assets'
 
 // fit 'fill' = exact square (seamless surfaces); 'inside' = preserve aspect + alpha (sprites)

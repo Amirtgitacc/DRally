@@ -4,7 +4,9 @@ import type { UpgradeKind } from './economy'
 // Data-driven car catalog — the chassis ladder. Higher tiers cost more and
 // allow more upgrade tiers per stat (caps), like the reference game's ladder.
 
-/** Body silhouette painted by vehicleTextures — pure cosmetics. */
+/** Legacy chassis-silhouette tag. The procedural painter that consumed it was
+ *  removed with Project B (in-race cars are now real `car-top-<id>` sprites);
+ *  kept as a data field for save/schema stability. */
 export type CarVariant = 'compact' | 'muscle' | 'sleek'
 
 export interface CarSpec extends CarPhysicsSpec {
