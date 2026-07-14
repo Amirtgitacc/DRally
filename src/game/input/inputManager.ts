@@ -1,6 +1,7 @@
 import Phaser from 'phaser'
 import { loadSettings } from '../state/settings'
 import type { GameAction, SerializedBindings } from './inputTypes'
+import { joystickToActions } from './joystickMap'
 
 const GAMEPAD_BUTTON: Partial<Record<GameAction, number>> = {
   fire: 0,
@@ -17,6 +18,9 @@ export class InputManager {
   private pressedCodes = new Set<string>()
   private current = new Map<GameAction, boolean>()
   private pressedActions = new Map<GameAction, boolean>()
+  private touchAxisX = 0
+  private touchAxisY = 0
+  private touchButtons = new Set<GameAction>()
 
   private readonly onBlur = () => this.reset()
 
@@ -46,6 +50,7 @@ export class InputManager {
     const pad = typeof navigator !== 'undefined' ? navigator.getGamepads?.()[0] ?? null : null
     const axisX = pad?.axes[0] ?? 0
     const axisY = pad?.axes[1] ?? 0
+    const drive = joystickToActions(this.touchAxisX, this.touchAxisY)
 
     for (const [action, codes] of Object.entries(this.bindings) as Array<[GameAction, string[]]>) {
       const wasDown = this.current.get(action) ?? false
@@ -58,11 +63,34 @@ export class InputManager {
       if (action === 'steerLeft') down ||= axisX < -0.3
       if (action === 'steerRight') down ||= axisX > 0.3
 
+      // touch source: joystick for drive actions, button set for the rest
+      if (action === 'accelerate') down ||= drive.accelerate
+      else if (action === 'brake') down ||= drive.brake
+      else if (action === 'steerLeft') down ||= drive.steerLeft
+      else if (action === 'steerRight') down ||= drive.steerRight
+      else down ||= this.touchButtons.has(action)
+
       this.current.set(action, down)
       this.pressedActions.set(action, codes.some((code) => this.pressedCodes.has(code)) || (down && !wasDown))
     }
 
     this.pressedCodes.clear()
+  }
+
+  setTouchAxis(x: number, y: number): void {
+    this.touchAxisX = x
+    this.touchAxisY = y
+  }
+
+  setTouchButton(action: GameAction, down: boolean): void {
+    if (down) this.touchButtons.add(action)
+    else this.touchButtons.delete(action)
+  }
+
+  clearTouch(): void {
+    this.touchAxisX = 0
+    this.touchAxisY = 0
+    this.touchButtons.clear()
   }
 
   down(action: GameAction): boolean {
@@ -89,6 +117,7 @@ export class InputManager {
     this.pressedCodes.clear()
     this.current.clear()
     this.pressedActions.clear()
+    this.clearTouch()
   }
 
   private isBound(code: string): boolean {

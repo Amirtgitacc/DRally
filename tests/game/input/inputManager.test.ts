@@ -71,4 +71,38 @@ describe('InputManager', () => {
     expect(input.down('steerLeft')).toBe(false)
     expect(input.justDown('mine')).toBe(false)
   })
+
+  it('ORs a touch joystick axis into drive actions without a keyboard', () => {
+    const keyboard = new FakeKeyboard()
+    const input = new InputManager({ input: { keyboard } } as unknown as Phaser.Scene)
+
+    input.setTouchAxis(0, -1) // full up
+    input.update()
+    expect(input.down('accelerate')).toBe(true)
+    expect(input.down('brake')).toBe(false)
+
+    input.setTouchAxis(-1, 0) // full left
+    input.update()
+    expect(input.down('steerLeft')).toBe(true)
+    expect(input.down('accelerate')).toBe(false)
+
+    input.clearTouch()
+    input.update()
+    expect(input.down('steerLeft')).toBe(false)
+  })
+
+  it('ORs touch buttons and does not disturb keyboard merges', () => {
+    const keyboard = new FakeKeyboard()
+    const input = new InputManager({ input: { keyboard } } as unknown as Phaser.Scene)
+
+    input.setTouchButton('fire', true)
+    keyboard.emit('keydown', { code: 'KeyW', repeat: false, preventDefault: vi.fn() })
+    input.update()
+    expect(input.down('fire')).toBe(true)
+    expect(input.down('accelerate')).toBe(true) // keyboard still works
+
+    input.setTouchButton('fire', false)
+    input.update()
+    expect(input.down('fire')).toBe(false)
+  })
 })
