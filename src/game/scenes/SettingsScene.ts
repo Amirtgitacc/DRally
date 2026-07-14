@@ -5,7 +5,7 @@ import { GAME_ACTIONS, type GameAction } from '../input/inputTypes'
 import { audioBus } from '../systems/audio'
 import { loadSettings, resetSettings, saveSettings, type SettingsState } from '../state/settings'
 import { C } from '../ui/theme'
-import { flavor, heading, text, tile, type TileHandle } from '../ui/widgets'
+import { backButton, flavor, heading, text, tile, type TileHandle, wireTiles } from '../ui/widgets'
 
 type SettingRow = { id: 'master' | 'music' | 'effects' | 'mute' | 'shake' | 'flash' | 'turbo' | 'fire' | 'reset' | 'back'; label: string }
 const SETTINGS: SettingRow[] = [
@@ -32,6 +32,20 @@ export class SettingsScene extends Phaser.Scene {
     text(this, 1360, 130, 'RACE BINDINGS', { size: 'subtitle', color: C.oxide })
     this.gamepadText = text(this, 1740, 138, '', { size: 'caption', color: C.textSecondary, origin: [1, 0.5] })
     GAME_ACTIONS.forEach((action, i) => this.bindTiles.push(tile(this, 1360, 200 + i * 79, 820, 58, ACTION_LABELS[action], { size: 'bodySm' })))
+
+    const N = SETTINGS.length
+    wireTiles(
+      this.settingTiles,
+      (i) => { this.selected = i; this.refresh() },
+      (i) => { this.selected = i; this.activate() },
+    )
+    wireTiles(
+      this.bindTiles,
+      (i) => { this.selected = N + i; this.refresh() },
+      (i) => { this.selected = N + i; this.activate() },
+    )
+    backButton(this, () => { this.persist(); this.scene.start('Menu') })
+
     flavor(this, GAME_WIDTH / 2, GAME_HEIGHT - 48, '↑/↓ navigate · ←/→ adjust · Enter select/rebind · Esc save and back')
 
     const kb = this.input.keyboard!

@@ -13,7 +13,7 @@ import { BOSS } from '../../data/boss'
 import { loadCareer } from '../state/saveGame'
 import { setCurrentOffer } from '../state/roundState'
 import { C, STROKE, TIER_COLOR, TIER_LABEL } from '../ui/theme'
-import { fitImage, flavor, heading, panel, subheading, text } from '../ui/widgets'
+import { backButton, fitImage, flavor, heading, panel, subheading, text } from '../ui/widgets'
 import { randomSeed } from '../../core/race/random'
 
 const TIERS: RaceTier[] = ['street', 'pro', 'death']
@@ -117,6 +117,15 @@ export class SignUpScene extends Phaser.Scene {
       })
     })
 
+    // cards are plain rectangles, not TileHandle — wire pointer events directly,
+    // mirroring wireTiles()'s pointerover=focus / pointerup=activate contract
+    this.cards.forEach((card, i) => {
+      card.setInteractive({ useHandCursor: true })
+      card.on('pointerover', () => { this.selected = i; this.refresh() })
+      card.on('pointerup', () => { this.selected = i; this.confirm() })
+    })
+    backButton(this, () => this.scene.start('Garage'))
+
     flavor(this, cx, GAME_HEIGHT - 60, '←/→ choose · Enter sign up · Esc garage')
 
     const kb = this.input.keyboard!
@@ -175,6 +184,8 @@ export class SignUpScene extends Phaser.Scene {
     })
 
     flavor(this, cx, GAME_HEIGHT - 60, 'Enter accept the duel · Esc garage')
+
+    backButton(this, () => this.scene.start('Garage'))
 
     const kb = this.input.keyboard!
     kb.on('keydown-ENTER', () => {

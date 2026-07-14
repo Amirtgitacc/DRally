@@ -4,7 +4,7 @@ import { ACTION_LABELS, readableCode } from '../input/bindings'
 import { GAME_ACTIONS } from '../input/inputTypes'
 import { loadSettings } from '../state/settings'
 import { C } from '../ui/theme'
-import { heading, modal, text, tile, type TileHandle } from '../ui/widgets'
+import { heading, modal, text, tile, type TileHandle, wireTiles } from '../ui/widgets'
 import type { RaceScene } from './RaceScene'
 
 interface PauseData {
@@ -41,6 +41,25 @@ export class RacePauseScene extends Phaser.Scene {
     this.helpText = text(this, 1050, 350, '', { size: 'bodySm', color: C.textBody, lineSpacing: 8 })
     this.warning = text(this, GAME_WIDTH / 2, 790, '', { size: 'body', color: C.danger, align: 'center', origin: [0.5, 0.5] })
 
+    // tap entry points call the exact same functions the keyboard path calls below.
+    // while the abandon confirm is up, retapping ABANDON/RESUME mirrors keyboard Y/N.
+    wireTiles(
+      this.handles,
+      (i) => { if (!this.confirming) { this.selected = i; this.refresh() } },
+      (i) => {
+        if (this.confirming) {
+          if (i === 2) this.confirmAbandon()
+          else if (i === 0) this.cancelAbandon()
+          this.refresh()
+          return
+        }
+        if (this.help) { this.closeHelp(); this.refresh(); return }
+        this.selected = i
+        this.activateSelected()
+        this.refresh()
+      },
+    )
+
     const kb = this.input.keyboard!
     const onKey = (event: KeyboardEvent) => this.handleKey(event)
     kb.on('keydown', onKey)
@@ -50,21 +69,15 @@ export class RacePauseScene extends Phaser.Scene {
 
   private handleKey(event: KeyboardEvent) {
     if (this.confirming) {
-      if (event.code === 'KeyY' || event.code === 'Enter') {
-        ;(this.scene.get('Race') as RaceScene).abandonRace()
-        this.scene.stop()
-      } else if (event.code === 'KeyN' || event.code === 'Escape') this.confirming = false
+      if (event.code === 'KeyY' || event.code === 'Enter') this.confirmAbandon()
+      else if (event.code === 'KeyN' || event.code === 'Escape') this.cancelAbandon()
       this.refresh(); return
     }
-    if (this.help && (event.code === 'Escape' || event.code === 'Enter')) { this.help = false; this.refresh(); return }
+    if (this.help && (event.code === 'Escape' || event.code === 'Enter')) { this.closeHelp(); this.refresh(); return }
     if (event.code === 'Escape') { this.resumeRace(); return }
     if (event.code === 'ArrowUp') this.selected = (this.selected + ITEMS.length - 1) % ITEMS.length
     if (event.code === 'ArrowDown') this.selected = (this.selected + 1) % ITEMS.length
-    if (event.code === 'Enter') {
-      if (this.selected === 0) { this.resumeRace(); return }
-      if (this.selected === 1) this.help = true
-      if (this.selected === 2) this.confirming = true
-    }
+    if (event.code === 'Enter') this.activateSelected()
     this.refresh()
   }
 
@@ -73,6 +86,22 @@ export class RacePauseScene extends Phaser.Scene {
     this.scene.resume('Race')
     this.scene.stop()
   }
+
+  /** What Enter does for the currently-selected row — shared by keyboard and tap. */
+  private activateSelected() {
+    if (this.selected === 0) { this.resumeRace(); return }
+    if (this.selected === 1) this.help = true
+    if (this.selected === 2) this.confirming = true
+  }
+
+  private closeHelp() { this.help = false }
+
+  private confirmAbandon() {
+    ;(this.scene.get('Race') as RaceScene).abandonRace()
+    this.scene.stop()
+  }
+
+  private cancelAbandon() { this.confirming = false }
 
   private refresh() {
     this.handles.forEach((handle, i) => handle.setState(i === this.selected, true))

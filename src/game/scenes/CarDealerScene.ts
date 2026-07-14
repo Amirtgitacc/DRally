@@ -6,7 +6,7 @@ import { buyCar, carNetPrice, tradeInValue } from '../../core/economy/garage'
 import type { CareerState } from '../../core/progression/career'
 import { loadCareer, saveCareer } from '../state/saveGame'
 import { C, hex } from '../ui/theme'
-import { fitImage, heading, hintBar, metalGrain, subheading, text } from '../ui/widgets'
+import { backButton, fitImage, heading, hintBar, metalGrain, subheading, text } from '../ui/widgets'
 
 const MPH_PER_PX = 0.14
 
@@ -108,8 +108,11 @@ export class CarDealerScene extends Phaser.Scene {
     })
 
     this.hintText = text(this, cx, GAME_HEIGHT - 70, '', { size: 'body', origin: [0.5, 0.5] })
+    // the browse arrows already take pointerdown; the buy prompt itself is the tap target for Enter's action
+    this.hintText.setInteractive({ useHandCursor: true }).on('pointerup', () => this.buy())
 
     hintBar(this, '←/→ browse · Enter buy · Esc garage')
+    backButton(this, () => this.scene.start('Garage'))
 
     const kb = this.input.keyboard!
     kb.on('keydown-LEFT', () => this.browse(-1))

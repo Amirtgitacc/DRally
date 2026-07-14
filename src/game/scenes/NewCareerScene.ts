@@ -5,7 +5,7 @@ import { STARTING_CASH } from '../../data/economy'
 import { STARTER_CAR } from '../../data/cars'
 import { hasSavedCareer, resetCareer } from '../state/saveGame'
 import { C, hex } from '../ui/theme'
-import { flavor, fitImage, heading, panel, text, tile, type TileHandle } from '../ui/widgets'
+import { backButton, flavor, fitImage, heading, panel, text, tile, type TileHandle, wireTiles } from '../ui/widgets'
 
 const LIVERIES = [0xf2a33c, 0x3fd07f, 0x4fc3f7, 0xd23c2f, 0xb86fe3, 0xe8e8f0]
 const PORTRAITS = ['visor', 'mohawk', 'respirator']
@@ -54,6 +54,17 @@ export class NewCareerScene extends Phaser.Scene {
       this.rows.push(tile(this, 1320, 265 + i * 105, 760, 76, label, { accent: i === 4 ? C.oxideDim : undefined }))
     })
 
+    // driver name entry has no on-screen keyboard here — tap only focuses that row.
+    // the other rows step their value forward on tap; START CAREER tap mirrors Enter.
+    wireTiles(
+      this.rows,
+      (i) => { if (!this.confirmOverwrite) { this.selected = i; this.refresh() } },
+      (i) => { if (!this.confirmOverwrite) this.selected = i; this.activateSelected() },
+    )
+    // Escape does nothing on first launch (no career exists yet to go back to) —
+    // match that by only offering the tap affordance when there is somewhere to go.
+    if (!this.firstLaunch) backButton(this, () => this.escapeAction())
+
     flavor(this, cx, GAME_HEIGHT - 52, 'Type to edit name · ←/→ change · ↑/↓ navigate · Enter confirm · Esc back')
     const kb = this.input.keyboard!
     const onKey = (event: KeyboardEvent) => this.handleKey(event)
@@ -65,7 +76,7 @@ export class NewCareerScene extends Phaser.Scene {
   private handleKey(event: KeyboardEvent) {
     if (this.confirmOverwrite) {
       if (event.code === 'KeyY' || event.code === 'Enter') this.commit()
-      if (event.code === 'KeyN' || event.code === 'Escape') { this.confirmOverwrite = false; this.refresh() }
+      if (event.code === 'KeyN' || event.code === 'Escape') this.escapeAction()
       return
     }
     if (event.code === 'ArrowUp') this.selected = (this.selected + 4) % 5
@@ -74,8 +85,25 @@ export class NewCareerScene extends Phaser.Scene {
     else if (event.code === 'ArrowRight') this.change(1)
     else if (event.code === 'Backspace' && this.selected === 0) this.name = this.name.slice(0, -1)
     else if (event.code === 'Enter' && this.selected === 4) this.requestCommit()
-    else if (event.code === 'Escape' && !this.firstLaunch) this.scene.start('Menu')
+    else if (event.code === 'Escape') this.escapeAction()
     else if (this.selected === 0 && event.key.length === 1 && /[a-zA-Z0-9 _-]/.test(event.key) && this.name.length < 18) this.name += event.key
+    this.refresh()
+  }
+
+  /** Exactly what Escape does today: cancel an overwrite prompt, or (outside first launch) leave. */
+  private escapeAction() {
+    if (this.confirmOverwrite) { this.confirmOverwrite = false; this.refresh(); return }
+    if (!this.firstLaunch) this.scene.start('Menu')
+  }
+
+  /** What tapping a row does: START CAREER mirrors Enter (incl. the overwrite-confirm step); other rows step their value. */
+  private activateSelected() {
+    if (this.confirmOverwrite) {
+      if (this.selected === 4) this.commit()
+      return
+    }
+    if (this.selected === 4) { this.requestCommit(); return }
+    this.change(1)
     this.refresh()
   }
 

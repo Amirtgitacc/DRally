@@ -8,7 +8,7 @@ import { drawTrackMap } from '../ui/trackMap'
 import { getCurrentOffer } from '../state/roundState'
 import { loadCareer } from '../state/saveGame'
 import { C, TIER_COLOR, TIER_LABEL } from '../ui/theme'
-import { flavor, heading, panel, text } from '../ui/widgets'
+import { backButton, flavor, heading, panel, text } from '../ui/widgets'
 
 export class PrepareRaceScene extends Phaser.Scene {
   constructor() { super('PrepareRace') }
@@ -28,6 +28,10 @@ export class PrepareRaceScene extends Phaser.Scene {
     const kb = this.input.keyboard!
     const start = () => this.scene.start('Race')
     const back = () => this.scene.start('SignUp')
+    // single "press Enter to start" screen — a full-screen tap does the same thing;
+    // backButton is added after so it renders on top and takes priority in its own area
+    this.add.zone(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT).setInteractive().on('pointerup', start)
+    backButton(this, back)
     kb.on('keydown-ENTER', start); kb.on('keydown-ESC', back)
     this.events.once('shutdown', () => { kb.off('keydown-ENTER', start); kb.off('keydown-ESC', back) })
   }
