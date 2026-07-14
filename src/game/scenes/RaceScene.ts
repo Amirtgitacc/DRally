@@ -100,6 +100,8 @@ import type { RaceResults } from './ResultsScene'
 import { C, STROKE, hex } from '../ui/theme'
 import { damageColor, heading, hintBar, plate, statBar, text } from '../ui/widgets'
 import { InputManager } from '../input/inputManager'
+import { TouchControls } from '../input/touchControls'
+import { isTouchDevice } from '../input/device'
 import { loadSettings, saveSettings, type SettingsState } from '../state/settings'
 import { createSeededRandom, randomSeed } from '../../core/race/random'
 import type { RacePhase } from '../race/raceRuntime'
@@ -244,6 +246,7 @@ export class RaceScene extends Phaser.Scene {
   private raceSeed = 0
   private settings!: SettingsState
   private inputManager!: InputManager
+  private touchControls?: TouchControls
   private fireToggled = false
   private turboToggled = false
   private resultCommitted = false
@@ -2257,9 +2260,18 @@ export class RaceScene extends Phaser.Scene {
       }
     }
     this.input.keyboard?.on('keydown', onKey)
+
+    if (isTouchDevice()) {
+      this.touchControls = new TouchControls(this, this.hudContainer, this.inputManager, () => {
+        if (this.phase !== 'finished' && !this.scene.isPaused()) this.openPause()
+      })
+    }
+
     this.events.once('shutdown', () => {
       audioBus.engineStop()
       this.input.keyboard?.off('keydown', onKey)
+      this.touchControls?.destroy()
+      this.touchControls = undefined
       this.inputManager.destroy()
     })
   }
