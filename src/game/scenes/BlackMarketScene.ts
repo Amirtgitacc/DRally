@@ -14,7 +14,7 @@ import { itemLabel } from '../../core/economy/upgradeEffects'
 import type { CareerState } from '../../core/progression/career'
 import { loadCareer, saveCareer } from '../state/saveGame'
 import { C } from '../ui/theme'
-import { backButton, flavor, heading, hintBar, text, tile, type TileHandle, wireTiles } from '../ui/widgets'
+import { flavor, heading, hintBar, text, tile, type TileHandle, wireTiles } from '../ui/widgets'
 
 interface Tile {
   id: 'mines' | 'plating' | 'overturbo' | 'sabotage' | 'loan' | 'back'
@@ -94,8 +94,6 @@ export class BlackMarketScene extends Phaser.Scene {
       (i) => { this.selected = i; this.refresh() },
       (i) => { this.selected = i; this.activate() },
     )
-    backButton(this, () => this.scene.start('Garage'))
-
     flavor(this, cx, GAME_HEIGHT - 60, Phaser.Math.RND.pick(FLAVOR))
 
     hintBar(this, '←/→ select · Enter buy · Esc garage')

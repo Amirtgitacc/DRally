@@ -105,7 +105,7 @@ export class VenuesScene extends Phaser.Scene {
 
     // position dots — which venue of six you are looking at
     this.dotsGfx.clear()
-    const dotY = GAME_HEIGHT - 105
+    const dotY = GAME_HEIGHT - 82
     const startX = GAME_WIDTH / 2 - ((ALL_TRACKS.length - 1) * 26) / 2
     ALL_TRACKS.forEach((_, i) => {
       this.dotsGfx.fillStyle(i === this.idx ? C.oxide : C.border, 1)
