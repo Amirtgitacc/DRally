@@ -25,6 +25,7 @@ import { CreditsScene } from './game/scenes/CreditsScene'
 import { PreviewScene } from './game/scenes/PreviewScene'
 import { PrepareRaceScene } from './game/scenes/PrepareRaceScene'
 import { RacePauseScene } from './game/scenes/RacePauseScene'
+import { initOrientation } from './game/systems/orientation'
 
 /**
  * Phaser bakes glyph metrics into every Text object the moment it is created.
@@ -90,6 +91,8 @@ async function boot() {
   // ?debug=1 exposes the game so scripted runs can jump straight to a scene
   // (`__game.scene.start('Race')`) instead of walking the menus.
   if (DEBUG) (window as unknown as Record<string, unknown>).__game = game
+
+  initOrientation()
 }
 
 void boot()
