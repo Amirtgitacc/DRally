@@ -70,7 +70,7 @@ export class CarDealerScene extends Phaser.Scene {
         color: C.oxide,
         origin: [0.5, 0.5],
       }).setInteractive({ useHandCursor: true })
-      arrow.on('pointerdown', () => this.browse(dir))
+      arrow.on('pointerup', () => this.browse(dir))
       this.tweens.add({ targets: arrow, alpha: 0.35, duration: 900, yoyo: true, repeat: -1 })
       return arrow
     })

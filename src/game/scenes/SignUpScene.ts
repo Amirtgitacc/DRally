@@ -185,17 +185,23 @@ export class SignUpScene extends Phaser.Scene {
 
     flavor(this, cx, GAME_HEIGHT - 60, 'Enter accept the duel · Esc garage')
 
-    backButton(this, () => this.scene.start('Garage'))
-
-    const kb = this.input.keyboard!
-    kb.on('keydown-ENTER', () => {
+    const accept = () => {
       setCurrentOffer({ track, rivalIds: [], duel: true, seed: randomSeed() })
       this.scene.start('PrepareRace')
-    })
-    kb.on('keydown-ESC', () => this.scene.start('Garage'))
+    }
+    const back = () => this.scene.start('Garage')
+
+    // full-screen tap accepts the duel; backButton is added after so it renders
+    // on top and takes priority in its own area (mirrors PrepareRaceScene)
+    this.add.zone(cx, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT).setInteractive().on('pointerup', accept)
+    backButton(this, back)
+
+    const kb = this.input.keyboard!
+    kb.on('keydown-ENTER', accept)
+    kb.on('keydown-ESC', back)
     this.events.on('shutdown', () => {
-      kb.off('keydown-ENTER')
-      kb.off('keydown-ESC')
+      kb.off('keydown-ENTER', accept)
+      kb.off('keydown-ESC', back)
     })
   }
 
