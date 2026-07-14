@@ -148,19 +148,23 @@ export function panel(
   opts: { fill?: number; fillAlpha?: number; stroke?: number; strokeAlpha?: number; strokeWidth?: number; notch?: number } = {},
 ) {
   const { fill = C.surfacePlate, fillAlpha = 0.92, stroke = C.line, strokeAlpha = 1, strokeWidth = 2, notch = 12 } = opts
-  const container = scene.add.container(x, y)
+  const flat = plateNotchPoints(w, h, notch) // centered on (0,0)
+  const points: Phaser.Geom.Point[] = []
+  for (let i = 0; i < flat.length; i += 2) points.push(new Phaser.Geom.Point(flat[i], flat[i + 1]))
 
-  const body = scene.add.polygon(0, 0, plateNotchPoints(w, h, notch), fill, fillAlpha)
-    .setStrokeStyle(strokeWidth, stroke, strokeAlpha)
-  // raised edge: a bright hairline along the top, a shadow hairline along the bottom
-  const edge = scene.add.graphics()
-  edge.lineStyle(1, C.textMuted, 0.25)
-  edge.lineBetween(-w / 2 + 4, -h / 2 + 1, w / 2 - notch, -h / 2 + 1)
-  edge.lineStyle(1, C.shadow, 0.5)
-  edge.lineBetween(-w / 2 + notch, h / 2 - 1, w / 2 - 4, h / 2 - 1)
-
-  container.add([body, edge])
-  return container
+  // Graphics positioned at the panel centre; points are drawn relative to it,
+  // so the plate is centred on (x,y) with no polygon displayOrigin offset.
+  const g = scene.add.graphics({ x, y })
+  g.fillStyle(fill, fillAlpha)
+  g.fillPoints(points, true)
+  g.lineStyle(strokeWidth, stroke, strokeAlpha)
+  g.strokePoints(points, true, true)
+  // raised edge: bright hairline along the top, shadow hairline along the bottom
+  g.lineStyle(1, C.textMuted, 0.25)
+  g.lineBetween(-w / 2 + 4, -h / 2 + 1, w / 2 - notch, -h / 2 + 1)
+  g.lineStyle(1, C.shadow, 0.5)
+  g.lineBetween(-w / 2 + notch, h / 2 - 1, w / 2 - 4, h / 2 - 1)
+  return g
 }
 
 /** The big centred plate that Results and Ranking build their content on. */
