@@ -3,7 +3,7 @@ import { GAME_HEIGHT, GAME_WIDTH } from '../../config/game'
 import { ALL_TRACKS } from '../../data/tracks'
 import { drawTrackMap } from '../ui/trackMap'
 import { C, TIER_COLOR, TIER_LABEL } from '../ui/theme'
-import { flavor, heading, metalGrain, text } from '../ui/widgets'
+import { backButton, flavor, heading, metalGrain, text } from '../ui/widgets'
 
 export class PreviewScene extends Phaser.Scene {
   private index = 0
@@ -19,6 +19,7 @@ export class PreviewScene extends Phaser.Scene {
     this.title = text(this, GAME_WIDTH / 2, 790, '', { size: 'heading', origin: [0.5, 0.5] })
     this.meta = text(this, GAME_WIDTH / 2, 850, '', { size: 'bodyLg', color: C.textSecondary, origin: [0.5, 0.5] })
     flavor(this, GAME_WIDTH / 2, GAME_HEIGHT - 60, 'Automatic venue reel · ←/→ browse · Esc menu')
+    backButton(this, () => this.scene.start('Menu'))
     const browse = (d: number) => { this.index = (this.index + d + ALL_TRACKS.length) % ALL_TRACKS.length; this.refresh() }
     const kb = this.input.keyboard!
     const left = () => browse(-1); const right = () => browse(1); const back = () => this.scene.start('Menu')

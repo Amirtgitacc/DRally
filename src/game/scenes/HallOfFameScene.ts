@@ -5,7 +5,7 @@ import { ordinal } from '../../core/race/placement'
 import { ALL_TRACKS } from '../../data/tracks'
 import { loadCareer } from '../state/saveGame'
 import { C, TIER_COLOR } from '../ui/theme'
-import { flavor, heading, panel, text } from '../ui/widgets'
+import { backButton, flavor, heading, panel, text } from '../ui/widgets'
 
 export class HallOfFameScene extends Phaser.Scene {
   constructor() { super('HallOfFame') }
@@ -21,6 +21,7 @@ export class HallOfFameScene extends Phaser.Scene {
       text(this, x - 340, y - 20, record ? [`Best lap    ${record.bestLapMs ? formatTime(record.bestLapMs) : '—'}`, `Best race   ${record.bestRaceMs ? formatTime(record.bestRaceMs) : '—'}`, `Best finish ${record.bestFinish ? ordinal(record.bestFinish) : '—'}     Wins ${record.wins}`].join('\n') : 'No recorded finish.', { size: 'body', color: C.textBody, lineSpacing: 8 })
     })
     flavor(this, GAME_WIDTH / 2, GAME_HEIGHT - 48, 'Esc / Enter: menu')
+    backButton(this, () => this.scene.start('Menu'))
     const kb = this.input.keyboard!
     const back = () => this.scene.start('Menu')
     kb.on('keydown-ESC', back); kb.on('keydown-ENTER', back)

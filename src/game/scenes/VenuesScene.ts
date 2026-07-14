@@ -5,7 +5,7 @@ import type { TrackDef } from '../../data/tracks/testCircuit'
 import { catmullRomClosed, closedPolylineLength } from '../../core/track/geometry'
 import { drawTrackMap } from '../ui/trackMap'
 import { C, TIER_COLOR, TIER_LABEL, hex } from '../ui/theme'
-import { flavor, heading, text } from '../ui/widgets'
+import { backButton, flavor, heading, text } from '../ui/widgets'
 import { loadCareer } from '../state/saveGame'
 import { formatTime } from '../../core/race/format'
 
@@ -54,6 +54,8 @@ export class VenuesScene extends Phaser.Scene {
     })
 
     flavor(this, cx, GAME_HEIGHT - 60, '←/→ browse · Esc menu')
+
+    backButton(this, () => this.scene.start('Menu'))
 
     const kb = this.input.keyboard!
     kb.on('keydown-LEFT', () => this.browse(-1))

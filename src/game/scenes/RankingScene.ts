@@ -5,7 +5,7 @@ import { starsFor } from '../../core/ai/talent'
 import { talentOf } from '../../data/drivers'
 import { loadCareer } from '../state/saveGame'
 import { C, STROKE } from '../ui/theme'
-import { flavor, heading, modal, prompt, subheading, text } from '../ui/widgets'
+import { backButton, flavor, heading, modal, prompt, subheading, text } from '../ui/widgets'
 
 export class RankingScene extends Phaser.Scene {
   constructor() {
@@ -52,6 +52,8 @@ export class RankingScene extends Phaser.Scene {
     }
 
     prompt(this, cx, GAME_HEIGHT - 60, 'ENTER: GARAGE')
+
+    backButton(this, () => this.scene.start('Garage'))
 
     const kb = this.input.keyboard!
     const back = () => this.scene.start('Garage')

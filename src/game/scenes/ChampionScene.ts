@@ -67,6 +67,11 @@ export class ChampionScene extends Phaser.Scene {
 
     prompt(this, cx, GAME_HEIGHT * 0.88, 'ENTER: MENU')
 
+    this.add
+      .zone(cx, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT)
+      .setInteractive()
+      .on('pointerup', () => this.scene.start('Menu'))
+
     const kb = this.input.keyboard!
     const back = () => this.scene.start('Menu')
     kb.on('keydown-ENTER', back)

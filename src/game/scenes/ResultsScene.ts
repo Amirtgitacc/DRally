@@ -96,6 +96,11 @@ export class ResultsScene extends Phaser.Scene {
 
     prompt(this, cx, GAME_HEIGHT * 0.82, 'ENTER: STANDINGS')
 
+    this.add
+      .zone(cx, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT)
+      .setInteractive()
+      .on('pointerup', () => this.scene.start('Ranking'))
+
     const kb = this.input.keyboard!
     const next = () => this.scene.start('Ranking')
     kb.on('keydown-ENTER', next)
