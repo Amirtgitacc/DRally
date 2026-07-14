@@ -6,7 +6,7 @@ import { audioBus } from '../systems/audio'
 import { hasSavedCareer, readCareer } from '../state/saveGame'
 import { loadSettings } from '../state/settings'
 import { C, STROKE } from '../ui/theme'
-import { fitImage, flavor, heading, metalGrain, text, tile, type TileHandle } from '../ui/widgets'
+import { fitImage, flavor, heading, metalGrain, text, tile, type TileHandle, wireTiles } from '../ui/widgets'
 
 interface MenuItem {
   label: string
@@ -71,6 +71,11 @@ export class MenuScene extends Phaser.Scene {
       const y = 250 + i * 88
       this.handles.push(tile(this, 1230, y, 720, 68, item.label, { size: 'action', accent: i === 0 ? C.oxideDim : undefined }))
     })
+    wireTiles(
+      this.handles,
+      (i) => { this.selected = i; this.refresh() },
+      (i) => { this.selected = i; this.activate() },
+    )
     flavor(this, cx, GAME_HEIGHT - 42, '↑/↓ navigate · Enter select · V venues · L ladder · N new career')
 
     const kb = this.input.keyboard!

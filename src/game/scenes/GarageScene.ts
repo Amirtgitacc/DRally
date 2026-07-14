@@ -9,6 +9,7 @@ import type { CareerState } from '../../core/progression/career'
 import { loadCareer, saveCareer } from '../state/saveGame'
 import { C, hex } from '../ui/theme'
 import {
+  backButton,
   fitImage,
   flavor,
   hazardBar,
@@ -23,6 +24,7 @@ import {
   text,
   tile,
   type TileHandle,
+  wireTiles,
 } from '../ui/widgets'
 
 const MPH_PER_PX = 0.14
@@ -33,9 +35,9 @@ const MPH_PER_PX = 0.14
  */
 const LX = 620 // left column: car, name, bars, info all centre here
 const PANEL_X = 1670
-const PANEL_Y = 400
+const PANEL_Y = 420 // was 400 — recenters the taller content
 const PANEL_W = 400
-const PANEL_H = 480
+const PANEL_H = 520 // was 480 — fits stats + divider + 3 pip rows with margin
 const PANEL_LEFT = PANEL_X - PANEL_W / 2 + 50
 
 const BAR_W = 340
@@ -51,7 +53,7 @@ const LOADOUT_STEP = 34
 const BAR_TOP = 520
 const BAR_STEP = 35
 
-const PIP_TOP = 500
+const PIP_TOP = 560 // was 500 — clear the 9-line stats block above it
 const PIP_STEP = 40
 
 const TILE_Y = 880
@@ -226,6 +228,13 @@ export class GarageScene extends Phaser.Scene {
         }),
       )
     })
+
+    wireTiles(
+      this.tiles,
+      (i) => { this.selected = i; this.refresh() },
+      (i) => { this.selected = i; this.activate() },
+    )
+    backButton(this, () => this.scene.start('Menu'))
 
     flavor(this, cx, GAME_HEIGHT - 60, Phaser.Math.RND.pick(FLAVOR))
 
