@@ -6,6 +6,8 @@ import { STARTER_CAR } from '../../data/cars'
 import { hasSavedCareer, resetCareer } from '../state/saveGame'
 import { C, hex } from '../ui/theme'
 import { backButton, flavor, fitImage, heading, panel, text, tile, type TileHandle, wireTiles } from '../ui/widgets'
+import { openNativeText } from '../ui/nativeInput'
+import { isTouchDevice } from '../input/device'
 
 const LIVERIES = [0xf2a33c, 0x3fd07f, 0x4fc3f7, 0xd23c2f, 0xb86fe3, 0xe8e8f0]
 const PORTRAITS = ['visor', 'mohawk', 'respirator']
@@ -25,6 +27,7 @@ export class NewCareerScene extends Phaser.Scene {
   private nameText!: Phaser.GameObjects.Text
   private car!: Phaser.GameObjects.Image
   private portraitGfx!: Phaser.GameObjects.Graphics
+  private disposeNativeInput?: () => void
 
   constructor() { super('Profile') }
 
@@ -76,11 +79,18 @@ export class NewCareerScene extends Phaser.Scene {
     const kb = this.input.keyboard!
     const onKey = (event: KeyboardEvent) => this.handleKey(event)
     kb.on('keydown', onKey)
-    this.events.once('shutdown', () => kb.off('keydown', onKey))
+    this.events.once('shutdown', () => {
+      kb.off('keydown', onKey)
+      this.disposeNativeInput?.()
+      this.disposeNativeInput = undefined
+    })
     this.refresh()
   }
 
   private handleKey(event: KeyboardEvent) {
+    // while the native (OS) keyboard owns name entry, ignore physical keys so
+    // characters aren't counted twice (once via the input, once here).
+    if (this.disposeNativeInput) return
     if (this.confirmOverwrite) {
       if (event.code === 'KeyY' || event.code === 'Enter') this.commit()
       if (event.code === 'KeyN' || event.code === 'Escape') this.escapeAction()
@@ -109,6 +119,16 @@ export class NewCareerScene extends Phaser.Scene {
    * Enter; other rows step their value forward. Never reached from the keyboard path.
    */
   private activateSelected() {
+    if (isTouchDevice() && this.selected === 0) {
+      this.disposeNativeInput?.()
+      this.disposeNativeInput = openNativeText({
+        value: this.name,
+        maxLength: 18,
+        onChange: (v) => { this.name = v; this.refresh() },
+        onDone: () => { this.disposeNativeInput?.(); this.disposeNativeInput = undefined },
+      })
+      return
+    }
     if (this.selected === 4) { this.requestCommit(); return }
     this.change(1)
     this.refresh()
