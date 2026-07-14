@@ -59,7 +59,14 @@ export class NewCareerScene extends Phaser.Scene {
     wireTiles(
       this.rows,
       (i) => { if (!this.confirmOverwrite) { this.selected = i; this.refresh() } },
-      (i) => { if (!this.confirmOverwrite) this.selected = i; this.activateSelected() },
+      (i) => {
+        // during the overwrite prompt, keyboard only commits on an exact Y/Enter and
+        // ignores every other key — so only a tap on START CAREER (row 4) may commit;
+        // taps on rows 0-3 are ignored, exactly like non-Y/Enter keys.
+        if (this.confirmOverwrite) { if (i === 4) this.commit(); return }
+        this.selected = i
+        this.activateSelected()
+      },
     )
     // Escape does nothing on first launch (no career exists yet to go back to) —
     // match that by only offering the tap affordance when there is somewhere to go.
@@ -96,12 +103,12 @@ export class NewCareerScene extends Phaser.Scene {
     if (!this.firstLaunch) this.scene.start('Menu')
   }
 
-  /** What tapping a row does: START CAREER mirrors Enter (incl. the overwrite-confirm step); other rows step their value. */
+  /**
+   * What tapping a selected row does when NOT in the overwrite prompt (that case is
+   * handled by the wireTiles onActivate against the tapped index). START CAREER mirrors
+   * Enter; other rows step their value forward. Never reached from the keyboard path.
+   */
   private activateSelected() {
-    if (this.confirmOverwrite) {
-      if (this.selected === 4) this.commit()
-      return
-    }
     if (this.selected === 4) { this.requestCommit(); return }
     this.change(1)
     this.refresh()
