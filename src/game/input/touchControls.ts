@@ -30,8 +30,11 @@ export class TouchControls {
     private readonly input: InputManager,
     onPause: () => void,
   ) {
-    // allow simultaneous touches (steer + fire + turbo) — default is a single pointer
-    scene.input.addPointer(2)
+    // allow simultaneous touches (steer + fire + turbo). addPointer accumulates
+    // toward Phaser's cap, so only top up to the target rather than adding every race.
+    const WANTED_POINTERS = 4
+    const missing = WANTED_POINTERS - scene.input.manager.pointersTotal
+    if (missing > 0) scene.input.addPointer(missing)
 
     // joystick base + thumb
     const base = scene.add.circle(JOY_CX, JOY_CY, JOY_RADIUS, C.surfaceHud, 0.35).setStrokeStyle(3, C.oxide, 0.5)
