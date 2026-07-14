@@ -4,6 +4,7 @@
  */
 
 import Phaser from 'phaser'
+import { plateNotchPoints } from './plateGeometry'
 import { C, FONT_DISPLAY, FONT_MONO, RADIUS, STROKE, TYPE, hex, type TypeToken } from './theme'
 
 /** Bake a small greyscale noise tile once; reused by every metalGrain() call. */
@@ -144,11 +145,22 @@ export function panel(
   y: number,
   w: number,
   h: number,
-  opts: { fill?: number; fillAlpha?: number; stroke?: number; strokeAlpha?: number; strokeWidth?: number } = {},
+  opts: { fill?: number; fillAlpha?: number; stroke?: number; strokeAlpha?: number; strokeWidth?: number; notch?: number } = {},
 ) {
-  const { fill = C.surfacePlate, fillAlpha = 0.92, stroke = C.line, strokeAlpha = 1, strokeWidth = 2 } = opts
-  const rect = scene.add.rectangle(x, y, w, h, fill, fillAlpha).setStrokeStyle(strokeWidth, stroke, strokeAlpha)
-  return rect
+  const { fill = C.surfacePlate, fillAlpha = 0.92, stroke = C.line, strokeAlpha = 1, strokeWidth = 2, notch = 12 } = opts
+  const container = scene.add.container(x, y)
+
+  const body = scene.add.polygon(0, 0, plateNotchPoints(w, h, notch), fill, fillAlpha)
+    .setStrokeStyle(strokeWidth, stroke, strokeAlpha)
+  // raised edge: a bright hairline along the top, a shadow hairline along the bottom
+  const edge = scene.add.graphics()
+  edge.lineStyle(1, C.textMuted, 0.25)
+  edge.lineBetween(-w / 2 + 4, -h / 2 + 1, w / 2 - notch, -h / 2 + 1)
+  edge.lineStyle(1, C.shadow, 0.5)
+  edge.lineBetween(-w / 2 + notch, h / 2 - 1, w / 2 - 4, h / 2 - 1)
+
+  container.add([body, edge])
+  return container
 }
 
 /** The big centred plate that Results and Ranking build their content on. */
