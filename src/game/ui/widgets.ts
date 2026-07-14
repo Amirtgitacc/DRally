@@ -285,6 +285,38 @@ export function tile(
   }
 }
 
+/**
+ * Make an existing row of tiles respond to pointer/touch. Hover focuses,
+ * tap activates — both report the tile's index so the scene can reuse its
+ * existing `selected`-index + refresh()/activate() logic. Pointer listeners
+ * live on each rect and are torn down when the scene destroys it.
+ */
+export function wireTiles(
+  handles: TileHandle[],
+  onFocus: (i: number) => void,
+  onActivate: (i: number) => void,
+): void {
+  handles.forEach((h, i) => {
+    h.rect.setInteractive({ useHandCursor: true })
+    h.rect.on('pointerover', () => onFocus(i))
+    h.rect.on('pointerup', () => onActivate(i))
+  })
+}
+
+/** Tappable back affordance, top-right. Screens keep their Esc handler too. */
+export function backButton(
+  scene: Phaser.Scene,
+  onBack: () => void,
+  opts: { label?: string } = {},
+): TileHandle {
+  const handle = tile(scene, 1810, 52, 180, 56, opts.label ?? '‹ BACK', { size: 'bodySm' })
+  handle.rect.setInteractive({ useHandCursor: true })
+  handle.rect.on('pointerup', onBack)
+  handle.rect.on('pointerover', () => handle.setState(true, true))
+  handle.rect.on('pointerout', () => handle.setState(false, true))
+  return handle
+}
+
 /** Faint scratched-metal overlay for a panel region. */
 export function metalGrain(scene: Phaser.Scene, x: number, y: number, w: number, h: number, alpha = 0.06) {
   const key = ensureGrainTexture(scene)
