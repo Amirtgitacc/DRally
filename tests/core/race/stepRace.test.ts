@@ -10,7 +10,7 @@ const command = (i: number): PlayerCommand => ({
   input: { throttle: 1, brake: 0, steer: Math.sin(i / 90) * 0.4, handbrake: false },
   fire: i % 300 < 30,
   turbo: i % 600 < 120,
-  dropMine: i === 1200,
+  dropMine: i === 700,
 })
 
 function run(steps: number, seed = 1234) {

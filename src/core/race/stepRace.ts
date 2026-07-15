@@ -88,7 +88,7 @@ export function stepRace(state: RaceState, env: RaceEnv, command: PlayerCommand,
             const curvature = Math.min(1, turnAmount(env.centerline, car.ai.lineIdx, 20) / 1.1)
             wantsFire = state.autoPilot.fire && hasTargetInSights(state, car)
             wantsTurbo = state.autoPilot.turbo && curvature < 0.12 && car.turbo > 0.35
-            if (state.autoPilot.mines && state.phase === 'racing' && wantsAutoMine(state, car)) {
+            if (state.autoPilot.mines && state.phase === 'racing' && env.weaponsEnabled && wantsAutoMine(state, car)) {
               tryDropMine(state, car, events)
             }
           } else {
