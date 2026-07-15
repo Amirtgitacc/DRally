@@ -25,6 +25,8 @@ export class LobbyScene extends Phaser.Scene {
   private statusText!: Phaser.GameObjects.Text
   private hint!: Phaser.GameObjects.Text
   private disconnectTimer?: Phaser.Time.TimerEvent
+  private onNetMessage!: (msg: ServerMsg) => void
+  private onNetClose!: () => void
 
   constructor() {
     super('Lobby')
@@ -75,8 +77,10 @@ export class LobbyScene extends Phaser.Scene {
     const onKey = (event: KeyboardEvent) => this.handleKey(event)
     kb.on('keydown', onKey)
 
-    this.net.onMessage((msg) => this.handleMessage(msg))
-    this.net.onClose(() => this.handleClose())
+    this.onNetMessage = (msg) => this.handleMessage(msg)
+    this.onNetClose = () => this.handleClose()
+    this.net.onMessage(this.onNetMessage)
+    this.net.onClose(this.onNetClose)
 
     this.events.once('shutdown', () => {
       kb.off('keydown', onKey)
@@ -84,6 +88,8 @@ export class LobbyScene extends Phaser.Scene {
         this.disconnectTimer.remove(false)
         this.disconnectTimer = undefined
       }
+      this.net.offMessage(this.onNetMessage)
+      this.net.offClose(this.onNetClose)
     })
 
     this.render()

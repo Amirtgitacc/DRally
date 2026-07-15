@@ -42,6 +42,14 @@ export class NetClient {
     this.closeHandlers.push(fn)
   }
 
+  offMessage(fn: (msg: ServerMsg) => void): void {
+    this.messageHandlers = this.messageHandlers.filter((h) => h !== fn)
+  }
+
+  offClose(fn: () => void): void {
+    this.closeHandlers = this.closeHandlers.filter((h) => h !== fn)
+  }
+
   close(): void {
     this.messageHandlers = []
     this.closeHandlers = []
