@@ -21,6 +21,7 @@ import { ChampionScene } from './game/scenes/ChampionScene'
 import { NewCareerScene } from './game/scenes/NewCareerScene'
 import { SettingsScene } from './game/scenes/SettingsScene'
 import { MultiplayerScene } from './game/scenes/MultiplayerScene'
+import { LobbyScene } from './game/scenes/LobbyScene'
 import { HallOfFameScene } from './game/scenes/HallOfFameScene'
 import { CreditsScene } from './game/scenes/CreditsScene'
 import { PreviewScene } from './game/scenes/PreviewScene'
@@ -85,6 +86,7 @@ async function boot() {
       HallOfFameScene,
       SettingsScene,
       MultiplayerScene,
+      LobbyScene,
       CreditsScene,
       PreviewScene,
     ],
