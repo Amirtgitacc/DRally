@@ -133,6 +133,8 @@ interface CarUnit {
   /** exhaust flame drawn behind the car while boosting */
   flameCone: Phaser.GameObjects.Image
   turboGlow: Phaser.GameObjects.Image
+  /** soft additive pool in the car's livery colour, so each chassis reads distinctly */
+  liveryGlow: Phaser.GameObjects.Image
   headlights: Phaser.GameObjects.Image[]
   taillights: Phaser.GameObjects.Image[]
   fireGlow: Phaser.GameObjects.Image | null
@@ -1195,6 +1197,14 @@ export class RaceScene extends Phaser.Scene {
         .setDepth(4.5)
         .setVisible(false)
 
+      // livery pool: halos out from under the body so each chassis — and each
+      // same-chassis rival, keyed off its own `color` — reads as its own colour.
+      const liveryGlow = this.add
+        .image(0, 0, 'glow-soft')
+        .setTint(color)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setDepth(4.3)
+
       const headlights = [0, 1].map(() =>
         this.add
           .image(0, 0, 'glow-soft')
@@ -1229,6 +1239,7 @@ export class RaceScene extends Phaser.Scene {
         turboFlame,
         flameCone,
         turboGlow,
+        liveryGlow,
         headlights,
         taillights,
         fireGlow: null,
@@ -2082,6 +2093,13 @@ export class RaceScene extends Phaser.Scene {
   private syncCarVisuals(car: CarUnit) {
     car.sprite.setPosition(car.state.x, car.state.y).setRotation(car.state.heading)
     car.shadow.setRotation(car.state.heading)
+
+    // livery pool follows the body, oval along its length; a wrecked hulk loses its colour
+    car.liveryGlow
+      .setPosition(car.state.x, car.state.y)
+      .setRotation(car.state.heading)
+      .setScale(CAR_SCALE * 1.7, CAR_SCALE * 1.1)
+      .setAlpha(car.wrecked ? 0 : 0.55)
 
     const z = car.state.z
     if (z > 0) {
