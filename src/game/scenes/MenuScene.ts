@@ -40,7 +40,7 @@ const ITEMS: MenuItem[] = [
   { label: 'HALL OF FAME', scene: 'HallOfFame', needsCareer: true },
   { label: 'SETTINGS / CONTROLS', scene: 'Settings' },
   { label: 'CREDITS', scene: 'Credits' },
-  { label: 'PREVIEW / DEMO', scene: 'Preview' },
+  { label: 'MULTIPLAYER', scene: 'Multiplayer' },
 ]
 
 export class MenuScene extends Phaser.Scene {
@@ -93,7 +93,7 @@ export class MenuScene extends Phaser.Scene {
     // live labels + focus over the eight empty right-side plates (no opaque tiles)
     ITEMS.forEach((item, i) => this.handles.push(this.makePlate(i, item.label)))
 
-    flavor(this, cx, GAME_HEIGHT - 42, '↑/↓ navigate · Enter select · V venues · L ladder · N new career')
+    flavor(this, cx, GAME_HEIGHT - 42, '↑/↓ navigate · Enter select · V venues · L ladder · N new career · M multiplayer')
 
     const kb = this.input.keyboard!
     const up = () => this.move(-1)
@@ -102,6 +102,7 @@ export class MenuScene extends Phaser.Scene {
     const venues = () => this.scene.start('Venues')
     const ladder = () => this.scene.start('Ranking')
     const fresh = () => this.scene.start('Profile', { replace: true })
+    const multi = () => this.scene.start('Multiplayer')
     kb.once('keydown', () => audioBus.unlock())
     kb.on('keydown-UP', up)
     kb.on('keydown-DOWN', down)
@@ -109,9 +110,10 @@ export class MenuScene extends Phaser.Scene {
     kb.on('keydown-V', venues)
     kb.on('keydown-L', ladder)
     kb.on('keydown-N', fresh)
+    kb.on('keydown-M', multi)
     this.events.once('shutdown', () => {
       kb.off('keydown-UP', up); kb.off('keydown-DOWN', down); kb.off('keydown-ENTER', enter)
-      kb.off('keydown-V', venues); kb.off('keydown-L', ladder); kb.off('keydown-N', fresh)
+      kb.off('keydown-V', venues); kb.off('keydown-L', ladder); kb.off('keydown-N', fresh); kb.off('keydown-M', multi)
     })
     this.refresh()
   }
