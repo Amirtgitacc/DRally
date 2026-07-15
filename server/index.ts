@@ -2,6 +2,7 @@
 import { WebSocketServer, type WebSocket } from 'ws'
 import { type ClientMsg, type ServerErrorCode, type ServerMsg } from '../src/core/net/protocol'
 import { leaveRoom, setCar, setReady, setTrack, toSnapshot } from '../src/core/net/roomState'
+import { isValidRoomCode, normalizeRoomCode } from '../src/core/net/roomCode'
 import { RoomStore, isValidCarId, isValidTrackId } from './rooms'
 
 const PORT = Number(process.env.PORT ?? 8080)
@@ -57,15 +58,20 @@ wss.on('connection', (ws) => {
   conns.add(conn)
 
   ws.on('message', (data) => {
-    let msg: ClientMsg
+    let parsed: unknown
     try {
-      msg = JSON.parse(String(data)) as ClientMsg
+      parsed = JSON.parse(String(data))
     } catch {
-      fail(ws, 'MALFORMED', 'Invalid message'); return
+      return fail(ws, 'MALFORMED', 'Invalid message')
     }
+    if (parsed === null || typeof parsed !== 'object' || typeof (parsed as { t?: unknown }).t !== 'string') {
+      return fail(ws, 'MALFORMED', 'Invalid message')
+    }
+    const msg = parsed as ClientMsg
 
     switch (msg.t) {
       case 'create': {
+        if (conn.code && conn.playerId) handleLeave(conn)
         const name = sanitizeName(msg.name)
         if (!name) return fail(ws, 'BAD_NAME', 'Enter a driver name')
         if (!isValidCarId(msg.carId)) return fail(ws, 'BAD_CAR', 'Unknown car')
@@ -77,16 +83,19 @@ wss.on('connection', (ws) => {
         return
       }
       case 'join': {
+        if (conn.code && conn.playerId) handleLeave(conn)
         const name = sanitizeName(msg.name)
         if (!name) return fail(ws, 'BAD_NAME', 'Enter a driver name')
         if (!isValidCarId(msg.carId)) return fail(ws, 'BAD_CAR', 'Unknown car')
+        const normalizedCode = normalizeRoomCode(msg.code)
+        if (!isValidRoomCode(normalizedCode)) return fail(ws, 'BAD_CODE', 'Invalid room code')
         const id = store.newPlayerId()
-        const result = store.join(msg.code, { id, name, carId: msg.carId })
+        const result = store.join(normalizedCode, { id, name, carId: msg.carId })
         if (!result.ok) return fail(ws, result.error, result.error === 'ROOM_FULL' ? 'Room is full' : 'Room not found')
         conn.playerId = id
-        conn.code = msg.code
+        conn.code = normalizedCode
         send(ws, { t: 'joined', youId: id, lobby: toSnapshot(result.room) })
-        broadcast(msg.code)
+        broadcast(normalizedCode)
         return
       }
       case 'setCar': {
@@ -117,6 +126,8 @@ wss.on('connection', (ws) => {
         handleLeave(conn)
         return
       }
+      default:
+        return fail(ws, 'MALFORMED', 'Unknown message type')
     }
   })
 
