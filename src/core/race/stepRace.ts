@@ -105,7 +105,7 @@ export function stepRace(state: RaceState, env: RaceEnv, command: PlayerCommand,
         const combat = computeAiCombat(state, env, car)
         wantsFire = combat.fire && env.weaponsEnabled
         wantsTurbo = combat.turbo
-        if (combat.dropMine) tryDropMine(state, car, events)
+        if (combat.dropMine && env.weaponsEnabled) tryDropMine(state, car, events)
       }
     }
 
