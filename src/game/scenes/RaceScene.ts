@@ -1,28 +1,20 @@
 import Phaser from 'phaser'
 import { DEBUG, SHOW_GATES } from '../../config/game'
 import {
-  GROUNDED,
-  IDLE_INPUT,
-  forwardSpeed,
   isAirborne,
-  justLanded,
   lateralSpeed,
   launchCar,
   speed,
-  stepCar,
   type CarInput,
-  type CarPhysicsSpec,
   type CarState,
 } from '../../core/vehicle/carPhysics'
 import {
   buildGates,
   catmullRomClosed,
   closedPolylineLength,
-  distanceToClosedPolyline,
   lineTangentAt,
   offsetClosedPolyline,
   scatterPointsAlong,
-  segmentsIntersect,
   spacedPointsAlong,
   turnAmount,
   type Gate,
@@ -30,16 +22,9 @@ import {
   type Vec2,
 } from '../../core/track/geometry'
 import { placeSpritesAlong, scatterImages } from '../track/placement'
-import {
-  applyGateCrossing,
-  createProgress,
-  currentLap,
-  nextGateIndex,
-} from '../../core/race/progress'
+import { currentLap } from '../../core/race/progress'
 import { ordinal } from '../../core/race/placement'
-import { applyDamage, impactDamage, repairDamage } from '../../core/combat/damage'
-import { randomPickupLayout, randomPickupSpot, type PickupType } from '../../core/track/pickups'
-import { aiDrive, lookAheadFor, wrapAngle, type AiTuning } from '../../core/ai/driver'
+import { type PickupType } from '../../core/track/pickups'
 import {
   talentAimSpread,
   talentMineCooldown,
@@ -47,17 +32,11 @@ import {
   talentPace,
   talentRubberBand,
   talentTuning,
-  type TalentProfile,
 } from '../../core/ai/talent'
-import { needsRescue, rescuePose, updateStuckMs } from '../../core/vehicle/rescue'
-import { RESCUE } from '../../data/rescue'
-import { shouldTurbo } from '../../core/ai/turbo'
-import { leadTarget } from '../../core/combat/aim'
-import { mineIsArmed, mineIsLive } from '../../core/combat/mines'
+import { mineIsArmed } from '../../core/combat/mines'
 import { buildRacingLine } from '../../core/track/racingLine'
-import { mineBlast } from '../../core/combat/blast'
 import { formatTime } from '../../core/race/format'
-import { armorResistance, effectiveCarSpec } from '../../core/vehicle/carSpec'
+import { effectiveCarSpec } from '../../core/vehicle/carSpec'
 import { applyAbandonOutcome, applyRaceOutcome, updateTrackRecord, type CareerState } from '../../core/progression/career'
 import { applyDuelOutcome } from '../../core/progression/duel'
 import { rewardFor } from '../../core/economy/rewards'
@@ -74,25 +53,20 @@ import {
   rivalUpgrades,
   simulateRound,
 } from '../../core/progression/ladder'
-import { collideCars } from '../../core/vehicle/collision'
 import { rosterById } from '../../data/roster'
 import { BOSS } from '../../data/boss'
-import { OVERCHARGED_TURBO, RAM_PLATING, SABOTAGE } from '../../data/blackMarket'
+import { SABOTAGE } from '../../data/blackMarket'
 import { ALL_TRACKS, TRACKS_BY_TIER, trackById } from '../../data/tracks'
 import { STARTER_CAR, carById } from '../../data/cars'
 import { DRIVING_STYLES, RUBBER_BAND, TALENT_PROFILES, styleForGrade, talentOf } from '../../data/drivers'
 import {
-  AI_GUNNER,
   AI_MINES,
   GUN,
   IMPACT_FX,
   MINES,
   MINE_BLAST,
   PICKUPS,
-  RAM_DAMAGE,
-  TURBO,
   TURBO_FX,
-  WALL_DAMAGE,
   WEAPONS_FREE_DELAY_MS,
 } from '../../data/weapons'
 import type { TrackDef } from '../../data/tracks/testCircuit'
@@ -104,27 +78,26 @@ import { TouchControls } from '../input/touchControls'
 import { isTouchDevice } from '../input/device'
 import { loadSettings, saveSettings, type SettingsState } from '../state/settings'
 import { createSeededRandom, randomSeed } from '../../core/race/random'
-import type { RacePhase } from '../race/raceRuntime'
-import { simulationDeltaSeconds } from '../race/raceSimulation'
-import { racePlacements } from '../../core/race/placementSystem'
-import { stepTurboMeter } from '../../core/vehicle/turboMeter'
+import { FixedStepClock } from '../race/raceSimulation'
+import {
+  createRaceState,
+  type BulletSim,
+  type CarSetup,
+  type CarSim,
+  type RaceEnv,
+  type RaceState,
+} from '../../core/race/raceState'
+import { stepRace, type PlayerCommand } from '../../core/race/stepRace'
+import type { SimEvent } from '../../core/race/simEvents'
+import { damageCarSim } from '../../core/race/combatStep'
+import { tryDropMine as tryDropMineSim } from '../../core/race/minesStep'
 
 const CAR_SCALE = 0.44
 const CAR_RADIUS = 34
-const CAR_BODY_RADIUS = 30
-const TIRE_RADIUS = 24
 const MPH_PER_PX = 0.14
-const OFF_TRACK_DRAG = 1.4
-const AVOID_RANGE = 150
 
-interface CarUnit {
-  id: string
-  name: string
-  color: number
-  isPlayer: boolean
-  state: CarState
-  prevPos: Vec2
-  progress: ReturnType<typeof createProgress>
+/** The visual half of the old CarUnit: the Phaser objects a car renders through. */
+interface CarView {
   sprite: Phaser.GameObjects.Image
   shadow: Phaser.GameObjects.Image
   exhaust: Phaser.GameObjects.Particles.ParticleEmitter
@@ -138,72 +111,6 @@ interface CarUnit {
   headlights: Phaser.GameObjects.Image[]
   taillights: Phaser.GameObjects.Image[]
   fireGlow: Phaser.GameObjects.Image | null
-  ai: {
-    lineIdx: number
-    lookAheadSamples: number
-    speedScale: number
-    tuning: AiTuning
-    /** base chassis for this AI (the boss drives a one-off machine) */
-    spec: CarPhysicsSpec
-    /** talent-scaled combat and rubber-band numbers */
-    talent: TalentProfile
-    aimSpread: number
-    mineCooldownMs: number
-    rubberBandGain: number
-  } | null
-  finishedAt: number | null
-  lapStartAt: number
-  lapTimes: number[]
-  damage: number
-  wrecked: boolean
-  ammo: number
-  turbo: number
-  turboDepleted: boolean
-  gunCooldown: number
-  /** AI burst discipline: when the current burst ends, and when the rest ends */
-  burstEndsAt: number
-  restEndsAt: number
-  cash: number
-  mines: number
-  lastMineAt: number
-  /** relative collision mass from the chassis */
-  mass: number
-  /** how long this car has been beached on the scenery, ms */
-  stuckMs: number
-  /** catalog chassis this rival drives (debug/telemetry) */
-  chassisId?: string
-  /** armor tier a rival has fitted; the player's lives on the career */
-  armorTier: number
-}
-
-/** A mine on the tarmac: casing, blinking arm light, danger ring once armed. */
-interface DroppedMine {
-  x: number
-  y: number
-  droppedAt: number
-  ownerId: string
-  sprite: Phaser.GameObjects.Image
-  light: Phaser.GameObjects.Image
-  ring: Phaser.GameObjects.Image
-}
-
-interface Bullet {
-  x: number
-  y: number
-  vx: number
-  vy: number
-  ttl: number
-  owner: CarUnit
-  sprite: Phaser.GameObjects.Image
-}
-
-interface PickupInstance {
-  type: PickupType
-  x: number
-  y: number
-  sprite: Phaser.GameObjects.Image
-  respawnAt: number | null
-  pulse: Phaser.Tweens.Tween
 }
 
 interface DriveOverride extends CarInput {
@@ -227,23 +134,23 @@ export class RaceScene extends Phaser.Scene {
   private isDuel = false
   private hasPlating = false
   private hasOverTurbo = false
-  private cars: CarUnit[] = []
-  private bullets: Bullet[] = []
-  private mines: DroppedMine[] = []
-  private pickups: PickupInstance[] = []
-  private placementOrder: string[] = []
-  private allRivalsDoneAt: number | null = null
+
+  // the sim owns all race state; the scene only renders it
+  private sim!: RaceState
+  private env!: RaceEnv
+  private clock = new FixedStepClock()
+  private carInfo = new Map<string, { name: string; color: number; textureKey: string; chassisId?: string }>()
+  private carViews = new Map<string, CarView>()
+  private bulletViews = new Map<number, Phaser.GameObjects.Image>()
+  private mineViews = new Map<number, { sprite: Phaser.GameObjects.Image; light: Phaser.GameObjects.Image; ring: Phaser.GameObjects.Image }>()
+  private pickupViews: { sprite: Phaser.GameObjects.Image; pulse: Phaser.Tweens.Tween }[] = []
+  private mineQueued = false
   private rivalsDoneToast?: Phaser.GameObjects.Text
 
-  private phase: RacePhase = 'countdown'
-  private raceStartAt = 0
-  private trapUntil = 0
   private camRotation = 0
   private lookAheadX = 0
   private lookAheadY = 0
-  private playerTurboActive = false
-  /** wall-clock deadline for the crash time-dilation */
-  private slowMoUntil = 0
+  /** cosmetics-only seeded RNG (debris scatter, flame flicker, streaks, scorch rotation) */
   private random: () => number = Math.random
   private raceSeed = 0
   private settings!: SettingsState
@@ -284,29 +191,28 @@ export class RaceScene extends Phaser.Scene {
   private stepClock = 0
 
   private autoInput: DriveOverride | null = null
-  /** debug-only: drive the player with the AI, to measure difficulty */
-  private autoPilot: { fire: boolean; turbo: boolean; mines: boolean } | null = null
 
   constructor() {
     super('Race')
   }
 
   create() {
-    this.phase = 'countdown'
-    this.autoInput = null
-    this.cars = []
-    this.bullets = []
-    this.mines = []
-    this.pickups = []
+    this.carInfo = new Map()
+    this.carViews = new Map()
+    this.bulletViews = new Map()
+    this.mineViews = new Map()
+    this.pickupViews = []
     this.barriers = []
     this.standingsTexts = []
     this.hudStatusLabels = []
     this.hudStatusValues = []
-    this.trapUntil = 0
-    this.allRivalsDoneAt = null
+    this.mineQueued = false
+    this.rivalsDoneToast = undefined
+    this.autoInput = null
     this.resultCommitted = false
     this.fireToggled = false
     this.turboToggled = false
+    this.clock = new FixedStepClock()
 
     this.career = loadCareer()
     this.settings = loadSettings()
@@ -338,8 +244,26 @@ export class RaceScene extends Phaser.Scene {
     this.gateSpacing = closedPolylineLength(this.centerline) / this.track.gateCount
 
     this.buildWorld()
-    this.buildPickups()
-    this.buildCars()
+
+    this.env = {
+      centerline: this.centerline,
+      racingLine: this.racingLine,
+      gates: this.gates,
+      barriers: this.barriers,
+      gateSpacing: this.gateSpacing,
+      trackWidth: this.track.width,
+      laps: this.track.laps,
+      tier: this.track.tier,
+      playerSpec: this.playerSpec,
+      weaponsEnabled: this.career.profile.weaponsEnabled,
+      hasPlating: this.hasPlating,
+      hasOverTurbo: this.hasOverTurbo,
+    }
+    const setups = this.buildCarSetups()
+    this.sim = createRaceState(this.env, setups, this.raceSeed)
+
+    this.buildCarViews()
+    this.buildPickupViews()
     this.buildSharedEffects()
     this.buildHud()
     this.setupCameras()
@@ -349,251 +273,214 @@ export class RaceScene extends Phaser.Scene {
     if (DEBUG) this.setupDebug()
   }
 
-  update(time: number, delta: number) {
+  update(_time: number, delta: number) {
     this.inputManager.update()
     if (this.settings.toggleFire && this.inputManager.justDown('fire')) this.fireToggled = !this.fireToggled
     if (this.settings.toggleTurbo && this.inputManager.justDown('turbo')) this.turboToggled = !this.turboToggled
-    // a heavy crash dilates time for a moment — the whole sim lurches
-    const dilation = time < this.slowMoUntil ? IMPACT_FX.crashSlowMoScale : 1
-    const dt = simulationDeltaSeconds(delta, dilation)
-    const locked = this.phase === 'countdown'
-    const weaponsFree = this.career.profile.weaponsEnabled && this.phase === 'racing' && time > this.raceStartAt + WEAPONS_FREE_DELAY_MS
+    if (this.inputManager.justDown('mine')) this.mineQueued = true // latch across 0-step frames
 
-    for (const car of this.cars) {
-      let input: CarInput = IDLE_INPUT
-      let wantsFire = false
-      let wantsTurbo = false
+    const command = this.buildPlayerCommand()
+    this.clock.advance(delta, () => {
+      const events = stepRace(this.sim, this.env, command, this.clock.stepMs)
+      this.handleSimEvents(events)
+      command.dropMine = false // consumed by the first step this frame
+      this.mineQueued = false
+    })
 
-      if (!locked && !car.wrecked) {
-        if (car.isPlayer) {
-          if (car.finishedAt === null) {
-            if (this.autoPilot && car.ai) {
-              // scripted difficulty runs: the player drives itself
-              input = this.computeAiInput(car)
-              const curvature = Math.min(1, turnAmount(this.centerline, car.ai.lineIdx, 20) / 1.1)
-              wantsFire = this.autoPilot.fire && this.hasTargetInSights(car)
-              wantsTurbo = this.autoPilot.turbo && curvature < 0.12 && car.turbo > 0.35
-              if (this.autoPilot.mines && this.phase === 'racing') this.maybeAutoDropMine(car, time)
-            } else {
-              const drive: DriveOverride = this.autoInput ?? this.readPlayerInput()
-              input = drive
-              wantsFire = drive.fire ?? (this.settings.toggleFire ? this.fireToggled : this.inputManager.down('fire'))
-              wantsTurbo = drive.turbo ?? (this.settings.toggleTurbo ? this.turboToggled : this.inputManager.down('turbo'))
-              if ((drive.dropMine ?? this.inputManager.justDown('mine')) && this.phase === 'racing' && this.career.profile.weaponsEnabled) {
-                this.tryDropMine(car, time)
-              }
-            }
-          }
-        } else {
-          input = this.computeAiInput(car)
-          const combat = this.computeAiCombat(car, time)
-          wantsFire = combat.fire && this.career.profile.weaponsEnabled
-          wantsTurbo = combat.turbo
-        }
-      }
-
-      // Empty turbo stays locked while the button is held. Without that latch,
-      // a zero tank alternated recharge/boost every frame and left the VFX on.
-      const overcharged = car.isPlayer && this.hasOverTurbo
-      const drain = TURBO.drainPerSec * (overcharged ? OVERCHARGED_TURBO.drainScale : 1)
-      const turboStep = stepTurboMeter(
-        { charge: car.turbo, depleted: car.turboDepleted },
-        wantsTurbo,
-        !car.wrecked && !locked && !isAirborne(car.state),
-        dt,
-        { drainPerSec: drain, rechargePerSec: TURBO.rechargePerSec, restartThreshold: TURBO.restartThreshold },
-      )
-      car.turbo = turboStep.state.charge
-      car.turboDepleted = turboStep.state.depleted
-      const turboActive = turboStep.active
-      if (car.isPlayer) this.playerTurboActive = turboActive
-      // the overcharged mix cooks your own engine while boosting — it can wreck you
-      if (turboActive && overcharged) {
-        this.damageCar(car, OVERCHARGED_TURBO.selfDamagePerSec * dt, null)
-      }
-
-      car.prevPos = { x: car.state.x, y: car.state.y }
-      const before = car.state
-      car.state = stepCar(car.state, input, this.effectiveSpec(car, turboActive), dt, MINE_BLAST.gravity)
-      if (justLanded(before, car.state)) this.onLanding(car)
-      if (car.wrecked) {
-        const decay = Math.exp(-3 * dt)
-        car.state.vx *= decay
-        car.state.vy *= decay
-      }
-      // a car in the air clears the scenery, but never the tire wall: a mine
-      // launch that sailed into the infield left the car beached in there
-      if (!isAirborne(car.state)) this.applyOffTrackDrag(car, dt)
-      this.resolveBarrierCollisions(car)
-      this.updateStuckRescue(car, dt)
-
-      car.gunCooldown = Math.max(0, car.gunCooldown - dt)
-      if (wantsFire && weaponsFree && !car.wrecked && (car.finishedAt === null || !car.isPlayer)) {
-        this.tryFire(car)
-      }
-
-      if (this.phase !== 'countdown' && !car.wrecked) this.checkGateCrossing(car, time)
-
-      this.syncCarVisuals(car)
-      this.updateCarEffects(car, input, turboActive)
+    // render sync (every frame, even 0-step frames)
+    for (const car of this.sim.cars) {
+      const view = this.carViews.get(car.id)!
+      this.syncCarVisuals(car, view)
+      this.updateCarEffects(car, view)
     }
-
-    this.resolveCarCollisions()
-    this.updateBullets(dt)
-    this.updateMines(time)
-    this.updatePickups(time)
-    this.updatePlacements()
-    this.checkAllRivalsDone(time)
-    this.updateCamera(time)
-    this.updateHud(time)
+    this.syncBulletViews()
+    this.syncMineViews()
+    this.syncPickupViews()
+    this.updateCamera(this.sim.simTimeMs)
+    this.updateHud(this.sim.simTimeMs)
   }
 
-  /** If every rival is finished or wrecked, give the player a short grace, then end the race. */
-  private checkAllRivalsDone(now: number) {
-    if (this.phase !== 'racing' || this.player.finishedAt !== null || this.player.wrecked) return
-    const rivalsDone = this.cars.every((c) => c.isPlayer || c.finishedAt !== null || c.wrecked)
-    if (!rivalsDone) {
-      this.allRivalsDoneAt = null
-      this.rivalsDoneToast?.setVisible(false)
-      return
-    }
-    if (this.allRivalsDoneAt === null) {
-      this.allRivalsDoneAt = now
-      if (!this.rivalsDoneToast) {
-        this.rivalsDoneToast = text(this, this.scale.width / 2, 320, '', {
-          size: 'subtitle',
-          color: C.danger,
-          stroke: C.shadow,
-          strokeThickness: STROKE.heading,
-          origin: [0.5, 0.5],
-        })
-        // must join the container, or the HUD camera never draws it (D-011)
-        this.hudContainer.add(this.rivalsDoneToast)
-      }
-    }
-    const remaining = Math.ceil((this.allRivalsDoneAt + 5000 - now) / 1000)
-    this.rivalsDoneToast!.setVisible(true).setText(`ALL RIVALS DONE — RACE ENDS IN ${remaining}`)
-    if (now >= this.allRivalsDoneAt + 5000) {
-      this.phase = 'finished'
-      this.transitionToResults(now, false)
+  private buildPlayerCommand(): PlayerCommand {
+    const drive: DriveOverride = this.autoInput ?? this.readPlayerInput()
+    return {
+      input: { throttle: drive.throttle, brake: drive.brake, steer: drive.steer, handbrake: drive.handbrake },
+      fire: drive.fire ?? (this.settings.toggleFire ? this.fireToggled : this.inputManager.down('fire')),
+      turbo: drive.turbo ?? (this.settings.toggleTurbo ? this.turboToggled : this.inputManager.down('turbo')),
+      dropMine: drive.dropMine ?? this.mineQueued,
     }
   }
 
-  // ---------------------------------------------------------------- mines
+  // ---------------------------------------------------------------- sim events
 
-  private tryDropMine(car: CarUnit, now: number) {
-    if (car.mines <= 0 || now - car.lastMineAt < MINES.dropCooldownMs) return
-    car.mines--
-    car.lastMineAt = now
-    const cos = Math.cos(car.state.heading)
-    const sin = Math.sin(car.state.heading)
-    const x = car.state.x - 55 * cos
-    const y = car.state.y - 55 * sin
-
-    const sprite = this.add.image(x, y, 'mine').setDepth(2.4)
-    // the arm light and danger ring are what make it readable at speed
-    const light = this.add
-      .image(x, y, 'glow-soft')
-      .setScale(0.34)
-      .setTint(0xffb340)
-      .setBlendMode(Phaser.BlendModes.ADD)
-      .setDepth(2.45)
-    const ring = this.add
-      .image(x, y, 'ring')
-      .setScale((MINES.triggerRadius * 2.6) / 96)
-      .setTint(0xff7a3c)
-      .setAlpha(0)
-      .setBlendMode(Phaser.BlendModes.ADD)
-      .setDepth(2.35)
-    for (const obj of [sprite, light, ring]) this.cameras.cameras[1]?.ignore(obj)
-
-    this.mines.push({ x, y, droppedAt: now, ownerId: car.id, sprite, light, ring })
-    audioBus.pickup(true) // placement click; real sample hook later
-  }
-
-  private updateMines(now: number) {
-    if (this.mines.length === 0) return
-    const survivors: DroppedMine[] = []
-    for (const mine of this.mines) {
-      const armed = mineIsArmed(mine, now, MINES)
-      // unarmed: dim and inert. armed: the light blinks and the ring breathes.
-      const blink = 0.55 + 0.45 * Math.sin(now * 0.014)
-      mine.sprite.setAlpha(armed ? 1 : 0.6)
-      mine.light.setAlpha(armed ? 0.35 + 0.55 * blink : 0.12).setScale(armed ? 0.3 + 0.1 * blink : 0.22)
-      mine.ring.setAlpha(armed ? 0.1 + 0.16 * blink : 0)
-
-      let triggered: CarUnit | null = null
-      for (const car of this.cars) {
-        if (car.wrecked) continue
-        if (car.isPlayer && this.phase === 'finished') continue
-        // a car in the air flies straight over an armed mine
-        if (isAirborne(car.state)) continue
-        // the dropper gets a long grace; everyone else only gets the fuse
-        if (!mineIsLive(mine, car.id, now, MINES)) continue
-        if (Math.hypot(car.state.x - mine.x, car.state.y - mine.y) < MINES.triggerRadius) {
-          triggered = car
+  private handleSimEvents(events: SimEvent[]) {
+    for (const e of events) {
+      switch (e.type) {
+        case 'countdown':
+          this.drawCountdown(e.count)
           break
-        }
+        case 'race-started':
+          this.onRaceStarted()
+          break
+        case 'gun-fired':
+          this.onGunFired(e)
+          break
+        case 'bullet-hit':
+          this.onBulletHitFx(e)
+          break
+        case 'bullet-wall':
+          this.hitSparks.explode(3, e.x, e.y)
+          break
+        case 'car-wrecked':
+          this.onCarWreckedFx(e)
+          break
+        case 'car-landed':
+          this.onLandingFx(e)
+          break
+        case 'cars-collided':
+          this.onCarsCollidedFx(e)
+          break
+        case 'wall-hit':
+          if (e.carId === 'player' && e.impact > 160) this.shake(90, Math.min(0.006, e.impact / 60000))
+          break
+        case 'crash-lurch':
+          this.crashLurch(e.x, e.y)
+          break
+        case 'mine-dropped':
+          this.onMineDropped(e)
+          break
+        case 'mine-detonated':
+          this.onMineDetonatedFx(e)
+          break
+        case 'pickup-collected':
+          this.onPickupCollected(e)
+          break
+        case 'pickup-respawned':
+          this.onPickupRespawned(e.index)
+          break
+        case 'car-rescued':
+          if (e.carId === 'player') this.cameraFlash(160, 40, 40, 50)
+          break
+        case 'lap-completed':
+        case 'car-finished':
+          break // HUD reads state; no FX today
+        case 'race-over':
+          this.onRaceOver(e.reason)
+          break
       }
-
-      if (!triggered) {
-        survivors.push(mine)
-        continue
-      }
-
-      this.detonateMine(mine, triggered)
     }
-    this.mines = survivors
   }
 
-  /** Full damage + launch for whoever ran it over, splash for anyone close. */
-  private detonateMine(mine: DroppedMine, triggered: CarUnit) {
+  private onRaceOver(reason: 'player-finished' | 'player-wrecked' | 'rivals-done') {
+    if (reason === 'player-finished') this.time.delayedCall(1400, () => this.transitionToResults(this.sim.simTimeMs, false))
+    else if (reason === 'player-wrecked') this.time.delayedCall(2200, () => this.transitionToResults(this.sim.simTimeMs, true))
+    else this.transitionToResults(this.sim.simTimeMs, false)
+  }
+
+  // ---------------------------------------------------------------- FX handlers
+
+  private onGunFired(e: Extract<SimEvent, { type: 'gun-fired' }>) {
+    // adopt the freshly spawned bullet for this shot: the oldest of this
+    // shooter's bullets without a view yet (events arrive in bullet-id order)
+    let target: BulletSim | undefined
+    for (const b of this.sim.bullets) {
+      if (b.ownerId === e.carId && !this.bulletViews.has(b.id)) {
+        target = b
+        break
+      }
+    }
+    if (target) {
+      const sprite = this.add.image(target.x, target.y, 'bullet').setRotation(e.dir).setDepth(6).setBlendMode(Phaser.BlendModes.ADD)
+      this.cameras.cameras[1]?.ignore(sprite)
+      this.bulletViews.set(target.id, sprite)
+    }
+
+    const distToPlayer = e.carId === 'player'
+      ? 0
+      : Math.hypot(e.x - this.sim.cars[0].state.x, e.y - this.sim.cars[0].state.y)
+    if (distToPlayer < 900) audioBus.shot(1 - distToPlayer / 1000)
+
+    // muzzle flash (audio hook: gunshot)
+    const flash = this.add
+      .image(e.x, e.y, 'muzzle')
+      .setScale(0.8)
+      .setDepth(6)
+      .setBlendMode(Phaser.BlendModes.ADD)
+    this.cameras.cameras[1]?.ignore(flash)
+    this.tweens.add({ targets: flash, alpha: 0, scale: 0.3, duration: 70, onComplete: () => flash.destroy() })
+  }
+
+  private onBulletHitFx(e: Extract<SimEvent, { type: 'bullet-hit' }>) {
+    this.hitSparks.explode(5, e.x, e.y)
+    this.flashCar(e.carId)
+    if (e.carId === 'player') {
+      this.shake(60, IMPACT_FX.playerHitShake)
+      this.flashScreenEdge(C.danger, IMPACT_FX.playerHitFlashAlpha)
+    }
+  }
+
+  private onCarsCollidedFx(e: Extract<SimEvent, { type: 'cars-collided' }>) {
+    if (e.rammed) {
+      // metal on metal: sparks scale with how hard they met
+      this.hitSparks.explode(Math.round(6 + Math.min(18, e.impact / 40)), e.x, e.y)
+      this.flashCar(e.aId)
+      this.flashCar(e.bId)
+    }
+    if ((e.aId === 'player' || e.bId === 'player') && e.impact > 180) {
+      this.shake(70 + Math.min(140, e.impact / 6), Math.min(IMPACT_FX.crashMaxShake, e.impact / 45000))
+    }
+  }
+
+  private onCarWreckedFx(e: Extract<SimEvent, { type: 'car-wrecked' }>) {
+    const view = this.carViews.get(e.carId)!
     audioBus.explosion()
-    this.explosionSmoke.explode(16, mine.x, mine.y)
-    this.hitSparks.explode(8, mine.x, mine.y)
-    this.blastEffects(mine.x, mine.y, 1, 'mine-blast')
-    this.scorchStamp.setPosition(mine.x, mine.y).setRotation(this.random() * Math.PI)
+    this.explosionSmoke.explode(30, e.x, e.y)
+    this.blastEffects(e.x, e.y, 1.6, 'explosion')
+
+    // flying debris chunks
+    for (let i = 0; i < 8; i++) {
+      const angle = this.random() * Math.PI * 2
+      const dist = 60 + this.random() * 130
+      const piece = this.add
+        .image(e.x, e.y, 'debris')
+        .setRotation(this.random() * Math.PI * 2)
+        .setDepth(6.9)
+      this.cameras.cameras[1]?.ignore(piece)
+      this.tweens.add({
+        targets: piece,
+        x: e.x + Math.cos(angle) * dist,
+        y: e.y + Math.sin(angle) * dist,
+        rotation: piece.rotation + (this.random() - 0.5) * 10,
+        alpha: 0.25,
+        duration: 500 + this.random() * 300,
+        ease: 'cubic.out',
+      })
+    }
+
+    // lingering fire
+    view.fireGlow = this.add
+      .image(e.x, e.y, 'glow-soft')
+      .setTint(0xff8833)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setDepth(6.8)
+    this.cameras.cameras[1]?.ignore(view.fireGlow)
+    const flash = this.add
+      .image(e.x, e.y, 'spark')
+      .setScale(4)
+      .setDepth(7)
+      .setBlendMode(Phaser.BlendModes.ADD)
+    this.cameras.cameras[1]?.ignore(flash)
+    this.tweens.add({ targets: flash, alpha: 0, scale: 1.2, duration: 320, onComplete: () => flash.destroy() })
+    this.scorchStamp.setPosition(e.x, e.y).setRotation(this.random() * Math.PI)
     this.skidRT.draw(this.scorchStamp)
-
-    const tuning = {
-      damage: MINES.damage,
-      splashDamage: MINES.splashDamage,
-      blastRadius: MINES.blastRadius,
-      ...MINE_BLAST,
-    }
-    for (const car of this.cars) {
-      if (car.wrecked) continue
-      const impulse = mineBlast(
-        { x: car.state.x, y: car.state.y, mass: car.mass, direct: car === triggered },
-        mine,
-        tuning,
-        this.random,
-      )
-      if (!impulse) continue
-
-      this.damageCar(car, impulse.damage, null)
-      car.state = launchCar(
-        {
-          ...car.state,
-          vx: car.state.vx + impulse.dvx,
-          vy: car.state.vy + impulse.dvy,
-          heading: car.state.heading + impulse.spin,
-        },
-        impulse.dvz,
-      )
-    }
-
-    if (Math.hypot(this.player.state.x - mine.x, this.player.state.y - mine.y) < 500) {
-      this.shake(200, 0.008)
-    }
-    mine.sprite.destroy()
-    mine.light.destroy()
-    mine.ring.destroy()
+    view.sprite.setTint(0x2c2c30)
+    view.shadow.setAlpha(0.2)
+    view.damageSmoke.frequency = 30
+    this.shake(260, 0.008)
   }
 
-  /** Touchdown after a launch: dust ring, bounce, and a thump you feel. */
-  private onLanding(car: CarUnit) {
-    const { x, y } = car.state
+  private onLandingFx(e: Extract<SimEvent, { type: 'car-landed' }>) {
+    const { x, y } = e
+    const view = this.carViews.get(e.carId)!
     const dust = this.add
       .image(x, y, 'ring')
       .setScale(0.15)
@@ -612,9 +499,9 @@ export class RaceScene extends Phaser.Scene {
     this.tireSmoke.explode(IMPACT_FX.landingDustCount, x, y)
 
     // suspension bounce: the sprite squashes and settles
-    car.sprite.setScale(CAR_SCALE)
+    view.sprite.setScale(CAR_SCALE)
     this.tweens.add({
-      targets: car.sprite,
+      targets: view.sprite,
       scaleX: CAR_SCALE * 1.12,
       scaleY: CAR_SCALE * 0.86,
       duration: 90,
@@ -622,16 +509,155 @@ export class RaceScene extends Phaser.Scene {
       ease: 'quad.out',
     })
 
-    const nearPlayer = car.isPlayer || Math.hypot(this.player.state.x - x, this.player.state.y - y) < 420
+    const player = this.sim.cars[0]
+    const nearPlayer = e.carId === 'player' || Math.hypot(player.state.x - x, player.state.y - y) < 420
     if (nearPlayer) {
       this.shake(160, IMPACT_FX.landingShake)
       audioBus.thud()
     }
   }
 
-  private get player(): CarUnit {
-    return this.cars[0]
+  private onMineDropped(e: Extract<SimEvent, { type: 'mine-dropped' }>) {
+    if (this.mineViews.has(e.mineId)) return
+    this.mineViews.set(e.mineId, this.createMineView(e.x, e.y))
+    audioBus.pickup(true) // placement click; real sample hook later
   }
+
+  private createMineView(x: number, y: number) {
+    const sprite = this.add.image(x, y, 'mine').setDepth(2.4)
+    // the arm light and danger ring are what make it readable at speed
+    const light = this.add
+      .image(x, y, 'glow-soft')
+      .setScale(0.34)
+      .setTint(0xffb340)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setDepth(2.45)
+    const ring = this.add
+      .image(x, y, 'ring')
+      .setScale((MINES.triggerRadius * 2.6) / 96)
+      .setTint(0xff7a3c)
+      .setAlpha(0)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setDepth(2.35)
+    for (const obj of [sprite, light, ring]) this.cameras.cameras[1]?.ignore(obj)
+    return { sprite, light, ring }
+  }
+
+  private onMineDetonatedFx(e: Extract<SimEvent, { type: 'mine-detonated' }>) {
+    audioBus.explosion()
+    this.explosionSmoke.explode(16, e.x, e.y)
+    this.hitSparks.explode(8, e.x, e.y)
+    this.blastEffects(e.x, e.y, 1, 'mine-blast')
+    this.scorchStamp.setPosition(e.x, e.y).setRotation(this.random() * Math.PI)
+    this.skidRT.draw(this.scorchStamp)
+
+    const player = this.sim.cars[0]
+    if (Math.hypot(player.state.x - e.x, player.state.y - e.y) < 500) {
+      this.shake(200, 0.008)
+    }
+
+    const view = this.mineViews.get(e.mineId)
+    if (view) {
+      view.sprite.destroy()
+      view.light.destroy()
+      view.ring.destroy()
+      this.mineViews.delete(e.mineId)
+    }
+  }
+
+  private onPickupCollected(e: Extract<SimEvent, { type: 'pickup-collected' }>) {
+    if (e.carId === 'player') {
+      audioBus.pickup(e.pickup !== 'trap')
+      const toasts: Record<PickupType, [string, number]> = {
+        ammo: [`+${PICKUPS.ammoAmount} AMMO`, C.ammo],
+        turbo: [`+${Math.round(PICKUPS.turboAmount * 100)}% TURBO`, C.turbo],
+        repair: [`-${PICKUPS.repairAmount}% DMG`, C.money],
+        cash: [`+$${PICKUPS.cashAmount}`, C.money],
+        trap: ['TRAPPED!', 0xd68cff],
+      }
+      this.spawnToast(e.x, e.y, ...toasts[e.pickup])
+    }
+    this.hitSparks.explode(4, e.x, e.y)
+    this.pickupViews[e.index]?.sprite.setVisible(false)
+  }
+
+  private onPickupRespawned(index: number) {
+    const p = this.sim.pickups[index]
+    const view = this.pickupViews[index]
+    if (!p || !view) return
+    view.sprite.setPosition(p.x, p.y).setTexture(`pk-${p.type}`)
+    // texture may have changed type; restart the pulse at the new type's base scale
+    view.pulse.stop()
+    view.pulse = this.startPickupPulse(view.sprite, p.type)
+    view.sprite.setVisible(true).setAlpha(0)
+    this.tweens.add({ targets: view.sprite, alpha: 1, duration: 400 })
+  }
+
+  // ---------------------------------------------------------------- view sync
+
+  private syncBulletViews() {
+    const live = new Set<number>()
+    for (const b of this.sim.bullets) {
+      live.add(b.id)
+      let sprite = this.bulletViews.get(b.id)
+      if (!sprite) {
+        // defensive: a bullet without a view (e.g. spawned+moved before its event)
+        sprite = this.add
+          .image(b.x, b.y, 'bullet')
+          .setRotation(Math.atan2(b.vy, b.vx))
+          .setDepth(6)
+          .setBlendMode(Phaser.BlendModes.ADD)
+        this.cameras.cameras[1]?.ignore(sprite)
+        this.bulletViews.set(b.id, sprite)
+      }
+      sprite.setPosition(b.x, b.y)
+      if (this.random() < 0.5) this.bulletTrail.emitParticleAt(b.x, b.y)
+    }
+    for (const [id, sprite] of this.bulletViews) {
+      if (!live.has(id)) {
+        sprite.destroy()
+        this.bulletViews.delete(id)
+      }
+    }
+  }
+
+  private syncMineViews() {
+    const now = this.sim.simTimeMs
+    const blink = 0.55 + 0.45 * Math.sin(now * 0.014)
+    const live = new Set<number>()
+    for (const mine of this.sim.mines) {
+      live.add(mine.id)
+      let view = this.mineViews.get(mine.id)
+      if (!view) {
+        view = this.createMineView(mine.x, mine.y)
+        this.mineViews.set(mine.id, view)
+      }
+      const armed = mineIsArmed(mine, now, MINES)
+      // unarmed: dim and inert. armed: the light blinks and the ring breathes.
+      view.sprite.setAlpha(armed ? 1 : 0.6)
+      view.light.setAlpha(armed ? 0.35 + 0.55 * blink : 0.12).setScale(armed ? 0.3 + 0.1 * blink : 0.22)
+      view.ring.setAlpha(armed ? 0.1 + 0.16 * blink : 0)
+    }
+    for (const [id, view] of this.mineViews) {
+      if (!live.has(id)) {
+        view.sprite.destroy()
+        view.light.destroy()
+        view.ring.destroy()
+        this.mineViews.delete(id)
+      }
+    }
+  }
+
+  private syncPickupViews() {
+    for (let i = 0; i < this.sim.pickups.length; i++) {
+      const p = this.sim.pickups[i]
+      const view = this.pickupViews[i]
+      if (!view) continue
+      view.sprite.setPosition(p.x, p.y).setVisible(p.respawnAt === null)
+    }
+  }
+
+  // ---------------------------------------------------------------- shared FX
 
   /** Shockwave ring + fireball flash shared by mine blasts and wrecks. */
   private blastEffects(x: number, y: number, scale: number, blastKey: string) {
@@ -683,116 +709,19 @@ export class RaceScene extends Phaser.Scene {
     })
   }
 
-  // ---------------------------------------------------------------- combat
-
-  private tryFire(car: CarUnit) {
-    if (car.ammo <= 0 || car.gunCooldown > 0) return
-    car.ammo--
-    car.gunCooldown = 1 / GUN.fireRate
-
-    const distToPlayer = car.isPlayer
-      ? 0
-      : Math.hypot(car.state.x - this.player.state.x, car.state.y - this.player.state.y)
-    if (distToPlayer < 900) audioBus.shot(1 - distToPlayer / 1000)
-
-    // talent decides how straight a rival shoots
-    const spread = car.isPlayer ? GUN.playerSpread : car.ai!.aimSpread
-    const dir = car.state.heading + (this.random() * 2 - 1) * spread
-    const mx = car.state.x + Math.cos(car.state.heading) * GUN.muzzleOffset
-    const my = car.state.y + Math.sin(car.state.heading) * GUN.muzzleOffset
-
-    const sprite = this.add.image(mx, my, 'bullet').setRotation(dir).setDepth(6).setBlendMode(Phaser.BlendModes.ADD)
-    this.cameras.cameras[1]?.ignore(sprite)
-    this.bullets.push({
-      x: mx,
-      y: my,
-      vx: Math.cos(dir) * GUN.bulletSpeed + car.state.vx,
-      vy: Math.sin(dir) * GUN.bulletSpeed + car.state.vy,
-      ttl: GUN.ttl,
-      owner: car,
-      sprite,
-    })
-
-    // muzzle flash (audio hook: gunshot)
-    const flash = this.add
-      .image(mx, my, 'muzzle')
-      .setScale(0.8)
-      .setDepth(6)
-      .setBlendMode(Phaser.BlendModes.ADD)
-    this.cameras.cameras[1]?.ignore(flash)
-    this.tweens.add({ targets: flash, alpha: 0, scale: 0.3, duration: 70, onComplete: () => flash.destroy() })
-  }
-
-  private updateBullets(dt: number) {
-    const survivors: Bullet[] = []
-    for (const b of this.bullets) {
-      b.ttl -= dt
-      b.x += b.vx * dt
-      b.y += b.vy * dt
-      b.sprite.setPosition(b.x, b.y)
-      if (this.random() < 0.5) this.bulletTrail.emitParticleAt(b.x, b.y)
-
-      let dead = b.ttl <= 0
-      if (!dead) {
-        for (const car of this.cars) {
-          if (car === b.owner || car.wrecked) continue
-          if (car.isPlayer && this.phase === 'finished') continue
-          // bullets pass under a launched car
-          if (isAirborne(car.state)) continue
-          if (Math.hypot(car.state.x - b.x, car.state.y - b.y) < CAR_BODY_RADIUS + 4) {
-            this.onBulletHit(car, b)
-            dead = true
-            break
-          }
-        }
-      }
-      if (!dead) {
-        for (const wall of this.barriers) {
-          if (Math.abs(wall.x - b.x) > TIRE_RADIUS + 6 || Math.abs(wall.y - b.y) > TIRE_RADIUS + 6) continue
-          if (Math.hypot(wall.x - b.x, wall.y - b.y) < TIRE_RADIUS + 4) {
-            this.hitSparks.explode(3, b.x, b.y)
-            dead = true
-            break
-          }
-        }
-      }
-
-      if (dead) b.sprite.destroy()
-      else survivors.push(b)
-    }
-    this.bullets = survivors
-  }
-
-  /** A round connects: sparks, a white flash, a shove, and — if it's you — a jolt. */
-  private onBulletHit(car: CarUnit, b: Bullet) {
-    // the rivals' handicap shrinks as the purse grows: full value on a death race
-    const damage = GUN.damagePerHit * (b.owner.isPlayer ? 1 : AI_GUNNER.damageScale[this.track.tier])
-    this.damageCar(car, damage, b.owner)
-    this.hitSparks.explode(5, b.x, b.y)
-    this.flashCar(car)
-
-    // every hit shoves the victim a little along the bullet's path
-    const bulletSpeed = Math.hypot(b.vx, b.vy) || 1
-    const kick = GUN.impactKick / car.mass
-    car.state.vx += (b.vx / bulletSpeed) * kick
-    car.state.vy += (b.vy / bulletSpeed) * kick
-
-    if (car.isPlayer) {
-      this.shake(60, IMPACT_FX.playerHitShake)
-      this.flashScreenEdge(C.danger, IMPACT_FX.playerHitFlashAlpha)
-    }
-  }
-
   /** Victim blinks white for a frame or two — the universal "that hurt" tell. */
-  private flashCar(car: CarUnit) {
-    if (car.wrecked) return
-    car.sprite.setTintFill(0xffffff)
+  private flashCar(carId: string) {
+    const view = this.carViews.get(carId)
+    const car = this.sim.cars.find((c) => c.id === carId)
+    if (!view || !car || car.wrecked) return
+    view.sprite.setTintFill(0xffffff)
     this.time.delayedCall(IMPACT_FX.hitFlashMs, () => {
-      if (!car.sprite.active) return
+      if (!view.sprite.active) return
       // clearTint() leaves tintFill set, which would paint the car solid white
-      car.sprite.tintFill = false
-      if (car.wrecked) car.sprite.setTint(0x2c2c30)
-      else car.sprite.clearTint()
+      view.sprite.tintFill = false
+      const now = this.sim.cars.find((c) => c.id === carId)
+      if (now?.wrecked) view.sprite.setTint(0x2c2c30)
+      else view.sprite.clearTint()
     })
   }
 
@@ -812,190 +741,19 @@ export class RaceScene extends Phaser.Scene {
     if (!this.settings.reducedFlash) this.cameras.main.flash(duration, red, green, blue)
   }
 
-  private damageCar(car: CarUnit, amount: number, _source: CarUnit | null) {
-    if (car.wrecked || this.phase === 'countdown') return
-    // rivals fit armor too, from their ladder rank — an ace is not a soft target
-    const resistance = armorResistance(car.isPlayer ? this.career.upgrades.armor : car.armorTier)
-    const result = applyDamage(car.damage, amount, resistance)
-    car.damage = result.damage
-    if (result.wrecked) this.wreckCar(car)
-  }
-
-  private wreckCar(car: CarUnit) {
-    if (car.wrecked) return
-    car.wrecked = true
-
-    audioBus.explosion()
-    this.explosionSmoke.explode(30, car.state.x, car.state.y)
-    this.blastEffects(car.state.x, car.state.y, 1.6, 'explosion')
-
-    // flying debris chunks
-    for (let i = 0; i < 8; i++) {
-      const angle = this.random() * Math.PI * 2
-      const dist = 60 + this.random() * 130
-      const piece = this.add
-        .image(car.state.x, car.state.y, 'debris')
-        .setRotation(this.random() * Math.PI * 2)
-        .setDepth(6.9)
-      this.cameras.cameras[1]?.ignore(piece)
-      this.tweens.add({
-        targets: piece,
-        x: car.state.x + Math.cos(angle) * dist,
-        y: car.state.y + Math.sin(angle) * dist,
-        rotation: piece.rotation + (this.random() - 0.5) * 10,
-        alpha: 0.25,
-        duration: 500 + this.random() * 300,
-        ease: 'cubic.out',
-      })
-    }
-
-    // lingering fire
-    car.fireGlow = this.add
-      .image(car.state.x, car.state.y, 'glow-soft')
-      .setTint(0xff8833)
-      .setBlendMode(Phaser.BlendModes.ADD)
-      .setDepth(6.8)
-    this.cameras.cameras[1]?.ignore(car.fireGlow)
+  /** White kiss of light on a heavy impact. The slow-mo itself lives in the sim. */
+  private crashLurch(x: number, y: number) {
     const flash = this.add
-      .image(car.state.x, car.state.y, 'spark')
-      .setScale(4)
+      .image(x, y, 'spark')
+      .setScale(3)
       .setDepth(7)
       .setBlendMode(Phaser.BlendModes.ADD)
     this.cameras.cameras[1]?.ignore(flash)
-    this.tweens.add({ targets: flash, alpha: 0, scale: 1.2, duration: 320, onComplete: () => flash.destroy() })
-    this.scorchStamp.setPosition(car.state.x, car.state.y).setRotation(this.random() * Math.PI)
-    this.skidRT.draw(this.scorchStamp)
-    car.sprite.setTint(0x2c2c30)
-    car.shadow.setAlpha(0.2)
-    car.damageSmoke.frequency = 30
-    this.shake(260, 0.008)
-
-    if (car.isPlayer) {
-      this.phase = 'finished'
-      this.time.delayedCall(2200, () => this.transitionToResults(this.time.now, true))
-    }
-  }
-
-  /** Is an enemy inside gun range and inside the aim cone? */
-  /**
-   * The gun is bolted to the nose, so "aiming" is really deciding when to pull
-   * the trigger. Two things decide it:
-   *
-   *  - aces fire at where you WILL be (the bullet's intercept point), everyone
-   *    else at where you are, which at racing speeds is where you were
-   *  - if the race leader is within range, that is who they shoot at; nobody
-   *    wastes ammo on a backmarker while the win is driving away
-   */
-  private hasTargetInSights(car: CarUnit): boolean {
-    if (car.ammo <= 0) return false
-    const leaderId = this.placementOrder[0]
-    const candidates = this.cars.filter((other) => {
-      if (other === car || other.wrecked) return false
-      if (other.isPlayer && this.phase === 'finished') return false
-      return Math.hypot(other.state.x - car.state.x, other.state.y - car.state.y) <= AI_GUNNER.range
-    })
-    if (!candidates.length) return false
-
-    const leader = candidates.find((c) => c.id === leaderId)
-    const targets = leader ? [leader] : candidates
-    return targets.some((other) => this.canHit(car, other))
-  }
-
-  private canHit(car: CarUnit, other: CarUnit): boolean {
-    const grade = car.ai?.talent.grade ?? 1
-    const aim =
-      grade >= AI_GUNNER.leadTargetFromGrade
-        ? leadTarget(car.state, { x: other.state.x, y: other.state.y, vx: other.state.vx, vy: other.state.vy }, GUN.bulletSpeed)
-        : { x: other.state.x, y: other.state.y }
-    const angle = Math.atan2(aim.y - car.state.y, aim.x - car.state.x)
-    return Math.abs(wrapAngle(angle - car.state.heading)) < AI_GUNNER.aimCone
-  }
-
-  /**
-   * Drop a mine on the nose of anyone tailing close behind — but not in the
-   * packed opening seconds, which would just mine the whole grid at the line.
-   */
-  private maybeAutoDropMine(car: CarUnit, now: number) {
-    const cooldown = car.ai?.mineCooldownMs ?? AI_MINES.cooldownMs
-    if (car.mines <= 0 || now < this.raceStartAt + AI_MINES.graceMs || now - car.lastMineAt <= cooldown) return
-    // a car merely sitting behind you is not a threat; one that is closing is
-    if (this.isBeingChased(car)) this.tryDropMine(car, now)
-  }
-
-  /**
-   * Rivals shoot in bursts rather than holding the trigger forever. Caps the
-   * damage a single tailing car can pour into you, without making them dumb.
-   */
-  private burstGate(car: CarUnit, hasTarget: boolean, now: number): boolean {
-    if (!hasTarget) {
-      car.burstEndsAt = 0
-      return false
-    }
-    if (now < car.restEndsAt) return false
-    if (car.burstEndsAt === 0) car.burstEndsAt = now + AI_GUNNER.burstMs
-    if (now >= car.burstEndsAt) {
-      car.restEndsAt = now + AI_GUNNER.restMs
-      car.burstEndsAt = 0
-      return false
-    }
-    return true
-  }
-
-  private computeAiCombat(car: CarUnit, now: number): { fire: boolean; turbo: boolean } {
-    const ai = car.ai!
-    const fire = this.burstGate(car, this.hasTargetInSights(car), now)
-    if (this.phase === 'racing') this.maybeAutoDropMine(car, now)
-
-    const curvature = Math.min(1, turnAmount(this.racingLine, ai.lineIdx, ai.lookAheadSamples * 2) / 1.1)
-    const leader = this.placementOrder[0]
-    const leaderCar = this.cars.find((c) => c.id === leader)
-    const turbo = shouldTurbo({
-      curvatureAhead: curvature,
-      turbo: car.turbo,
-      forwardSpeed: forwardSpeed(car.state),
-      topSpeed: this.effectiveSpec(car, false).topSpeed,
-      deficit: leaderCar ? this.progressScore(leaderCar) - this.progressScore(car) : 0,
-      underAttack: this.isBeingChased(car),
-    })
-    return { fire, turbo }
-  }
-
-  /** Is somebody close behind and closing? Worth a mine, and worth the turbo. */
-  private isBeingChased(car: CarUnit): boolean {
-    const fx = Math.cos(car.state.heading)
-    const fy = Math.sin(car.state.heading)
-    for (const other of this.cars) {
-      if (other === car || other.wrecked || other.finishedAt !== null) continue
-      const dx = other.state.x - car.state.x
-      const dy = other.state.y - car.state.y
-      const d = Math.hypot(dx, dy)
-      if (d >= AI_MINES.dropRange || dx * fx + dy * fy > -d * 0.5) continue
-      // closing = their velocity along the gap between us beats ours
-      const closing = (car.state.vx - other.state.vx) * (dx / d) + (car.state.vy - other.state.vy) * (dy / d)
-      if (closing > AI_MINES.closingSpeed) return true
-    }
-    return false
+    this.tweens.add({ targets: flash, alpha: 0, scale: 1, duration: 180, onComplete: () => flash.destroy() })
+    this.flashScreenEdge(0xffffff, 0.28)
   }
 
   // ---------------------------------------------------------------- pickups
-
-  private buildPickups() {
-    const spots = randomPickupLayout(
-      this.centerline,
-      [...PICKUPS.types],
-      {
-        lateralOffsets: [...PICKUPS.lateralOffsets],
-        clearRadiusAroundStart: PICKUPS.clearRadiusAroundStart,
-        minDistance: PICKUPS.minDistance,
-      },
-      this.random,
-    )
-    for (const spot of spots) {
-      const sprite = this.add.image(spot.x, spot.y, `pk-${spot.type}`).setDepth(2.5)
-      const pulse = this.startPickupPulse(sprite, spot.type)
-      this.pickups.push({ type: spot.type, x: spot.x, y: spot.y, sprite, respawnAt: null, pulse })
-    }
-  }
 
   /** The skull trap art fills its frame more than the other icons — shrink it to match. */
   private pickupBaseScale(type: PickupType): number {
@@ -1016,289 +774,72 @@ export class RaceScene extends Phaser.Scene {
     })
   }
 
-  private updatePickups(now: number) {
-    for (const p of this.pickups) {
-      if (p.respawnAt !== null) {
-        if (now >= p.respawnAt) {
-          this.relocatePickup(p)
-          p.respawnAt = null
-          p.sprite.setVisible(true).setAlpha(0)
-          this.tweens.add({ targets: p.sprite, alpha: 1, duration: 400 })
-        }
-        continue
-      }
-      for (const car of this.cars) {
-        if (car.wrecked) continue
-        if (Math.hypot(car.state.x - p.x, car.state.y - p.y) < PICKUPS.radius) {
-          this.collectPickup(p, car, now)
-          break
-        }
-      }
+  private buildPickupViews() {
+    for (const p of this.sim.pickups) {
+      const sprite = this.add.image(p.x, p.y, `pk-${p.type}`).setDepth(2.5)
+      const pulse = this.startPickupPulse(sprite, p.type)
+      this.pickupViews.push({ sprite, pulse })
     }
-  }
-
-  private collectPickup(p: PickupInstance, car: CarUnit, now: number) {
-    if (car.isPlayer) audioBus.pickup(p.type !== 'trap')
-    switch (p.type) {
-      case 'ammo':
-        car.ammo = Math.min(GUN.ammoMax, car.ammo + PICKUPS.ammoAmount)
-        break
-      case 'turbo':
-        car.turbo = Math.min(1, car.turbo + PICKUPS.turboAmount)
-        if (car.turbo >= TURBO.restartThreshold) car.turboDepleted = false
-        break
-      case 'repair':
-        car.damage = repairDamage(car.damage, PICKUPS.repairAmount)
-        break
-      case 'cash':
-        car.cash += PICKUPS.cashAmount
-        break
-      case 'trap':
-        if (car.isPlayer) this.trapUntil = now + PICKUPS.trapDurationMs
-        break
-    }
-    if (car.isPlayer) {
-      const toasts: Record<PickupType, [string, number]> = {
-        ammo: [`+${PICKUPS.ammoAmount} AMMO`, C.ammo],
-        turbo: [`+${Math.round(PICKUPS.turboAmount * 100)}% TURBO`, C.turbo],
-        repair: [`-${PICKUPS.repairAmount}% DMG`, C.money],
-        cash: [`+$${PICKUPS.cashAmount}`, C.money],
-        trap: ['TRAPPED!', 0xd68cff],
-      }
-      this.spawnToast(p.x, p.y, ...toasts[p.type])
-    }
-    p.respawnAt = now + PICKUPS.respawnMs
-    p.sprite.setVisible(false)
-    this.hitSparks.explode(4, p.x, p.y)
-  }
-
-  private relocatePickup(pickup: PickupInstance) {
-    const occupied = this.pickups
-      .filter((other) => other !== pickup && other.respawnAt === null)
-      .map((other) => ({ x: other.x, y: other.y }))
-    const position = randomPickupSpot(
-      this.centerline,
-      {
-        lateralOffsets: [...PICKUPS.lateralOffsets],
-        clearRadiusAroundStart: PICKUPS.clearRadiusAroundStart,
-        minDistance: PICKUPS.minDistance,
-      },
-      this.random,
-      occupied,
-    )
-    pickup.type = this.nextPickupType(pickup)
-    pickup.x = position.x
-    pickup.y = position.y
-    pickup.sprite.setPosition(position.x, position.y).setTexture(`pk-${pickup.type}`)
-    // texture may have changed type; restart the pulse at the new type's base scale
-    pickup.pulse.stop()
-    pickup.pulse = this.startPickupPulse(pickup.sprite, pickup.type)
-  }
-
-  /** Preserve the sparse type mix even as individual slots respawn. */
-  private nextPickupType(respawning: PickupInstance): PickupType {
-    const active = this.pickups.filter((pickup) => pickup !== respawning && pickup.respawnAt === null)
-    const caps = new Map<PickupType, number>()
-    PICKUPS.types.forEach((type) => caps.set(type, (caps.get(type) ?? 0) + 1))
-    const start = Math.floor(this.random() * PICKUPS.types.length)
-    for (let offset = 0; offset < PICKUPS.types.length; offset++) {
-      const type = PICKUPS.types[(start + offset) % PICKUPS.types.length]
-      const count = active.filter((pickup) => pickup.type === type).length
-      if (count < (caps.get(type) ?? 0)) return type
-    }
-    return 'trap'
   }
 
   // ---------------------------------------------------------------- cars
 
-  private buildCars() {
-    const gate = this.gates[0]
-    const normal = { x: -gate.tangent.y, y: gate.tangent.x }
-    const heading = Math.atan2(gate.tangent.y, gate.tangent.x)
-
-    const spawnAt = (slot: number): CarState => {
-      const row = Math.floor(slot / 2)
-      const col = slot % 2
-      const back = 80 + row * 120
-      const side = (col === 0 ? -1 : 1) * 58
-      return {
-        x: gate.center.x - gate.tangent.x * back + normal.x * side,
-        y: gate.center.y - gate.tangent.y * back + normal.y * side,
-        heading,
-        vx: 0,
-        vy: 0,
-        ...GROUNDED,
-      }
-    }
-
-    const makeUnit = (
-      slot: number,
-      id: string,
-      name: string,
-      color: number,
-      textureKey: string,
-      ai: CarUnit['ai'],
-    ): CarUnit => {
-      const state = spawnAt(slot)
-      const shadow = this.add
-        .image(0, 0, textureKey)
-        .setScale(CAR_SCALE)
-        .setTintFill(0x000000)
-        .setAlpha(0.3)
-        .setDepth(4)
-      const sprite = this.add.image(0, 0, textureKey).setScale(CAR_SCALE).setDepth(5)
-      const exhaust = this.add.particles(0, 0, 'smoke', {
-        speed: { min: 15, max: 50 },
-        scale: { start: 0.22, end: 0.55 },
-        alpha: { start: 0.25, end: 0 },
-        lifespan: 550,
-        angle: { min: 0, max: 360 },
-        tint: 0x8a8f98,
-        frequency: 100,
-      })
-      exhaust.setDepth(4.5)
-      const damageSmoke = this.add.particles(0, 0, 'smoke', {
-        speed: { min: 8, max: 30 },
-        scale: { start: 0.4, end: 0.9 },
-        alpha: { start: 0.4, end: 0 },
-        lifespan: 900,
-        angle: { min: 0, max: 360 },
-        tint: 0x23232a,
-        frequency: -1, // off until damaged
-      })
-      damageSmoke.setDepth(6.5)
-
-      const turboFlame = this.add.particles(0, 0, 'spark', {
-        speed: { min: 40, max: 120 },
-        scale: { start: 0.5, end: 0 },
-        alpha: { start: 0.7, end: 0 },
-        lifespan: 220,
-        angle: { min: 0, max: 360 },
-        tint: 0x66ccff,
-        blendMode: Phaser.BlendModes.ADD,
-        frequency: 18,
-        emitting: false,
-      })
-      turboFlame.setDepth(4.6)
-
-      // the flame itself: a cone off the tailpipe with a heat glow around it
-      const flameCone = this.add
-        .image(0, 0, 'flame-cone')
-        .setOrigin(1, 0.5)
-        .setTint(TURBO_FX.flameTint)
-        .setBlendMode(Phaser.BlendModes.ADD)
-        .setDepth(4.55)
-        .setVisible(false)
-      const turboGlow = this.add
-        .image(0, 0, 'glow-soft')
-        .setScale(0.9)
-        .setTint(TURBO_FX.glowTint)
-        .setBlendMode(Phaser.BlendModes.ADD)
-        .setDepth(4.5)
-        .setVisible(false)
-
-      // livery pool: halos out from under the body so each chassis — and each
-      // same-chassis rival, keyed off its own `color` — reads as its own colour.
-      const liveryGlow = this.add
-        .image(0, 0, 'glow-soft')
-        .setTint(color)
-        .setBlendMode(Phaser.BlendModes.ADD)
-        .setDepth(4.3)
-
-      const headlights = [0, 1].map(() =>
-        this.add
-          .image(0, 0, 'glow-soft')
-          .setScale(1.5, 0.85)
-          .setTint(0xfff2c0)
-          .setAlpha(0.13)
-          .setBlendMode(Phaser.BlendModes.ADD)
-          .setDepth(3.4),
-      )
-      const taillights = [0, 1].map(() =>
-        this.add
-          .image(0, 0, 'glow-soft')
-          .setScale(0.22)
-          .setTint(0xff3322)
-          .setAlpha(0.25)
-          .setBlendMode(Phaser.BlendModes.ADD)
-          .setDepth(5.5),
-      )
-
-      const unit: CarUnit = {
-        id,
-        name,
-        color,
-        isPlayer: ai === null,
-        state,
-        prevPos: { x: state.x, y: state.y },
-        progress: createProgress(this.track.gateCount, this.track.laps),
-        sprite,
-        shadow,
-        exhaust,
-        damageSmoke,
-        turboFlame,
-        flameCone,
-        turboGlow,
-        liveryGlow,
-        headlights,
-        taillights,
-        fireGlow: null,
-        ai,
-        finishedAt: null,
-        lapStartAt: 0,
-        lapTimes: [],
-        damage: 0,
-        wrecked: false,
-        ammo: GUN.ammoMax,
-        turbo: 1,
-        turboDepleted: false,
-        gunCooldown: 0,
-        burstEndsAt: 0,
-        restEndsAt: 0,
-        cash: 0,
-        mines: 0,
-        lastMineAt: 0,
-        mass: 1,
-        stuckMs: 0,
-        armorTier: 0,
-      }
-      this.syncCarVisuals(unit)
-      return unit
-    }
+  private buildCarSetups(): CarSetup[] {
+    const setups: CarSetup[] = []
+    const weapons = this.career.profile.weaponsEnabled
 
     const playerCar = carById(this.career.carId)
-    const player = makeUnit(0, 'player', this.career.profile.driverName, this.career.profile.liveryColor, `car-top-${playerCar.id}`, null)
-    player.damage = this.career.damage // persistent damage carries into the race
-    player.mines = this.career.profile.weaponsEnabled ? this.career.mines : 0
-    player.ammo = this.career.profile.weaponsEnabled ? GUN.ammoMax : 0
-    player.mass = playerCar.mass
-    if (this.hasOverTurbo) {
-      // the volatile mix burns red and angry
-      player.turboFlame.setParticleTint(TURBO_FX.overchargeFlameTint)
-      player.flameCone.setTint(TURBO_FX.overchargeFlameTint)
-      player.turboGlow.setTint(TURBO_FX.overchargeGlowTint)
-    }
-    this.cars.push(player)
+    this.carInfo.set('player', {
+      name: this.career.profile.driverName,
+      color: this.career.profile.liveryColor,
+      textureKey: `car-top-${playerCar.id}`,
+      chassisId: playerCar.id,
+    })
+    setups.push({
+      id: 'player',
+      isPlayer: true,
+      mass: playerCar.mass,
+      damage: this.career.damage, // persistent damage carries into the race
+      ammo: weapons ? GUN.ammoMax : 0,
+      mines: weapons ? this.career.mines : 0,
+      // the player's armor lives on the career; it must be baked into armorTier
+      // or damageCarSim (which reads only armorTier) applies zero resistance
+      armorTier: this.career.upgrades.armor,
+      ai: null,
+    })
 
     if (this.isDuel) {
       // 1-v-1 against the champion: one-off machine, charger style, ace hands
       const talent = talentOf(BOSS.id)
       const style = DRIVING_STYLES[0]
-      const boss = makeUnit(1, BOSS.id, BOSS.name, BOSS.bodyColor, `car-top-${BOSS.id}`, {
-        lineIdx: 0,
-        lookAheadSamples: style.lookAheadSamples,
-        speedScale: BOSS.paceScale * this.difficultyPaceScale(),
-        tuning: talentTuning(style.tuning, talent),
-        spec: BOSS.spec,
-        talent,
-        aimSpread: talentAimSpread(GUN.aiSpread, talent),
-        mineCooldownMs: talentMineCooldown(AI_MINES.cooldownMs, talent),
-        rubberBandGain: talentRubberBand(RUBBER_BAND.gainPerGate, talent),
+      this.carInfo.set(BOSS.id, {
+        name: BOSS.name,
+        color: BOSS.bodyColor,
+        textureKey: `car-top-${BOSS.id}`,
+        chassisId: BOSS.id,
       })
-      boss.mass = BOSS.mass
-      this.cars.push(boss)
+      setups.push({
+        id: BOSS.id,
+        isPlayer: false,
+        mass: BOSS.mass,
+        damage: 0,
+        ammo: weapons ? GUN.ammoMax : 0,
+        mines: weapons ? talentMineCount(AI_MINES.count[this.track.tier], talent) : 0,
+        armorTier: 0,
+        ai: {
+          lineIdx: 0,
+          lookAheadSamples: style.lookAheadSamples,
+          speedScale: BOSS.paceScale * this.difficultyPaceScale(),
+          tuning: talentTuning(style.tuning, talent),
+          spec: BOSS.spec,
+          grade: talent.grade,
+          aimSpread: talentAimSpread(GUN.aiSpread, talent),
+          mineCooldownMs: talentMineCooldown(AI_MINES.cooldownMs, talent),
+          rubberBandGain: talentRubberBand(RUBBER_BAND.gainPerGate, talent),
+        },
+      })
     } else {
-      this.rivalIds.forEach((id, i) => {
+      this.rivalIds.forEach((id) => {
         const driver = rosterById(id)
         const rank = rankOf(this.career.ladder, this.career.points, id)
         // chassis and raw pace come from ladder rank; talent is permanent and
@@ -1309,47 +850,160 @@ export class RaceScene extends Phaser.Scene {
         // rivals build their cars too — a stock chassis has stock tires, and the
         // player's tier-3 rubber out-corners any amount of pace tuning
         const upgrades = rivalUpgrades(rank)
-        const rival = makeUnit(i + 1, id, driver.name, driver.bodyColor, `car-top-${chassis.id}`, {
-          lineIdx: 0,
-          lookAheadSamples: style.lookAheadSamples,
-          speedScale: talentPace(rivalStrength(rank), talent) * this.difficultyPaceScale(),
-          tuning: talentTuning(style.tuning, talent),
-          spec: effectiveCarSpec(chassis, upgrades),
-          talent,
-          aimSpread: talentAimSpread(GUN.aiSpread, talent),
-          mineCooldownMs: talentMineCooldown(AI_MINES.cooldownMs, talent),
-          rubberBandGain: talentRubberBand(RUBBER_BAND.gainPerGate, talent),
+        this.carInfo.set(id, {
+          name: driver.name,
+          color: driver.bodyColor,
+          textureKey: `car-top-${chassis.id}`,
+          chassisId: chassis.id,
         })
-        rival.mass = chassis.mass
-        rival.mines = this.career.profile.weaponsEnabled ? talentMineCount(AI_MINES.count[this.track.tier], talent) : 0
-        rival.ammo = this.career.profile.weaponsEnabled ? GUN.ammoMax : 0
-        rival.chassisId = chassis.id
-        rival.armorTier = upgrades.armor
-        this.cars.push(rival)
+        setups.push({
+          id,
+          isPlayer: false,
+          mass: chassis.mass,
+          damage: 0,
+          ammo: weapons ? GUN.ammoMax : 0,
+          mines: weapons ? talentMineCount(AI_MINES.count[this.track.tier], talent) : 0,
+          armorTier: upgrades.armor,
+          ai: {
+            lineIdx: 0,
+            lookAheadSamples: style.lookAheadSamples,
+            speedScale: talentPace(rivalStrength(rank), talent) * this.difficultyPaceScale(),
+            tuning: talentTuning(style.tuning, talent),
+            spec: effectiveCarSpec(chassis, upgrades),
+            grade: talent.grade,
+            aimSpread: talentAimSpread(GUN.aiSpread, talent),
+            mineCooldownMs: talentMineCooldown(AI_MINES.cooldownMs, talent),
+            rubberBandGain: talentRubberBand(RUBBER_BAND.gainPerGate, talent),
+          },
+        })
       })
     }
 
     // sabotage bought at the black market: the strongest rival on this grid
     // (best speed scale — for the duel that's the champion) starts pre-damaged
     if (this.career.sabotage) {
-      const strongest = this.cars
-        .filter((c) => c.ai)
-        .reduce((best, c) => (c.ai!.speedScale > best.ai!.speedScale ? c : best))
+      const strongest = setups
+        .filter((s) => s.ai)
+        .reduce((best, s) => (s.ai!.speedScale > best.ai!.speedScale ? s : best))
       strongest.damage = SABOTAGE.rivalStartDamage
     }
 
-    for (const car of this.cars) {
-      if (!car.ai) continue
-      let best = 0
-      let bestD = Infinity
-      this.centerline.forEach((p, i) => {
-        const d = Math.hypot(p.x - car.state.x, p.y - car.state.y)
-        if (d < bestD) {
-          bestD = d
-          best = i
-        }
-      })
-      car.ai.lineIdx = best
+    return setups
+  }
+
+  private buildCarViews() {
+    for (const car of this.sim.cars) {
+      const info = this.carInfo.get(car.id)!
+      const view = this.makeCarView(info.textureKey, info.color, car.isPlayer)
+      this.carViews.set(car.id, view)
+      this.syncCarVisuals(car, view)
+    }
+  }
+
+  private makeCarView(textureKey: string, color: number, isPlayer: boolean): CarView {
+    const shadow = this.add
+      .image(0, 0, textureKey)
+      .setScale(CAR_SCALE)
+      .setTintFill(0x000000)
+      .setAlpha(0.3)
+      .setDepth(4)
+    const sprite = this.add.image(0, 0, textureKey).setScale(CAR_SCALE).setDepth(5)
+    const exhaust = this.add.particles(0, 0, 'smoke', {
+      speed: { min: 15, max: 50 },
+      scale: { start: 0.22, end: 0.55 },
+      alpha: { start: 0.25, end: 0 },
+      lifespan: 550,
+      angle: { min: 0, max: 360 },
+      tint: 0x8a8f98,
+      frequency: 100,
+    })
+    exhaust.setDepth(4.5)
+    const damageSmoke = this.add.particles(0, 0, 'smoke', {
+      speed: { min: 8, max: 30 },
+      scale: { start: 0.4, end: 0.9 },
+      alpha: { start: 0.4, end: 0 },
+      lifespan: 900,
+      angle: { min: 0, max: 360 },
+      tint: 0x23232a,
+      frequency: -1, // off until damaged
+    })
+    damageSmoke.setDepth(6.5)
+
+    const turboFlame = this.add.particles(0, 0, 'spark', {
+      speed: { min: 40, max: 120 },
+      scale: { start: 0.5, end: 0 },
+      alpha: { start: 0.7, end: 0 },
+      lifespan: 220,
+      angle: { min: 0, max: 360 },
+      tint: 0x66ccff,
+      blendMode: Phaser.BlendModes.ADD,
+      frequency: 18,
+      emitting: false,
+    })
+    turboFlame.setDepth(4.6)
+
+    // the flame itself: a cone off the tailpipe with a heat glow around it
+    const flameCone = this.add
+      .image(0, 0, 'flame-cone')
+      .setOrigin(1, 0.5)
+      .setTint(TURBO_FX.flameTint)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setDepth(4.55)
+      .setVisible(false)
+    const turboGlow = this.add
+      .image(0, 0, 'glow-soft')
+      .setScale(0.9)
+      .setTint(TURBO_FX.glowTint)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setDepth(4.5)
+      .setVisible(false)
+
+    // livery pool: halos out from under the body so each chassis — and each
+    // same-chassis rival, keyed off its own `color` — reads as its own colour.
+    const liveryGlow = this.add
+      .image(0, 0, 'glow-soft')
+      .setTint(color)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setDepth(4.3)
+
+    const headlights = [0, 1].map(() =>
+      this.add
+        .image(0, 0, 'glow-soft')
+        .setScale(1.5, 0.85)
+        .setTint(0xfff2c0)
+        .setAlpha(0.13)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setDepth(3.4),
+    )
+    const taillights = [0, 1].map(() =>
+      this.add
+        .image(0, 0, 'glow-soft')
+        .setScale(0.22)
+        .setTint(0xff3322)
+        .setAlpha(0.25)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setDepth(5.5),
+    )
+
+    if (isPlayer && this.hasOverTurbo) {
+      // the volatile mix burns red and angry
+      turboFlame.setParticleTint(TURBO_FX.overchargeFlameTint)
+      flameCone.setTint(TURBO_FX.overchargeFlameTint)
+      turboGlow.setTint(TURBO_FX.overchargeGlowTint)
+    }
+
+    return {
+      sprite,
+      shadow,
+      exhaust,
+      damageSmoke,
+      turboFlame,
+      flameCone,
+      turboGlow,
+      liveryGlow,
+      headlights,
+      taillights,
+      fireGlow: null,
     }
   }
 
@@ -1359,153 +1013,34 @@ export class RaceScene extends Phaser.Scene {
     return 1
   }
 
-  private computeAiInput(car: CarUnit): CarInput {
-    const ai = car.ai!
-    const line = this.racingLine
-    const n = line.length
-
-    let bestD = Infinity
-    let bestIdx = ai.lineIdx
-    for (let step = 0; step < 30; step++) {
-      const i = (ai.lineIdx + step) % n
-      const p = line[i]
-      const d = Math.hypot(p.x - car.state.x, p.y - car.state.y)
-      if (d < bestD) {
-        bestD = d
-        bestIdx = i
-      }
-    }
-    ai.lineIdx = bestIdx
-
-    // Steering chases a point a fixed distance ahead — pushing it further out
-    // just makes the car cut the corner into the inside barrier.
-    const target = line[(bestIdx + ai.lookAheadSamples) % n]
-    // Braking is the part that must see further the faster we travel. Measured
-    // on the racing line, which straightens the corner the centerline exaggerates.
-    const spec = this.effectiveSpec(car, false)
-    const brakeHorizon = lookAheadFor(ai.lookAheadSamples * 2, forwardSpeed(car.state), spec.topSpeed)
-    const curvatureAhead = Math.min(1, turnAmount(line, bestIdx, brakeHorizon) / 1.1)
-
-    let avoid: Vec2 | null = null
-    let avoidD = AVOID_RANGE
-    const fx = Math.cos(car.state.heading)
-    const fy = Math.sin(car.state.heading)
-    for (const other of this.cars) {
-      if (other === car) continue
-      const dx = other.state.x - car.state.x
-      const dy = other.state.y - car.state.y
-      const d = Math.hypot(dx, dy)
-      if (d < avoidD && dx * fx + dy * fy > d * 0.3) {
-        avoidD = d
-        avoid = { x: other.state.x, y: other.state.y }
-      }
-    }
-    // an armed mine on the line is worth more of a swerve than a car is
-    const mine = this.nearestArmedMineAhead(car, fx, fy)
-    if (mine) avoid = mine
-
-    return aiDrive(car.state, { target, curvatureAhead, avoid }, spec, ai.tuning)
-  }
-
-  /** The nearest mine ahead that would actually go off under this car, or null. */
-  private nearestArmedMineAhead(car: CarUnit, fx: number, fy: number): Vec2 | null {
-    const now = this.time.now
-    let best: Vec2 | null = null
-    let bestD = AI_MINES.dropRange
-    for (const mine of this.mines) {
-      if (!mineIsLive(mine, car.id, now, MINES)) continue
-      const dx = mine.x - car.state.x
-      const dy = mine.y - car.state.y
-      const d = Math.hypot(dx, dy)
-      if (d < bestD && dx * fx + dy * fy > d * 0.6) {
-        bestD = d
-        best = { x: mine.x, y: mine.y }
-      }
-    }
-    return best
-  }
-
-  private effectiveSpec(car: CarUnit, turboActive: boolean) {
-    let spec = car.isPlayer ? this.playerSpec : car.ai!.spec
-    // rank pace and the rubber band are rival-only, even when the debug
-    // autopilot has given the player an ai profile to drive with
-    if (car.ai && !car.isPlayer) {
-      const playerScore = this.progressScore(this.player)
-      const aiScore = this.progressScore(car)
-      // talented drivers lean on the rubber band less
-      const band = Phaser.Math.Clamp(
-        1 + car.ai.rubberBandGain * (playerScore - aiScore),
-        RUBBER_BAND.min,
-        RUBBER_BAND.max,
-      )
-      // raw pace comes from ladder rank (set at grid build), banded here
-      const scale = car.ai.speedScale * band
-      spec = { ...spec, topSpeed: spec.topSpeed * scale, accel: spec.accel * scale }
-    }
-    if (turboActive) {
-      // the black market's fuel mix hits far harder than a stock turbo
-      const boost = car.isPlayer && this.hasOverTurbo ? OVERCHARGED_TURBO : TURBO
-      spec = { ...spec, topSpeed: spec.topSpeed * boost.topSpeedScale, accel: spec.accel * boost.accelScale }
-    }
-    return spec
-  }
-
-  private progressScore(car: CarUnit): number {
-    const gate = this.gates[nextGateIndex(car.progress)]
-    const dist = Math.hypot(gate.center.x - car.state.x, gate.center.y - car.state.y)
-    return car.progress.gatesPassed + Math.max(0, 1 - dist / this.gateSpacing)
-  }
-
   // ---------------------------------------------------------------- race flow
-
-  private checkGateCrossing(car: CarUnit, now: number) {
-    const gate = this.gates[nextGateIndex(car.progress)]
-    if (!segmentsIntersect(car.prevPos, { x: car.state.x, y: car.state.y }, gate.a, gate.b)) return
-
-    const result = applyGateCrossing(car.progress, nextGateIndex(car.progress))
-    car.progress = result.progress
-
-    if (result.armed) car.lapStartAt = now
-    if (result.lapCompleted) {
-      car.lapTimes.push(now - car.lapStartAt)
-      car.lapStartAt = now
-    }
-    if (result.finished && car.finishedAt === null) {
-      car.finishedAt = now
-      if (car.isPlayer) {
-        this.phase = 'finished'
-        this.time.delayedCall(1400, () => this.transitionToResults(now, false))
-      }
-    }
-  }
 
   /** Called only by the pause overlay after the player confirms the destructive action. */
   public abandonRace() {
     if (this.resultCommitted) return
-    this.phase = 'finished'
-    this.transitionToResults(this.time.now, false, true)
+    this.sim.phase = 'finished'
+    this.transitionToResults(this.sim.simTimeMs, false, true)
   }
 
   public resumeRaceAudio() {
-    if (this.phase === 'racing') audioBus.engineStart()
+    if (this.sim.phase === 'racing') audioBus.engineStart()
   }
 
   private transitionToResults(now: number, playerWrecked: boolean, abandoned = false) {
     if (this.resultCommitted) return
     this.resultCommitted = true
-    this.updatePlacements()
-    const standings = this.placementOrder.map((id) => {
-      const car = this.cars.find((c) => c.id === id)!
+    const standings = this.sim.placementOrder.map((id) => {
+      const car = this.sim.cars.find((c) => c.id === id)!
       return {
-        name: car.name,
+        name: this.carInfo.get(car.id)!.name,
         isPlayer: car.isPlayer,
-        timeMs: car.finishedAt !== null ? car.finishedAt - this.raceStartAt : null,
+        timeMs: car.finishedAt !== null ? car.finishedAt - this.sim.raceStartAt : null,
         wrecked: car.wrecked,
         dnf: car.isPlayer && abandoned,
       }
     })
-    const player = this.player
-    const playerPosition = this.placementOrder.indexOf('player') + 1
+    const player = this.sim.cars[0]
+    const playerPosition = this.sim.placementOrder.indexOf('player') + 1
     const won = playerPosition === 1 && !playerWrecked && !abandoned
     const reward = this.isDuel || abandoned ? { cash: 0, points: 0 } : rewardFor(this.track.tier, playerPosition, playerWrecked)
 
@@ -1530,8 +1065,8 @@ export class RaceScene extends Phaser.Scene {
 
       // rivals from this race earn ladder points by placement, then the two
       // skipped tiers run in the background
-      const rivalPlacements = this.placementOrder
-        .map((id, i) => ({ id, placement: i + 1, wrecked: this.cars.find((c) => c.id === id)!.wrecked }))
+      const rivalPlacements = this.sim.placementOrder
+        .map((id, i) => ({ id, placement: i + 1, wrecked: this.sim.cars.find((c) => c.id === id)!.wrecked }))
         .filter((r) => r.id !== 'player')
       let ladder = applyRaceLadderResults(this.career.ladder, this.track.tier, rivalPlacements)
       ladder = simulateRound(ladder, this.track.tier, this.rivalIds, this.random)
@@ -1543,7 +1078,7 @@ export class RaceScene extends Phaser.Scene {
       this.career = updateTrackRecord(this.career, {
         trackId: this.track.id,
         bestLapMs: player.lapTimes.length ? Math.min(...player.lapTimes) : null,
-        raceTimeMs: player.finishedAt === null ? null : player.finishedAt - this.raceStartAt,
+        raceTimeMs: player.finishedAt === null ? null : player.finishedAt - this.sim.raceStartAt,
         finish: player.finishedAt === null || playerWrecked ? null : playerPosition,
         won,
       })
@@ -1577,7 +1112,7 @@ export class RaceScene extends Phaser.Scene {
       trackName: this.track.name,
       driverName: this.career.profile.driverName,
       laps: this.track.laps,
-      totalMs: (player.finishedAt ?? now) - this.raceStartAt,
+      totalMs: (player.finishedAt ?? now) - this.sim.raceStartAt,
       bestLapMs: player.lapTimes.length > 0 ? Math.min(...player.lapTimes) : null,
       lapTimes: player.lapTimes,
       standings,
@@ -1596,10 +1131,6 @@ export class RaceScene extends Phaser.Scene {
     this.scene.start('Results', results)
   }
 
-  private updatePlacements() {
-    this.placementOrder = racePlacements(this.cars, this.gates)
-  }
-
   private startCountdown() {
     const cx = this.scale.width / 2
     this.lightsGfx = this.add.graphics()
@@ -1610,52 +1141,47 @@ export class RaceScene extends Phaser.Scene {
     })
     this.hudContainer.add([this.lightsGfx, this.countdownText])
 
-    const drawLights = (lit: number, green: boolean) => {
-      this.lightsGfx.clear()
-      for (let i = 0; i < 3; i++) {
-        const x = cx - 90 + i * 90
-        this.lightsGfx.fillStyle(0x0c0c12, 0.9)
-        this.lightsGfx.fillCircle(x, 140, 34)
-        this.lightsGfx.fillStyle(i < lit ? (green ? 0x3fd07f : 0xd23c2f) : 0x2a2a33, 1)
-        this.lightsGfx.fillCircle(x, 140, 24)
-      }
-    }
-
-    drawLights(1, false)
+    // static "3" — the beats (and their beeps) arrive as sim events
+    this.drawLights(1, false)
     this.countdownText.setText('3')
+  }
+
+  private drawLights(lit: number, green: boolean) {
+    const cx = this.scale.width / 2
+    this.lightsGfx.clear()
+    for (let i = 0; i < 3; i++) {
+      const x = cx - 90 + i * 90
+      this.lightsGfx.fillStyle(0x0c0c12, 0.9)
+      this.lightsGfx.fillCircle(x, 140, 34)
+      this.lightsGfx.fillStyle(i < lit ? (green ? 0x3fd07f : 0xd23c2f) : 0x2a2a33, 1)
+      this.lightsGfx.fillCircle(x, 140, 24)
+    }
+  }
+
+  private drawCountdown(count: 3 | 2 | 1) {
+    this.drawLights(4 - count, false)
+    this.countdownText.setText(String(count))
     audioBus.countdownBeep(false)
-    this.time.delayedCall(1000, () => {
-      drawLights(2, false)
-      this.countdownText.setText('2')
-      audioBus.countdownBeep(false)
-    })
-    this.time.delayedCall(2000, () => {
-      drawLights(3, false)
-      this.countdownText.setText('1')
-      audioBus.countdownBeep(false)
-    })
-    this.time.delayedCall(3000, () => {
-      drawLights(3, true)
-      this.countdownText.setText('GO!')
-      audioBus.countdownBeep(true)
-      audioBus.engineStart()
-      this.phase = 'racing'
-      this.raceStartAt = this.time.now
-      for (const car of this.cars) car.lapStartAt = this.time.now
-      this.tweens.add({
-        targets: [this.lightsGfx, this.countdownText],
-        alpha: 0,
-        delay: 700,
-        duration: 400,
-        onComplete: () => {
-          this.lightsGfx.destroy()
-          this.countdownText.destroy()
-        },
-      })
+  }
+
+  private onRaceStarted() {
+    this.drawLights(3, true)
+    this.countdownText.setText('GO!')
+    audioBus.countdownBeep(true)
+    audioBus.engineStart()
+    this.tweens.add({
+      targets: [this.lightsGfx, this.countdownText],
+      alpha: 0,
+      delay: 700,
+      duration: 400,
+      onComplete: () => {
+        this.lightsGfx.destroy()
+        this.countdownText.destroy()
+      },
     })
   }
 
-  // ---------------------------------------------------------------- physics glue
+  // ---------------------------------------------------------------- input glue
 
   private readPlayerInput(): CarInput {
     return {
@@ -1664,155 +1190,6 @@ export class RaceScene extends Phaser.Scene {
       steer: (this.inputManager.down('steerRight') ? 1 : 0) - (this.inputManager.down('steerLeft') ? 1 : 0),
       handbrake: this.inputManager.down('handbrake'),
     }
-  }
-
-  private applyOffTrackDrag(car: CarUnit, dt: number) {
-    const dist = distanceToClosedPolyline({ x: car.state.x, y: car.state.y }, this.centerline)
-    if (dist > this.track.width / 2) {
-      const decay = Math.exp(-OFF_TRACK_DRAG * dt)
-      car.state.vx *= decay
-      car.state.vy *= decay
-    }
-  }
-
-  /**
-   * The safety net. Nothing should be able to strand a car any more, but a car
-   * with no way out is an unrecoverable race, so we put it back on the line.
-   */
-  private updateStuckRescue(car: CarUnit, dt: number) {
-    if (this.phase !== 'racing' || car.wrecked || car.finishedAt !== null || isAirborne(car.state)) {
-      car.stuckMs = 0
-      return
-    }
-    const sample = {
-      speed: speed(car.state),
-      offCenter: distanceToClosedPolyline({ x: car.state.x, y: car.state.y }, this.centerline),
-      halfWidth: this.track.width / 2,
-    }
-    car.stuckMs = updateStuckMs(car.stuckMs, sample, dt * 1000, RESCUE)
-    if (!needsRescue(car.stuckMs, RESCUE)) return
-
-    car.stuckMs = 0
-    const gate = this.gates[nextGateIndex(car.progress) % this.gates.length]
-    const pose = rescuePose(gate.a, gate.b, gate.tangent)
-    car.state = { ...car.state, ...pose, ...GROUNDED, vx: 0, vy: 0 }
-    car.prevPos = { x: pose.x, y: pose.y }
-    this.syncCarVisuals(car)
-    if (car.isPlayer) this.cameraFlash(160, 40, 40, 50)
-  }
-
-  private resolveBarrierCollisions(car: CarUnit) {
-    const s = car.state
-    const minDist = CAR_RADIUS + TIRE_RADIUS
-    for (const b of this.barriers) {
-      const dx = s.x - b.x
-      const dy = s.y - b.y
-      if (Math.abs(dx) > minDist || Math.abs(dy) > minDist) continue
-      const dist = Math.hypot(dx, dy)
-      if (dist > 0 && dist < minDist) {
-        const nx = dx / dist
-        const ny = dy / dist
-        s.x = b.x + nx * minDist
-        s.y = b.y + ny * minDist
-        const vn = s.vx * nx + s.vy * ny
-        if (vn < 0) {
-          s.vx -= 1.5 * vn * nx
-          s.vy -= 1.5 * vn * ny
-          s.vx *= 0.8
-          s.vy *= 0.8
-          const impact = Math.abs(vn)
-          // bouncing off the wall mid-flight is the mine's doing, not a crash
-          if (impact > WALL_DAMAGE.threshold && !isAirborne(s)) {
-            this.damageCar(car, impactDamage(impact, WALL_DAMAGE), null)
-          }
-          if (car.isPlayer && impact > 160) {
-            this.shake(90, Math.min(0.006, impact / 60000))
-          }
-        }
-      }
-    }
-  }
-
-  private resolveCarCollisions() {
-    const minDist = CAR_BODY_RADIUS * 2
-    for (let i = 0; i < this.cars.length; i++) {
-      for (let j = i + 1; j < this.cars.length; j++) {
-        const carA = this.cars[i]
-        const carB = this.cars[j]
-        const a = carA.state
-        const b = carB.state
-        // a launched car passes over the top of the pack
-        if (isAirborne(a) || isAirborne(b)) continue
-        const dx = b.x - a.x
-        const dy = b.y - a.y
-        const dist = Math.hypot(dx, dy)
-        if (dist === 0 || dist >= minDist) continue
-
-        const nx = dx / dist
-        const ny = dy / dist
-        const push = (minDist - dist) / 2
-        a.x -= nx * push
-        a.y -= ny * push
-        b.x += nx * push
-        b.y += ny * push
-
-        // mass-weighted impulse + spin kick from the pure collision model
-        const response = collideCars(
-          { x: a.x, y: a.y, vx: a.vx, vy: a.vy, mass: carA.mass },
-          { x: b.x, y: b.y, vx: b.vx, vy: b.vy, mass: carB.mass },
-        )
-        if (response) {
-          const rel = response.impact
-          a.vx += response.a.dvx
-          a.vy += response.a.dvy
-          b.vx += response.b.dvx
-          b.vy += response.b.dvy
-          // glancing hits twist the cars — only on real impacts, not pack rubbing
-          if (rel > 120) {
-            a.heading += response.a.spin
-            b.heading += response.b.spin
-          }
-
-          const contactX = a.x + dx / 2
-          const contactY = a.y + dy / 2
-
-          if (rel > RAM_DAMAGE.threshold && !carA.wrecked && !carB.wrecked) {
-            const dmg = impactDamage(rel, RAM_DAMAGE)
-            // black-market ram plating: the player's side of the exchange
-            // hits harder and hurts less for one race
-            const plated = this.hasPlating && (carA.isPlayer || carB.isPlayer)
-            const scaleFor = (car: CarUnit) =>
-              !plated ? 1 : car.isPlayer ? RAM_PLATING.takeScale : RAM_PLATING.dealScale
-            this.damageCar(carA, dmg * scaleFor(carA), carB)
-            this.damageCar(carB, dmg * scaleFor(carB), carA)
-            // metal on metal: sparks scale with how hard they met
-            this.hitSparks.explode(Math.round(6 + Math.min(18, rel / 40)), contactX, contactY)
-            this.flashCar(carA)
-            this.flashCar(carB)
-          }
-          if ((carA.isPlayer || carB.isPlayer) && rel > 180) {
-            this.shake(70 + Math.min(140, rel / 6), Math.min(IMPACT_FX.crashMaxShake, rel / 45000))
-          }
-          // a real crunch stops the world for a moment
-          if (rel > IMPACT_FX.crashSlowMoImpact && (carA.isPlayer || carB.isPlayer)) {
-            this.crashLurch(contactX, contactY)
-          }
-        }
-      }
-    }
-  }
-
-  /** Time dilation + a white kiss of light on a heavy impact. */
-  private crashLurch(x: number, y: number) {
-    this.slowMoUntil = this.time.now + IMPACT_FX.crashSlowMoMs
-    const flash = this.add
-      .image(x, y, 'spark')
-      .setScale(3)
-      .setDepth(7)
-      .setBlendMode(Phaser.BlendModes.ADD)
-    this.cameras.cameras[1]?.ignore(flash)
-    this.tweens.add({ targets: flash, alpha: 0, scale: 1, duration: 180, onComplete: () => flash.destroy() })
-    this.flashScreenEdge(0xffffff, 0.28)
   }
 
   // ---------------------------------------------------------------- world & visuals
@@ -1869,7 +1246,7 @@ export class RaceScene extends Phaser.Scene {
     this.scorchStamp = this.add.image(0, 0, 'scorch').setVisible(false)
 
     for (const side of [1, -1]) {
-      const wallLine = offsetClosedPolyline(this.centerline, side * (shoulderHalf + TIRE_RADIUS))
+      const wallLine = offsetClosedPolyline(this.centerline, side * (shoulderHalf + 24))
       for (const p of spacedPointsAlong(wallLine, 54)) {
         this.barriers.push(p)
         this.add.image(p.x, p.y, 'tire-wall').setDepth(3)
@@ -2090,12 +1467,12 @@ export class RaceScene extends Phaser.Scene {
     })
   }
 
-  private syncCarVisuals(car: CarUnit) {
-    car.sprite.setPosition(car.state.x, car.state.y).setRotation(car.state.heading)
-    car.shadow.setRotation(car.state.heading)
+  private syncCarVisuals(car: CarSim, view: CarView) {
+    view.sprite.setPosition(car.state.x, car.state.y).setRotation(car.state.heading)
+    view.shadow.setRotation(car.state.heading)
 
     // livery pool follows the body, oval along its length; a wrecked hulk loses its colour
-    car.liveryGlow
+    view.liveryGlow
       .setPosition(car.state.x, car.state.y)
       .setRotation(car.state.heading)
       .setScale(CAR_SCALE * 1.7, CAR_SCALE * 1.1)
@@ -2105,54 +1482,56 @@ export class RaceScene extends Phaser.Scene {
     if (z > 0) {
       // height reads as scale-up over a shadow that falls away and softens
       const lift = z / IMPACT_FX.liftPerScale
-      car.sprite.setScale(CAR_SCALE * (1 + lift)).setDepth(5.6)
-      car.shadow
+      view.sprite.setScale(CAR_SCALE * (1 + lift)).setDepth(5.6)
+      view.shadow
         .setPosition(car.state.x + 6 + z * IMPACT_FX.shadowThrowX, car.state.y + 8 + z * IMPACT_FX.shadowThrowY)
         .setScale(CAR_SCALE * (1 - lift * 0.22))
         .setAlpha(Math.max(0.12, 0.34 - lift * 0.18))
     } else {
-      car.sprite.setDepth(5)
-      car.shadow.setPosition(car.state.x + 6, car.state.y + 8).setScale(CAR_SCALE).setAlpha(car.wrecked ? 0.2 : 0.3)
+      view.sprite.setDepth(5)
+      view.shadow.setPosition(car.state.x + 6, car.state.y + 8).setScale(CAR_SCALE).setAlpha(car.wrecked ? 0.2 : 0.3)
     }
   }
 
-  private updateCarEffects(car: CarUnit, input: CarInput, turboActive: boolean) {
+  private updateCarEffects(car: CarSim, view: CarView) {
+    const input = car.lastInput
+    const turboActive = car.lastTurboActive
     const cos = Math.cos(car.state.heading)
     const sin = Math.sin(car.state.heading)
     const airborne = isAirborne(car.state)
-    car.exhaust.setPosition(car.state.x - 42 * cos, car.state.y - 42 * sin)
-    car.exhaust.frequency = car.wrecked || airborne ? 999999 : turboActive ? 15 : input.throttle > 0 ? 40 : 120
+    view.exhaust.setPosition(car.state.x - 42 * cos, car.state.y - 42 * sin)
+    view.exhaust.frequency = car.wrecked || airborne ? 999999 : turboActive ? 15 : input.throttle > 0 ? 40 : 120
 
-    car.turboFlame.setPosition(car.state.x - 46 * cos, car.state.y - 46 * sin)
-    car.turboFlame.emitting = turboActive && !car.wrecked
+    view.turboFlame.setPosition(car.state.x - 46 * cos, car.state.y - 46 * sin)
+    view.turboFlame.emitting = turboActive && !car.wrecked
 
     // flame cone off the tailpipe, breathing so it never looks like a decal
     const boosting = turboActive && !car.wrecked
-    car.flameCone.setVisible(boosting)
-    car.turboGlow.setVisible(boosting)
+    view.flameCone.setVisible(boosting)
+    view.turboGlow.setVisible(boosting)
     if (boosting) {
       const flicker = 0.85 + this.random() * 0.3
       const overcharged = car.isPlayer && this.hasOverTurbo
-      car.flameCone
+      view.flameCone
         .setPosition(car.state.x - 40 * cos, car.state.y - 40 * sin)
         .setRotation(car.state.heading)
         .setScale((overcharged ? 1.35 : 1) * flicker, (overcharged ? 1.2 : 1) * flicker)
         .setAlpha(0.55 + 0.35 * this.random())
-      car.turboGlow
+      view.turboGlow
         .setPosition(car.state.x - 52 * cos, car.state.y - 52 * sin)
         .setScale((overcharged ? 1.15 : 0.85) * flicker)
         .setAlpha(0.3 + 0.15 * this.random())
     }
 
     // headlight throw + taillights with brake flare
-    car.headlights.forEach((light, i) => {
+    view.headlights.forEach((light, i) => {
       const side = i === 0 ? -14 : 14
       light
         .setPosition(car.state.x + 95 * cos - side * sin, car.state.y + 95 * sin + side * cos)
         .setRotation(car.state.heading)
         .setVisible(!car.wrecked)
     })
-    car.taillights.forEach((light, i) => {
+    view.taillights.forEach((light, i) => {
       const side = i === 0 ? -13 : 13
       const braking = input.brake > 0
       light
@@ -2163,16 +1542,16 @@ export class RaceScene extends Phaser.Scene {
     })
 
     // burning wreck flicker
-    if (car.wrecked && car.fireGlow) {
-      car.fireGlow
+    if (car.wrecked && view.fireGlow) {
+      view.fireGlow
         .setPosition(car.state.x + (this.random() - 0.5) * 8, car.state.y + (this.random() - 0.5) * 8)
         .setAlpha(0.18 + this.random() * 0.22)
         .setScale(0.45 + this.random() * 0.18)
     }
 
-    car.damageSmoke.setPosition(car.state.x + 10 * cos, car.state.y + 10 * sin)
+    view.damageSmoke.setPosition(car.state.x + 10 * cos, car.state.y + 10 * sin)
     if (!car.wrecked) {
-      car.damageSmoke.frequency = car.damage > 80 ? 45 : car.damage > 50 ? 110 : -1
+      view.damageSmoke.frequency = car.damage > 80 ? 45 : car.damage > 50 ? 110 : -1
     }
 
     const skidding =
@@ -2195,9 +1574,10 @@ export class RaceScene extends Phaser.Scene {
   }
 
   private updateCamera(now: number) {
+    const player = this.sim.cars[0]
     const cam = this.cameras.main
-    const speedRatio = Math.min(1, speed(this.player.state) / this.playerSpec.topSpeed)
-    const boosting = this.playerTurboActive && !this.player.wrecked
+    const speedRatio = Math.min(1, speed(player.state) / this.playerSpec.topSpeed)
+    const boosting = player.lastTurboActive && !player.wrecked
     const overcharged = this.hasOverTurbo
 
     // boost pulls the camera back and shakes the frame
@@ -2205,8 +1585,8 @@ export class RaceScene extends Phaser.Scene {
     cam.setZoom(Phaser.Math.Linear(cam.zoom, targetZoom, 0.04))
 
     // look-ahead: shift the camera toward where the car is going
-    this.lookAheadX = Phaser.Math.Linear(this.lookAheadX, this.player.state.vx * 0.22, 0.05)
-    this.lookAheadY = Phaser.Math.Linear(this.lookAheadY, this.player.state.vy * 0.22, 0.05)
+    this.lookAheadX = Phaser.Math.Linear(this.lookAheadX, player.state.vx * 0.22, 0.05)
+    this.lookAheadY = Phaser.Math.Linear(this.lookAheadY, player.state.vy * 0.22, 0.05)
     let jitterX = 0
     let jitterY = 0
     if (boosting) {
@@ -2217,10 +1597,10 @@ export class RaceScene extends Phaser.Scene {
     cam.setFollowOffset(-this.lookAheadX + jitterX, -this.lookAheadY + jitterY)
     this.updateSpeedStreaks(boosting, speedRatio, overcharged)
 
-    audioBus.setEngine(speedRatio, this.playerTurboActive)
+    audioBus.setEngine(speedRatio, player.lastTurboActive)
 
     // booby-trap disorientation: the camera swims for a couple of seconds
-    if (now < this.trapUntil) {
+    if (now < this.sim.trapUntil) {
       this.camRotation = Math.sin(now * 0.008) * 0.07
     } else if (this.camRotation !== 0) {
       this.camRotation = Phaser.Math.Linear(this.camRotation, 0, 0.12)
@@ -2255,7 +1635,7 @@ export class RaceScene extends Phaser.Scene {
   private setupCameras() {
     const cam = this.cameras.main
     cam.setBounds(0, 0, this.track.world.w, this.track.world.h)
-    cam.startFollow(this.player.sprite, true, 0.08, 0.08)
+    cam.startFollow(this.carViews.get('player')!.sprite, true, 0.08, 0.08)
     cam.setZoom(1.05)
     if (this.game.renderer.type === Phaser.WEBGL) {
       cam.postFX.addVignette(0.5, 0.5, 1.0, 0.18)
@@ -2269,7 +1649,7 @@ export class RaceScene extends Phaser.Scene {
   private setupInput() {
     this.inputManager = new InputManager(this)
     const onKey = (event: KeyboardEvent) => {
-      if (this.inputManager.matches('pause', event.code) && this.phase !== 'finished' && !this.scene.isPaused()) {
+      if (this.inputManager.matches('pause', event.code) && this.sim.phase !== 'finished' && !this.scene.isPaused()) {
         this.openPause()
       } else if (this.inputManager.matches('mute', event.code)) {
         this.settings.muted = !this.settings.muted
@@ -2281,7 +1661,7 @@ export class RaceScene extends Phaser.Scene {
 
     if (isTouchDevice()) {
       this.touchControls = new TouchControls(this, this.hudContainer, this.inputManager, () => {
-        if (this.phase !== 'finished' && !this.scene.isPaused()) this.openPause()
+        if (this.sim.phase !== 'finished' && !this.scene.isPaused()) this.openPause()
       })
     }
 
@@ -2297,13 +1677,13 @@ export class RaceScene extends Phaser.Scene {
   private openPause() {
     audioBus.engineStop()
     this.inputManager.reset()
-    const position = this.placementOrder.indexOf('player') + 1
+    const position = this.sim.placementOrder.indexOf('player') + 1
     this.scene.launch('RacePause', {
       trackName: this.track.name,
-      lap: currentLap(this.player.progress),
+      lap: currentLap(this.sim.cars[0].progress),
       laps: this.track.laps,
       position,
-      weaponsFree: this.career.profile.weaponsEnabled && this.time.now > this.raceStartAt + WEAPONS_FREE_DELAY_MS,
+      weaponsFree: this.env.weaponsEnabled && this.sim.simTimeMs > this.sim.raceStartAt + WEAPONS_FREE_DELAY_MS,
     })
     this.scene.pause()
   }
@@ -2431,11 +1811,11 @@ export class RaceScene extends Phaser.Scene {
   }
 
   private updateHud(now: number) {
-    const player = this.player
+    const player = this.sim.cars[0]
     this.speedText.setText(`${Math.round(speed(player.state) * MPH_PER_PX)} MPH`)
     this.cashText.setText(`$${player.cash}`)
     this.lapText.setText(`LAP ${currentLap(player.progress)}/${this.track.laps}`)
-    if (this.phase !== 'countdown') this.timeText.setText(formatTime(now - this.raceStartAt))
+    if (this.sim.phase !== 'countdown') this.timeText.setText(formatTime(now - this.sim.raceStartAt))
     if (player.lapTimes.length > 0) {
       this.bestText.setText(`BEST ${formatTime(Math.min(...player.lapTimes))}`)
     }
@@ -2472,24 +1852,44 @@ export class RaceScene extends Phaser.Scene {
     this.hudStatusValues[2].setText(`${Math.round(player.turbo * 100)}%`).setColor(hex(this.hasOverTurbo ? C.warn : C.turbo))
     this.hudStatusValues[3].setText(weapons ? `${player.mines} / ${MINES.count}` : 'DISABLED').setColor(hex(weapons ? C.danger : C.textDisabled))
 
-    const playerPos = this.placementOrder.indexOf('player') + 1
+    const playerPos = this.sim.placementOrder.indexOf('player') + 1
     if (playerPos > 0) this.positionText.setText(player.wrecked ? 'OUT' : ordinal(playerPos))
 
-    this.placementOrder.forEach((id, i) => {
-      const car = this.cars.find((c) => c.id === id)!
+    this.sim.placementOrder.forEach((id, i) => {
+      const car = this.sim.cars.find((c) => c.id === id)!
+      const info = this.carInfo.get(id)!
       const row = this.standingsTexts[i]
       const status = car.wrecked ? ' ✗' : car.finishedAt !== null ? ' *' : ` ${Math.round(car.damage)}%`
-      row.setText(`${i + 1}. ${car.name}${status}`)
-      row.setColor(hex(car.isPlayer ? C.oxide : car.color))
+      row.setText(`${i + 1}. ${info.name}${status}`)
+      row.setColor(hex(car.isPlayer ? C.oxide : info.color))
     })
 
+    // rivals-done grace countdown toast — owned by the HUD, driven by sim state
+    if (this.sim.allRivalsDoneAt !== null) {
+      if (!this.rivalsDoneToast) {
+        this.rivalsDoneToast = text(this, this.scale.width / 2, 320, '', {
+          size: 'subtitle',
+          color: C.danger,
+          stroke: C.shadow,
+          strokeThickness: STROKE.heading,
+          origin: [0.5, 0.5],
+        })
+        // must join the container, or the HUD camera never draws it (D-011)
+        this.hudContainer.add(this.rivalsDoneToast)
+      }
+      const remaining = Math.ceil((this.sim.allRivalsDoneAt + 5000 - now) / 1000)
+      this.rivalsDoneToast.setVisible(true).setText(`ALL RIVALS DONE — RACE ENDS IN ${remaining}`)
+    } else {
+      this.rivalsDoneToast?.setVisible(false)
+    }
+
     if (this.debugText) {
-      const cars = this.cars.map(
+      const cars = this.sim.cars.map(
         (c) => `${c.id.slice(0, 4)} g${c.progress.gatesPassed} d${Math.round(c.damage)}${c.wrecked ? ' WRECK' : ''}`,
       )
       this.debugText.setText(
         [
-          `phase ${this.phase}  bullets ${this.bullets.length}  ammo ${player.ammo}  turbo ${player.turbo.toFixed(2)}`,
+          `phase ${this.sim.phase}  bullets ${this.sim.bullets.length}  ammo ${player.ammo}  turbo ${player.turbo.toFixed(2)}`,
           cars.join('  '),
         ].join('\n'),
       )
@@ -2506,10 +1906,10 @@ export class RaceScene extends Phaser.Scene {
       this.autoInput = input
     }
     w.__getRace = () => ({
-      phase: this.phase,
+      phase: this.sim.phase,
       duel: this.isDuel,
-      placements: [...this.placementOrder],
-      cars: this.cars.map((c) => ({
+      placements: [...this.sim.placementOrder],
+      cars: this.sim.cars.map((c) => ({
         id: c.id,
         gatesPassed: c.progress.gatesPassed,
         lap: currentLap(c.progress),
@@ -2527,35 +1927,41 @@ export class RaceScene extends Phaser.Scene {
         cash: c.cash,
         wrecked: c.wrecked,
         mines: c.mines,
-        chassis: c.chassisId,
-        talent: c.ai?.talent.grade,
+        chassis: this.carInfo.get(c.id)?.chassisId,
+        talent: c.ai?.grade,
         pace: c.ai ? Math.round(c.ai.speedScale * 1000) / 1000 : undefined,
       })),
       track: this.track.id,
-      turboActive: this.playerTurboActive,
-      bullets: this.bullets.length,
-      minesOnTrack: this.mines.length,
-      pickupsActive: this.pickups.filter((p) => p.respawnAt === null).length,
+      turboActive: this.sim.cars[0].lastTurboActive,
+      bullets: this.sim.bullets.length,
+      minesOnTrack: this.sim.mines.length,
+      pickupsActive: this.sim.pickups.filter((p) => p.respawnAt === null).length,
     })
     w.__setCarState = (s: Partial<CarState>) => {
-      this.player.state = { ...this.player.state, ...s }
-      this.player.prevPos = { x: this.player.state.x, y: this.player.state.y }
+      this.sim.cars[0].state = { ...this.sim.cars[0].state, ...s }
+      this.sim.cars[0].prevPos = { x: this.sim.cars[0].state.x, y: this.sim.cars[0].state.y }
     }
     w.__applyDamage = (id: string, amount: number) => {
-      const car = this.cars.find((c) => c.id === id)
-      if (car) this.damageCar(car, amount, null)
+      const car = this.sim.cars.find((c) => c.id === id)
+      if (car) {
+        const events: SimEvent[] = []
+        damageCarSim(this.sim, car, amount, events)
+        this.handleSimEvents(events)
+      }
     }
     w.__launch = (id: string, vz = MINE_BLAST.launchVz) => {
-      const car = this.cars.find((c) => c.id === id)
+      const car = this.sim.cars.find((c) => c.id === id)
       if (car) car.state = launchCar(car.state, vz)
     }
     w.__dropMineAt = (x: number, y: number) => {
-      const car = this.player
+      const car = this.sim.cars[0]
       const saved = { ...car.state }
       car.state = { ...car.state, x: x + 55 * Math.cos(car.state.heading), y: y + 55 * Math.sin(car.state.heading) }
       car.mines++
-      car.lastMineAt = 0
-      this.tryDropMine(car, this.time.now)
+      car.lastMineAt = -1e9
+      const events: SimEvent[] = []
+      tryDropMineSim(this.sim, car, events)
+      this.handleSimEvents(events)
       car.state = saved
     }
     // Drive the game loop by hand. A hidden browser tab throttles rAF to a
@@ -2574,13 +1980,13 @@ export class RaceScene extends Phaser.Scene {
      * The player keeps its own chassis, gets no rank pace and no rubber band.
      */
     w.__autoPilot = (cfg: { fire?: boolean; turbo?: boolean; mines?: boolean; style?: number; talent?: 1 | 2 | 3 | 4 } | null) => {
-      const player = this.player
+      const player = this.sim.cars[0]
       if (!cfg) {
-        this.autoPilot = null
+        this.sim.autoPilot = null
         player.ai = null
         return
       }
-      this.autoPilot = { fire: cfg.fire ?? false, turbo: cfg.turbo ?? true, mines: cfg.mines ?? false }
+      this.sim.autoPilot = { fire: cfg.fire ?? false, turbo: cfg.turbo ?? true, mines: cfg.mines ?? false }
       const style = DRIVING_STYLES[cfg.style ?? 1]
       const talent = TALENT_PROFILES[cfg.talent ?? 3]
       let lineIdx = 0
@@ -2598,7 +2004,7 @@ export class RaceScene extends Phaser.Scene {
         speedScale: 1,
         tuning: talentTuning(style.tuning, talent),
         spec: this.playerSpec,
-        talent,
+        grade: talent.grade,
         aimSpread: GUN.playerSpread,
         mineCooldownMs: AI_MINES.cooldownMs,
         rubberBandGain: 0,
@@ -2606,23 +2012,23 @@ export class RaceScene extends Phaser.Scene {
     }
     /** Final order + who survived, readable the moment the race ends. */
     w.__raceSummary = () => ({
-      phase: this.phase,
-      over: this.phase === 'finished' || this.player.finishedAt !== null || this.player.wrecked,
-      placements: [...this.placementOrder],
-      playerPosition: this.placementOrder.indexOf('player') + 1,
-      playerWrecked: this.player.wrecked,
-      playerDamage: Math.round(this.player.damage),
-      playerLap: currentLap(this.player.progress),
-      elapsedMs: Math.round(this.time.now - this.raceStartAt),
-      cars: this.cars.map((c) => ({
+      phase: this.sim.phase,
+      over: this.sim.phase === 'finished' || this.sim.cars[0].finishedAt !== null || this.sim.cars[0].wrecked,
+      placements: [...this.sim.placementOrder],
+      playerPosition: this.sim.placementOrder.indexOf('player') + 1,
+      playerWrecked: this.sim.cars[0].wrecked,
+      playerDamage: Math.round(this.sim.cars[0].damage),
+      playerLap: currentLap(this.sim.cars[0].progress),
+      elapsedMs: Math.round(this.sim.simTimeMs - this.sim.raceStartAt),
+      cars: this.sim.cars.map((c) => ({
         id: c.id,
         wrecked: c.wrecked,
         damage: Math.round(c.damage),
         gates: c.progress.gatesPassed,
-        talent: c.ai?.talent.grade,
+        talent: c.ai?.grade,
       })),
     })
-    w.__pickups = () => this.pickups.map((p) => ({ type: p.type, x: p.x, y: p.y, active: p.respawnAt === null }))
+    w.__pickups = () => this.sim.pickups.map((p) => ({ type: p.type, x: p.x, y: p.y, active: p.respawnAt === null }))
     w.__gates = this.gates
     w.__restartRace = () => this.scene.restart()
     /** Restart the race on any venue, optionally against a chosen grid. */
