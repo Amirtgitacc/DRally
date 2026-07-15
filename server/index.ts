@@ -8,6 +8,13 @@ import { RoomStore, isValidCarId, isValidTrackId } from './rooms'
 const PORT = Number(process.env.PORT ?? 8080)
 const store = new RoomStore()
 
+process.on('uncaughtException', (err) => {
+  console.error('[mp] uncaught exception (continuing):', err)
+})
+process.on('unhandledRejection', (err) => {
+  console.error('[mp] unhandled rejection (continuing):', err)
+})
+
 interface Conn {
   ws: WebSocket
   playerId: string | null
@@ -87,6 +94,7 @@ wss.on('connection', (ws) => {
         const name = sanitizeName(msg.name)
         if (!name) return fail(ws, 'BAD_NAME', 'Enter a driver name')
         if (!isValidCarId(msg.carId)) return fail(ws, 'BAD_CAR', 'Unknown car')
+        if (typeof msg.code !== 'string') return fail(ws, 'BAD_CODE', 'Invalid room code')
         const normalizedCode = normalizeRoomCode(msg.code)
         if (!isValidRoomCode(normalizedCode)) return fail(ws, 'BAD_CODE', 'Invalid room code')
         const id = store.newPlayerId()
