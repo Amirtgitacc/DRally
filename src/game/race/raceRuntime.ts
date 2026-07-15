@@ -1,4 +1,5 @@
-export type RacePhase = 'countdown' | 'racing' | 'finished'
+import type { RacePhase } from '../../core/race/raceState'
+export type { RacePhase } from '../../core/race/raceState'
 
 export interface RaceRuntime {
   phase: RacePhase

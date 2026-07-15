@@ -106,7 +106,7 @@ import { loadSettings, saveSettings, type SettingsState } from '../state/setting
 import { createSeededRandom, randomSeed } from '../../core/race/random'
 import type { RacePhase } from '../race/raceRuntime'
 import { simulationDeltaSeconds } from '../race/raceSimulation'
-import { racePlacements } from '../race/placementSystem'
+import { racePlacements } from '../../core/race/placementSystem'
 import { stepTurboMeter } from '../../core/vehicle/turboMeter'
 
 const CAR_SCALE = 0.44

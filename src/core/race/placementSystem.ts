@@ -1,6 +1,6 @@
-import { computePlacements, type PlacementEntry } from '../../core/race/placement'
-import { nextGateIndex, type RaceProgress } from '../../core/race/progress'
-import type { Gate } from '../../core/track/geometry'
+import { computePlacements, type PlacementEntry } from './placement'
+import { nextGateIndex, type RaceProgress } from './progress'
+import type { Gate } from '../track/geometry'
 
 export interface PlacementCar {
   id: string
