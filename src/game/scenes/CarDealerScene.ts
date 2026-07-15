@@ -6,7 +6,8 @@ import { buyCar, carNetPrice, tradeInValue } from '../../core/economy/garage'
 import type { CareerState } from '../../core/progression/career'
 import { loadCareer, saveCareer } from '../state/saveGame'
 import { C, hex } from '../ui/theme'
-import { backButton, fitImage, heading, hintBar, metalGrain, subheading, text } from '../ui/widgets'
+import { backButton, fitImage, heading, hintBar, subheading, text } from '../ui/widgets'
+import { sceneBackground } from '../ui/sceneBackground'
 
 const MPH_PER_PX = 0.14
 
@@ -53,7 +54,7 @@ export class CarDealerScene extends Phaser.Scene {
 
     const cx = GAME_WIDTH / 2
 
-    metalGrain(this, GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0.05).setDepth(-100)
+    sceneBackground(this, 'bg-car-dealer', { veil: 0.32 })
 
     heading(this, cx, 70, 'CAR DEALER')
     subheading(this, cx, 132, 'Every chassis on the ladder. The marker on each bar is the car you own.')

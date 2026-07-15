@@ -6,6 +6,7 @@ import { talentOf } from '../../data/drivers'
 import { loadCareer } from '../state/saveGame'
 import { C, STROKE } from '../ui/theme'
 import { backButton, flavor, heading, modal, prompt, subheading, text } from '../ui/widgets'
+import { sceneBackground } from '../ui/sceneBackground'
 
 export class RankingScene extends Phaser.Scene {
   constructor() {
@@ -18,6 +19,7 @@ export class RankingScene extends Phaser.Scene {
     const rank = playerRank(career.ladder, career.points)
     const cx = GAME_WIDTH / 2
 
+    sceneBackground(this, 'bg-records', { veil: 0.4 })
     modal(this, cx, GAME_HEIGHT * 0.55, 1100, 760)
 
     heading(this, cx, GAME_HEIGHT * 0.12, 'CHAMPIONSHIP LADDER')

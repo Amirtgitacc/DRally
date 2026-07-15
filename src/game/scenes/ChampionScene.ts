@@ -4,7 +4,8 @@ import { BOSS } from '../../data/boss'
 import { carById } from '../../data/cars'
 import { loadCareer } from '../state/saveGame'
 import { C } from '../ui/theme'
-import { fitImage, flavor, heading, metalGrain, prompt, text } from '../ui/widgets'
+import { fitImage, flavor, heading, prompt, text } from '../ui/widgets'
+import { sceneBackground } from '../ui/sceneBackground'
 
 /** The career's ending — shown once, after beating the champion 1-v-1. */
 export class ChampionScene extends Phaser.Scene {
@@ -16,7 +17,7 @@ export class ChampionScene extends Phaser.Scene {
     const career = loadCareer()
     const cx = GAME_WIDTH / 2
 
-    metalGrain(this, GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0.05).setDepth(-100)
+    sceneBackground(this, 'bg-champion', { veil: 0.3 })
 
     // slow golden ember drift behind everything
     this.add.particles(0, 0, 'spark', {

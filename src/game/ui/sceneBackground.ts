@@ -1,0 +1,82 @@
+/**
+ * The one way scenes wear their authored 1920×1080 background art.
+ *
+ * `sceneBackground()` covers the internal canvas with an image at a fixed
+ * negative depth, drops an optional near-black readability veil just above it,
+ * and hands back handles so a scene can swap the texture (venues browse tracks)
+ * or nudge the veil. It is deliberately presentational — no navigation, no game
+ * state. Works under both the WebGL and Canvas renderers (plain Image + Rect).
+ */
+
+import Phaser from 'phaser'
+import { GAME_HEIGHT, GAME_WIDTH } from '../../config/game'
+import { C } from './theme'
+
+/** Backgrounds sit well below the -100 that procedural grain used to occupy. */
+export const SCENE_BG_DEPTH = -1000
+
+export interface SceneBackgroundOptions {
+  /** 0..1 near-black veil opacity above the art, below UI. Default 0.35; 0 skips it. */
+  veil?: number
+  /** Base depth for the image; the veil sits one above it. Default SCENE_BG_DEPTH. */
+  depth?: number
+}
+
+export interface SceneBackgroundHandle {
+  image: Phaser.GameObjects.Image
+  veil: Phaser.GameObjects.Rectangle | null
+  /** Swap the art without recreating objects — venues/preview browse in place. */
+  setTexture(key: string): void
+  setVeil(alpha: number): void
+}
+
+/** Scale the image to cover the whole canvas without stretching (uniform scale). */
+function cover(image: Phaser.GameObjects.Image) {
+  const scale = Math.max(GAME_WIDTH / image.width, GAME_HEIGHT / image.height)
+  image.setScale(scale).setPosition(GAME_WIDTH / 2, GAME_HEIGHT / 2)
+}
+
+export function sceneBackground(
+  scene: Phaser.Scene,
+  textureKey: string,
+  options: SceneBackgroundOptions = {},
+): SceneBackgroundHandle {
+  const { veil: veilAlpha = 0.35, depth = SCENE_BG_DEPTH } = options
+
+  const image = scene.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2, textureKey).setDepth(depth)
+  cover(image)
+
+  let veil: Phaser.GameObjects.Rectangle | null = null
+  if (veilAlpha > 0) {
+    veil = scene.add
+      .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, C.shadow, veilAlpha)
+      .setDepth(depth + 1)
+  }
+
+  return {
+    image,
+    veil,
+    setTexture(key: string) {
+      image.setTexture(key)
+      cover(image)
+    },
+    setVeil(alpha: number) {
+      veil?.setAlpha(alpha)
+    },
+  }
+}
+
+/** Track id → venue background key. Uses ids, never display names. */
+const VENUE_BG_BY_TRACK: Record<string, string> = {
+  'dust-bowl': 'bg-venue-dust-bowl-run',
+  'boneyard-loop': 'bg-venue-boneyard-loop',
+  'test-circuit': 'bg-venue-rust-belt-circuit',
+  'cinder-yards': 'bg-venue-cinder-yards',
+  'serpents-throat': 'bg-venue-serpents-throat',
+  'widows-coil': 'bg-venue-widows-coil',
+}
+
+/** Venue art for a track id, falling back to race-ops if an unknown id arrives. */
+export function venueBackgroundKey(trackId: string): string {
+  return VENUE_BG_BY_TRACK[trackId] ?? 'bg-race-ops'
+}

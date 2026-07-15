@@ -15,7 +15,6 @@ import {
   hazardBar,
   heading,
   hintBar,
-  metalGrain,
   panel,
   pips,
   rule,
@@ -26,6 +25,7 @@ import {
   type TileHandle,
   wireTiles,
 } from '../ui/widgets'
+import { sceneBackground } from '../ui/sceneBackground'
 
 const MPH_PER_PX = 0.14
 
@@ -135,7 +135,7 @@ export class GarageScene extends Phaser.Scene {
 
   create() {
     this.career = loadCareer()
-    metalGrain(this, GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0.05).setDepth(-100)
+    sceneBackground(this, 'bg-garage', { veil: 0.32 })
     this.selected = 0
     this.tiles = []
     this.fittedTexts = []

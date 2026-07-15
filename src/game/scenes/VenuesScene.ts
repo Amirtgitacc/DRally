@@ -6,6 +6,7 @@ import { catmullRomClosed, closedPolylineLength } from '../../core/track/geometr
 import { drawTrackMap } from '../ui/trackMap'
 import { C, TIER_COLOR, TIER_LABEL, hex } from '../ui/theme'
 import { backButton, flavor, heading, text } from '../ui/widgets'
+import { sceneBackground, venueBackgroundKey, type SceneBackgroundHandle } from '../ui/sceneBackground'
 import { loadCareer } from '../state/saveGame'
 import { formatTime } from '../../core/race/format'
 
@@ -19,6 +20,7 @@ export class VenuesScene extends Phaser.Scene {
   private nameText!: Phaser.GameObjects.Text
   private metaText!: Phaser.GameObjects.Text
   private dotsGfx!: Phaser.GameObjects.Graphics
+  private bg!: SceneBackgroundHandle
 
   constructor() {
     super('Venues')
@@ -28,6 +30,7 @@ export class VenuesScene extends Phaser.Scene {
     this.idx = 0
     const cx = GAME_WIDTH / 2
 
+    this.bg = sceneBackground(this, venueBackgroundKey(ALL_TRACKS[this.idx].id), { veil: 0.42 })
     heading(this, cx, 70, 'VENUES')
 
     this.mapGfx = this.add.graphics()
@@ -85,6 +88,7 @@ export class VenuesScene extends Phaser.Scene {
     const record = loadCareer().records[track.id]
     const color = TIER_COLOR[track.tier]
 
+    this.bg.setTexture(venueBackgroundKey(track.id))
     this.mapGfx.clear()
     drawTrackMap(this.mapGfx, track, {
       cx: GAME_WIDTH / 2,

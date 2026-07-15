@@ -3,7 +3,8 @@ import { GAME_HEIGHT, GAME_WIDTH } from '../../config/game'
 import { formatTime } from '../../core/race/format'
 import { ordinal } from '../../core/race/placement'
 import { C } from '../ui/theme'
-import { heading, metalGrain, modal, prompt, text } from '../ui/widgets'
+import { heading, modal, prompt, text } from '../ui/widgets'
+import { sceneBackground } from '../ui/sceneBackground'
 
 export interface StandingEntry {
   name: string
@@ -46,8 +47,8 @@ export class ResultsScene extends Phaser.Scene {
   create(results: RaceResults) {
     const cx = GAME_WIDTH / 2
 
+    sceneBackground(this, 'bg-race-ops', { veil: 0.4 })
     modal(this, cx, GAME_HEIGHT * 0.55, 860, 620)
-    metalGrain(this, GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0.05).setDepth(-100)
 
     const title = results.abandoned
       ? 'RACE ABANDONED — DNF'

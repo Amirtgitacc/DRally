@@ -17,3 +17,6 @@ Screenshot*.png
 # Anchored to repo root so it does NOT match public/assets/cars/ (shipped WebP).
 /cars/
 /.playwright-cli/
+
+# Screen-background source masters — keep local, ship the derived webp
+public/assets/screens/generated/

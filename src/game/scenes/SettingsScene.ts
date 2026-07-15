@@ -6,6 +6,7 @@ import { audioBus } from '../systems/audio'
 import { loadSettings, resetSettings, saveSettings, type SettingsState } from '../state/settings'
 import { C } from '../ui/theme'
 import { flavor, heading, text, tile, type TileHandle, wireTiles } from '../ui/widgets'
+import { sceneBackground } from '../ui/sceneBackground'
 
 type SettingRow = { id: 'master' | 'music' | 'effects' | 'mute' | 'shake' | 'flash' | 'turbo' | 'fire' | 'reset' | 'back'; label: string }
 const SETTINGS: SettingRow[] = [
@@ -26,6 +27,7 @@ export class SettingsScene extends Phaser.Scene {
 
   create() {
     this.settings = loadSettings(); this.selected = 0; this.rebinding = null; this.settingTiles = []; this.bindTiles = []
+    sceneBackground(this, 'bg-race-ops', { veil: 0.62 })
     heading(this, GAME_WIDTH / 2, 65, 'SETTINGS / CONTROLS')
     text(this, 450, 130, 'GAME', { size: 'subtitle', color: C.oxide })
     SETTINGS.forEach((row, i) => this.settingTiles.push(tile(this, 450, 190 + i * 78, 700, 58, row.label, { size: 'bodySm' })))

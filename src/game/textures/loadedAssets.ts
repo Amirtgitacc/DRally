@@ -62,6 +62,26 @@ export const LOADED_HERO_TEXTURES: LoadedTexture[] = [
   { key: 'car-hero-sovereign', url: 'assets/cars/hero/boss.webp' },
 ]
 
+// Screen backgrounds: authored 1920×1080 WebP art, one per menu/flow screen plus
+// one per venue. Presentational only — loaded once at boot and drawn behind scene
+// content by `sceneBackground()`. No race/vehicle keys touched.
+export const LOADED_SCREEN_TEXTURES: LoadedTexture[] = [
+  { key: 'bg-menu', url: 'assets/screens/menu-peykan-background.webp' },
+  { key: 'bg-profile', url: 'assets/screens/profile-registration-bay.webp' },
+  { key: 'bg-garage', url: 'assets/screens/garage-workshop.webp' },
+  { key: 'bg-black-market', url: 'assets/screens/black-market-cage.webp' },
+  { key: 'bg-car-dealer', url: 'assets/screens/underground-car-dealer.webp' },
+  { key: 'bg-race-ops', url: 'assets/screens/race-operations.webp' },
+  { key: 'bg-records', url: 'assets/screens/records-hall.webp' },
+  { key: 'bg-champion', url: 'assets/screens/champion-victory-stage.webp' },
+  { key: 'bg-venue-dust-bowl-run', url: 'assets/screens/venue-dust-bowl-run.webp' },
+  { key: 'bg-venue-boneyard-loop', url: 'assets/screens/venue-boneyard-loop.webp' },
+  { key: 'bg-venue-rust-belt-circuit', url: 'assets/screens/venue-rust-belt-circuit.webp' },
+  { key: 'bg-venue-cinder-yards', url: 'assets/screens/venue-cinder-yards.webp' },
+  { key: 'bg-venue-serpents-throat', url: 'assets/screens/venue-serpents-throat.webp' },
+  { key: 'bg-venue-widows-coil', url: 'assets/screens/venue-widows-coil.webp' },
+]
+
 // Project B: real top-down roof-view race sprites, one per chassis + the boss.
 // Replace the procedural car-<id> keys the race used to paint at boot.
 export const LOADED_TOP_TEXTURES: LoadedTexture[] = [

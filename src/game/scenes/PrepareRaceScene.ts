@@ -9,6 +9,7 @@ import { getCurrentOffer } from '../state/roundState'
 import { loadCareer } from '../state/saveGame'
 import { C, TIER_COLOR, TIER_LABEL } from '../ui/theme'
 import { backButton, flavor, heading, panel, text } from '../ui/widgets'
+import { sceneBackground } from '../ui/sceneBackground'
 
 export class PrepareRaceScene extends Phaser.Scene {
   constructor() { super('PrepareRace') }
@@ -16,6 +17,7 @@ export class PrepareRaceScene extends Phaser.Scene {
     const offer = getCurrentOffer()
     if (!offer) { this.scene.start('SignUp'); return }
     const career = loadCareer(); const track = offer.track; const color = TIER_COLOR[track.tier]
+    sceneBackground(this, 'bg-race-ops', { veil: 0.4 })
     heading(this, GAME_WIDTH / 2, 68, 'RACE BRIEFING')
     panel(this, 570, 500, 900, 760, { stroke: color, strokeAlpha: 0.9 })
     const map = this.add.graphics(); drawTrackMap(map, track, { cx: 570, cy: 465, width: 760, height: 520, color, lineWidth: 7, showStart: true, showSurface: true })

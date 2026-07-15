@@ -6,6 +6,7 @@ import { STARTER_CAR } from '../../data/cars'
 import { hasSavedCareer, resetCareer } from '../state/saveGame'
 import { C, hex } from '../ui/theme'
 import { backButton, flavor, fitImage, heading, panel, text, tile, type TileHandle, wireTiles } from '../ui/widgets'
+import { sceneBackground } from '../ui/sceneBackground'
 import { openNativeText } from '../ui/nativeInput'
 import { isTouchDevice } from '../input/device'
 
@@ -41,6 +42,7 @@ export class NewCareerScene extends Phaser.Scene {
     this.selected = 0
     this.rows = []
     const cx = GAME_WIDTH / 2
+    sceneBackground(this, 'bg-profile', { veil: 0.34 })
     heading(this, cx, 75, 'DRIVER PROFILE')
     text(this, cx, 130, 'Build an identity for this career. Settings and controls are kept separately.', {
       size: 'body', color: C.textSecondary, origin: [0.5, 0.5],

@@ -15,6 +15,7 @@ import type { CareerState } from '../../core/progression/career'
 import { loadCareer, saveCareer } from '../state/saveGame'
 import { C } from '../ui/theme'
 import { flavor, heading, hintBar, text, tile, type TileHandle, wireTiles } from '../ui/widgets'
+import { sceneBackground } from '../ui/sceneBackground'
 
 interface Tile {
   id: 'mines' | 'plating' | 'overturbo' | 'sabotage' | 'loan' | 'back'
@@ -59,6 +60,8 @@ export class BlackMarketScene extends Phaser.Scene {
     this.tiles = []
 
     const cx = GAME_WIDTH / 2
+
+    sceneBackground(this, 'bg-black-market', { veil: 0.42 })
 
     heading(this, cx, 80, 'BLACK MARKET', { color: C.danger })
 

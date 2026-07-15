@@ -3,17 +3,19 @@ import { GAME_HEIGHT, GAME_WIDTH } from '../../config/game'
 import { ALL_TRACKS } from '../../data/tracks'
 import { drawTrackMap } from '../ui/trackMap'
 import { C, TIER_COLOR, TIER_LABEL } from '../ui/theme'
-import { backButton, flavor, heading, metalGrain, text } from '../ui/widgets'
+import { backButton, flavor, heading, text } from '../ui/widgets'
+import { sceneBackground, venueBackgroundKey, type SceneBackgroundHandle } from '../ui/sceneBackground'
 
 export class PreviewScene extends Phaser.Scene {
   private index = 0
   private gfx!: Phaser.GameObjects.Graphics
   private title!: Phaser.GameObjects.Text
   private meta!: Phaser.GameObjects.Text
+  private bg!: SceneBackgroundHandle
   constructor() { super('Preview') }
   create() {
     this.index = 0
-    metalGrain(this, GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0.05).setDepth(-100)
+    this.bg = sceneBackground(this, venueBackgroundKey(ALL_TRACKS[this.index].id), { veil: 0.42 })
     heading(this, GAME_WIDTH / 2, 70, 'NIGHT CIRCUIT PREVIEW')
     this.gfx = this.add.graphics()
     this.title = text(this, GAME_WIDTH / 2, 790, '', { size: 'heading', origin: [0.5, 0.5] })
@@ -30,6 +32,7 @@ export class PreviewScene extends Phaser.Scene {
   }
   private refresh() {
     const track = ALL_TRACKS[this.index]; const color = TIER_COLOR[track.tier]
+    this.bg.setTexture(venueBackgroundKey(track.id))
     this.gfx.clear(); drawTrackMap(this.gfx, track, { cx: GAME_WIDTH / 2, cy: 455, width: 1300, height: 620, color, lineWidth: 8, showStart: true, showSurface: true })
     this.title.setText(track.name).setColor(`#${color.toString(16).padStart(6, '0')}`)
     this.meta.setText(`${TIER_LABEL[track.tier]} TIER · ${track.laps} LAPS · ${this.index + 1}/${ALL_TRACKS.length}`)

@@ -14,6 +14,7 @@ import { loadCareer } from '../state/saveGame'
 import { setCurrentOffer } from '../state/roundState'
 import { C, STROKE, TIER_COLOR, TIER_LABEL } from '../ui/theme'
 import { backButton, fitImage, flavor, heading, panel, subheading, text } from '../ui/widgets'
+import { sceneBackground } from '../ui/sceneBackground'
 import { randomSeed } from '../../core/race/random'
 
 const TIERS: RaceTier[] = ['street', 'pro', 'death']
@@ -32,6 +33,8 @@ export class SignUpScene extends Phaser.Scene {
     const career = loadCareer()
     this.cards = []
     this.selected = 1
+
+    sceneBackground(this, 'bg-race-ops', { veil: 0.4 })
 
     // at rank #1 the ladder has nothing left — the champion calls you out
     if (duelAvailable(playerRank(career.ladder, career.points), career.champion)) {

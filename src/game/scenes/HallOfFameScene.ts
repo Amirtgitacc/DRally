@@ -6,11 +6,13 @@ import { ALL_TRACKS } from '../../data/tracks'
 import { loadCareer } from '../state/saveGame'
 import { C, TIER_COLOR } from '../ui/theme'
 import { backButton, flavor, heading, panel, text } from '../ui/widgets'
+import { sceneBackground } from '../ui/sceneBackground'
 
 export class HallOfFameScene extends Phaser.Scene {
   constructor() { super('HallOfFame') }
   create() {
     const career = loadCareer()
+    sceneBackground(this, 'bg-records', { veil: 0.36 })
     heading(this, GAME_WIDTH / 2, 70, 'HALL OF FAME')
     text(this, GAME_WIDTH / 2, 130, `${career.profile.driverName} · ${career.wins} career wins · ${career.racesRun} starts`, { size: 'body', color: C.textSecondary, origin: [0.5, 0.5] })
     ALL_TRACKS.forEach((track, i) => {
