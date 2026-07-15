@@ -28,7 +28,6 @@ export function createRoom(code: string, host: NewPlayer, trackId: string): Room
 
 export function joinRoom(room: RoomState, player: NewPlayer): RoomResult {
   if (room.players.length >= MAX_PLAYERS) return { ok: false, error: 'ROOM_FULL' }
-  if (room.players.some((p) => p.id === player.id)) return { ok: true, room } // idempotent rejoin
   return {
     ok: true,
     room: {
