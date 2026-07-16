@@ -281,7 +281,7 @@ export class RaceScene extends Phaser.Scene {
 
     const command = this.buildPlayerCommand()
     this.clock.advance(delta, () => {
-      const events = stepRace(this.sim, this.env, command, this.clock.stepMs)
+      const events = stepRace(this.sim, this.env, { player: command }, this.clock.stepMs)
       this.handleSimEvents(events)
       command.dropMine = false // consumed by the first step this frame
       this.mineQueued = false

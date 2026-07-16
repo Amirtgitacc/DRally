@@ -17,7 +17,7 @@ function run(steps: number, seed = 1234) {
   const env = buildTestEnv()
   const state = createRaceState(env, buildTestSetups(), seed)
   const events: SimEvent[] = []
-  for (let i = 0; i < steps; i++) events.push(...stepRace(state, env, command(i), FIXED_STEP_MS))
+  for (let i = 0; i < steps; i++) events.push(...stepRace(state, env, { player: command(i) }, FIXED_STEP_MS))
   return { state, events }
 }
 
@@ -26,7 +26,8 @@ describe('stepRace', () => {
     const env = buildTestEnv()
     const state = createRaceState(env, buildTestSetups(), 1)
     const events: SimEvent[] = []
-    for (let i = 0; i < Math.ceil(3100 / FIXED_STEP_MS); i++) events.push(...stepRace(state, env, IDLE_COMMAND, FIXED_STEP_MS))
+    for (let i = 0; i < Math.ceil(3100 / FIXED_STEP_MS); i++)
+      events.push(...stepRace(state, env, { player: IDLE_COMMAND }, FIXED_STEP_MS))
     expect(events.filter((e) => e.type === 'countdown')).toHaveLength(3)
     expect(events.some((e) => e.type === 'race-started')).toBe(true)
     expect(state.phase).toBe('racing')
@@ -37,9 +38,9 @@ describe('stepRace', () => {
     const env = buildTestEnv()
     const state = createRaceState(env, buildTestSetups(), 1)
     const x0 = state.cars[0].state.x
-    for (let i = 0; i < 60; i++) stepRace(state, env, command(i), FIXED_STEP_MS)
+    for (let i = 0; i < 60; i++) stepRace(state, env, { player: command(i) }, FIXED_STEP_MS)
     expect(state.cars[0].state.x).toBe(x0) // locked
-    for (let i = 0; i < 600; i++) stepRace(state, env, command(i), FIXED_STEP_MS)
+    for (let i = 0; i < 600; i++) stepRace(state, env, { player: command(i) }, FIXED_STEP_MS)
     const moved = Math.hypot(state.cars[0].state.x - x0, state.cars[0].state.y - state.cars[0].prevPos.y)
     expect(moved).toBeGreaterThan(0)
   })
@@ -54,11 +55,11 @@ describe('stepRace', () => {
   it('a JSON snapshot mid-race resumes to an identical future (serialization)', () => {
     const env = buildTestEnv()
     const live = createRaceState(env, buildTestSetups(), 77)
-    for (let i = 0; i < 500; i++) stepRace(live, env, command(i), FIXED_STEP_MS)
+    for (let i = 0; i < 500; i++) stepRace(live, env, { player: command(i) }, FIXED_STEP_MS)
     const resumed = JSON.parse(JSON.stringify(live)) as RaceState
     for (let i = 500; i < 1000; i++) {
-      stepRace(live, env, command(i), FIXED_STEP_MS)
-      stepRace(resumed, env, command(i), FIXED_STEP_MS)
+      stepRace(live, env, { player: command(i) }, FIXED_STEP_MS)
+      stepRace(resumed, env, { player: command(i) }, FIXED_STEP_MS)
     }
     expect(resumed).toEqual(live)
   })
@@ -67,7 +68,8 @@ describe('stepRace', () => {
     const env = buildTestEnv({ weaponsEnabled: false })
     const state = createRaceState(env, buildTestSetups(), 3)
     const events: SimEvent[] = []
-    for (let i = 0; i < 60 * 20; i++) events.push(...stepRace(state, env, { ...command(i), fire: true, dropMine: true }, FIXED_STEP_MS))
+    for (let i = 0; i < 60 * 20; i++)
+      events.push(...stepRace(state, env, { player: { ...command(i), fire: true, dropMine: true } }, FIXED_STEP_MS))
     expect(events.some((e) => e.type === 'gun-fired' || e.type === 'mine-dropped')).toBe(false)
   })
 

@@ -48,7 +48,9 @@ export interface PlayerCommand {
 
 export const IDLE_COMMAND: PlayerCommand = { input: { ...IDLE_INPUT }, fire: false, turbo: false, dropMine: false }
 
-export function stepRace(state: RaceState, env: RaceEnv, command: PlayerCommand, dtMs: number): SimEvent[] {
+export type CommandSet = Record<string, PlayerCommand>
+
+export function stepRace(state: RaceState, env: RaceEnv, commands: CommandSet, dtMs: number): SimEvent[] {
   const events: SimEvent[] = []
   state.simTimeMs += dtMs
   const now = state.simTimeMs
@@ -92,10 +94,11 @@ export function stepRace(state: RaceState, env: RaceEnv, command: PlayerCommand,
               tryDropMine(state, car, events)
             }
           } else {
-            input = command.input
-            wantsFire = command.fire
-            wantsTurbo = command.turbo
-            if (command.dropMine && state.phase === 'racing' && env.weaponsEnabled) {
+            const cmd = commands[car.id] ?? IDLE_COMMAND
+            input = cmd.input
+            wantsFire = cmd.fire
+            wantsTurbo = cmd.turbo
+            if (cmd.dropMine && state.phase === 'racing' && env.weaponsEnabled) {
               tryDropMine(state, car, events)
             }
           }
