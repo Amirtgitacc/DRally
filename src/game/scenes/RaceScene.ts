@@ -131,6 +131,8 @@ export class RaceScene extends Phaser.Scene {
   // the sim owns all race state; the scene only renders it
   private sim!: RaceState
   private env!: RaceEnv
+  /** which sim car this client controls/watches; 'player' in single-player (cars[0]) */
+  private localCarId = 'player'
   private clock = new FixedStepClock()
   private carInfo = new Map<string, { name: string; color: number; textureKey: string; chassisId?: string }>()
   private carViews = new Map<string, CarView>()
@@ -284,6 +286,14 @@ export class RaceScene extends Phaser.Scene {
     this.updateHud(this.sim.simTimeMs)
   }
 
+  private myCar(): CarSim {
+    return this.sim.cars.find((c) => c.id === this.localCarId)!
+  }
+
+  private myView() {
+    return this.carViews.get(this.localCarId)!
+  }
+
   private buildPlayerCommand(): PlayerCommand {
     const drive: DriveOverride = this.autoInput ?? this.readPlayerInput()
     return {
@@ -324,7 +334,7 @@ export class RaceScene extends Phaser.Scene {
           this.onCarsCollidedFx(e)
           break
         case 'wall-hit':
-          if (e.carId === 'player' && e.impact > 160) this.shake(90, Math.min(0.006, e.impact / 60000))
+          if (e.carId === this.localCarId && e.impact > 160) this.shake(90, Math.min(0.006, e.impact / 60000))
           break
         case 'crash-lurch':
           this.crashLurch(e.x, e.y)
@@ -342,7 +352,7 @@ export class RaceScene extends Phaser.Scene {
           this.onPickupRespawned(e.index)
           break
         case 'car-rescued':
-          if (e.carId === 'player') this.cameraFlash(160, 40, 40, 50)
+          if (e.carId === this.localCarId) this.cameraFlash(160, 40, 40, 50)
           break
         case 'lap-completed':
         case 'car-finished':
@@ -378,9 +388,9 @@ export class RaceScene extends Phaser.Scene {
       this.bulletViews.set(target.id, sprite)
     }
 
-    const distToPlayer = e.carId === 'player'
+    const distToPlayer = e.carId === this.localCarId
       ? 0
-      : Math.hypot(e.x - this.sim.cars[0].state.x, e.y - this.sim.cars[0].state.y)
+      : Math.hypot(e.x - this.myCar().state.x, e.y - this.myCar().state.y)
     if (distToPlayer < 900) audioBus.shot(1 - distToPlayer / 1000)
 
     // muzzle flash (audio hook: gunshot)
@@ -396,7 +406,7 @@ export class RaceScene extends Phaser.Scene {
   private onBulletHitFx(e: Extract<SimEvent, { type: 'bullet-hit' }>) {
     this.hitSparks.explode(5, e.x, e.y)
     this.flashCar(e.carId)
-    if (e.carId === 'player') {
+    if (e.carId === this.localCarId) {
       this.shake(60, IMPACT_FX.playerHitShake)
       this.flashScreenEdge(C.danger, IMPACT_FX.playerHitFlashAlpha)
     }
@@ -409,7 +419,7 @@ export class RaceScene extends Phaser.Scene {
       this.flashCar(e.aId)
       this.flashCar(e.bId)
     }
-    if ((e.aId === 'player' || e.bId === 'player') && e.impact > 180) {
+    if ((e.aId === this.localCarId || e.bId === this.localCarId) && e.impact > 180) {
       this.shake(70 + Math.min(140, e.impact / 6), Math.min(IMPACT_FX.crashMaxShake, e.impact / 45000))
     }
   }
@@ -493,8 +503,8 @@ export class RaceScene extends Phaser.Scene {
       ease: 'quad.out',
     })
 
-    const player = this.sim.cars[0]
-    const nearPlayer = e.carId === 'player' || Math.hypot(player.state.x - x, player.state.y - y) < 420
+    const player = this.myCar()
+    const nearPlayer = e.carId === this.localCarId || Math.hypot(player.state.x - x, player.state.y - y) < 420
     if (nearPlayer) {
       this.shake(160, IMPACT_FX.landingShake)
       audioBus.thud()
@@ -535,7 +545,7 @@ export class RaceScene extends Phaser.Scene {
     this.scorchStamp.setPosition(e.x, e.y).setRotation(this.random() * Math.PI)
     this.skidRT.draw(this.scorchStamp)
 
-    const player = this.sim.cars[0]
+    const player = this.myCar()
     if (Math.hypot(player.state.x - e.x, player.state.y - e.y) < 500) {
       this.shake(200, 0.008)
     }
@@ -550,7 +560,7 @@ export class RaceScene extends Phaser.Scene {
   }
 
   private onPickupCollected(e: Extract<SimEvent, { type: 'pickup-collected' }>) {
-    if (e.carId === 'player') {
+    if (e.carId === this.localCarId) {
       audioBus.pickup(e.pickup !== 'trap')
       const toasts: Record<PickupType, [string, number]> = {
         ammo: [`+${PICKUPS.ammoAmount} AMMO`, C.ammo],
@@ -1023,8 +1033,8 @@ export class RaceScene extends Phaser.Scene {
         dnf: car.isPlayer && abandoned,
       }
     })
-    const player = this.sim.cars[0]
-    const playerPosition = this.sim.placementOrder.indexOf('player') + 1
+    const player = this.myCar()
+    const playerPosition = this.sim.placementOrder.indexOf(this.localCarId) + 1
     const won = playerPosition === 1 && !playerWrecked && !abandoned
     const reward = this.isDuel || abandoned ? { cash: 0, points: 0 } : rewardFor(this.track.tier, playerPosition, playerWrecked)
 
@@ -1051,7 +1061,7 @@ export class RaceScene extends Phaser.Scene {
       // skipped tiers run in the background
       const rivalPlacements = this.sim.placementOrder
         .map((id, i) => ({ id, placement: i + 1, wrecked: this.sim.cars.find((c) => c.id === id)!.wrecked }))
-        .filter((r) => r.id !== 'player')
+        .filter((r) => r.id !== this.localCarId)
       let ladder = applyRaceLadderResults(this.career.ladder, this.track.tier, rivalPlacements)
       ladder = simulateRound(ladder, this.track.tier, this.rivalIds, this.random)
       this.career = { ...this.career, ladder }
@@ -1555,7 +1565,7 @@ export class RaceScene extends Phaser.Scene {
   }
 
   private updateCamera(now: number) {
-    const player = this.sim.cars[0]
+    const player = this.myCar()
     const cam = this.cameras.main
     const speedRatio = Math.min(1, speed(player.state) / this.playerSpec.topSpeed)
     const boosting = player.lastTurboActive && !player.wrecked
@@ -1616,7 +1626,7 @@ export class RaceScene extends Phaser.Scene {
   private setupCameras() {
     const cam = this.cameras.main
     cam.setBounds(0, 0, this.track.world.w, this.track.world.h)
-    cam.startFollow(this.carViews.get('player')!.sprite, true, 0.08, 0.08)
+    cam.startFollow(this.myView().sprite, true, 0.08, 0.08)
     cam.setZoom(1.05)
     if (this.game.renderer.type === Phaser.WEBGL) {
       cam.postFX.addVignette(0.5, 0.5, 1.0, 0.18)
@@ -1658,10 +1668,10 @@ export class RaceScene extends Phaser.Scene {
   private openPause() {
     audioBus.engineStop()
     this.inputManager.reset()
-    const position = this.sim.placementOrder.indexOf('player') + 1
+    const position = this.sim.placementOrder.indexOf(this.localCarId) + 1
     this.scene.launch('RacePause', {
       trackName: this.track.name,
-      lap: currentLap(this.sim.cars[0].progress),
+      lap: currentLap(this.myCar().progress),
       laps: this.track.laps,
       position,
       weaponsFree: this.env.weaponsEnabled && this.sim.simTimeMs > this.sim.raceStartAt + WEAPONS_FREE_DELAY_MS,
@@ -1792,7 +1802,7 @@ export class RaceScene extends Phaser.Scene {
   }
 
   private updateHud(now: number) {
-    const player = this.sim.cars[0]
+    const player = this.myCar()
     this.speedText.setText(`${Math.round(speed(player.state) * MPH_PER_PX)} MPH`)
     this.cashText.setText(`$${player.cash}`)
     this.lapText.setText(`LAP ${currentLap(player.progress)}/${this.track.laps}`)
@@ -1833,7 +1843,7 @@ export class RaceScene extends Phaser.Scene {
     this.hudStatusValues[2].setText(`${Math.round(player.turbo * 100)}%`).setColor(hex(this.hasOverTurbo ? C.warn : C.turbo))
     this.hudStatusValues[3].setText(weapons ? `${player.mines} / ${MINES.count}` : 'DISABLED').setColor(hex(weapons ? C.danger : C.textDisabled))
 
-    const playerPos = this.sim.placementOrder.indexOf('player') + 1
+    const playerPos = this.sim.placementOrder.indexOf(this.localCarId) + 1
     if (playerPos > 0) this.positionText.setText(player.wrecked ? 'OUT' : ordinal(playerPos))
 
     this.sim.placementOrder.forEach((id, i) => {
@@ -1913,14 +1923,14 @@ export class RaceScene extends Phaser.Scene {
         pace: c.ai ? Math.round(c.ai.speedScale * 1000) / 1000 : undefined,
       })),
       track: this.track.id,
-      turboActive: this.sim.cars[0].lastTurboActive,
+      turboActive: this.myCar().lastTurboActive,
       bullets: this.sim.bullets.length,
       minesOnTrack: this.sim.mines.length,
       pickupsActive: this.sim.pickups.filter((p) => p.respawnAt === null).length,
     })
     w.__setCarState = (s: Partial<CarState>) => {
-      this.sim.cars[0].state = { ...this.sim.cars[0].state, ...s }
-      this.sim.cars[0].prevPos = { x: this.sim.cars[0].state.x, y: this.sim.cars[0].state.y }
+      this.myCar().state = { ...this.myCar().state, ...s }
+      this.myCar().prevPos = { x: this.myCar().state.x, y: this.myCar().state.y }
     }
     w.__applyDamage = (id: string, amount: number) => {
       const car = this.sim.cars.find((c) => c.id === id)
@@ -1935,7 +1945,7 @@ export class RaceScene extends Phaser.Scene {
       if (car) car.state = launchCar(car.state, vz)
     }
     w.__dropMineAt = (x: number, y: number) => {
-      const car = this.sim.cars[0]
+      const car = this.myCar()
       const saved = { ...car.state }
       car.state = { ...car.state, x: x + 55 * Math.cos(car.state.heading), y: y + 55 * Math.sin(car.state.heading) }
       car.mines++
@@ -1961,7 +1971,7 @@ export class RaceScene extends Phaser.Scene {
      * The player keeps its own chassis, gets no rank pace and no rubber band.
      */
     w.__autoPilot = (cfg: { fire?: boolean; turbo?: boolean; mines?: boolean; style?: number; talent?: 1 | 2 | 3 | 4 } | null) => {
-      const player = this.sim.cars[0]
+      const player = this.myCar()
       if (!cfg) {
         this.sim.autoPilot = null
         player.ai = null
@@ -1994,12 +2004,12 @@ export class RaceScene extends Phaser.Scene {
     /** Final order + who survived, readable the moment the race ends. */
     w.__raceSummary = () => ({
       phase: this.sim.phase,
-      over: this.sim.phase === 'finished' || this.sim.cars[0].finishedAt !== null || this.sim.cars[0].wrecked,
+      over: this.sim.phase === 'finished' || this.myCar().finishedAt !== null || this.myCar().wrecked,
       placements: [...this.sim.placementOrder],
-      playerPosition: this.sim.placementOrder.indexOf('player') + 1,
-      playerWrecked: this.sim.cars[0].wrecked,
-      playerDamage: Math.round(this.sim.cars[0].damage),
-      playerLap: currentLap(this.sim.cars[0].progress),
+      playerPosition: this.sim.placementOrder.indexOf(this.localCarId) + 1,
+      playerWrecked: this.myCar().wrecked,
+      playerDamage: Math.round(this.myCar().damage),
+      playerLap: currentLap(this.myCar().progress),
       elapsedMs: Math.round(this.sim.simTimeMs - this.sim.raceStartAt),
       cars: this.sim.cars.map((c) => ({
         id: c.id,
