@@ -5,7 +5,7 @@ import { ALL_TRACKS, trackById } from '../../data/tracks'
 import { MAX_PLAYERS, type LobbyPlayer, type LobbySnapshot, type ServerMsg } from '../../core/net/protocol'
 import { NetClient } from '../net/netClient'
 import { C, hex } from '../ui/theme'
-import { backButton, heading, hintBar, panel, sectionLabel, text, tile } from '../ui/widgets'
+import { backButton, heading, hintBar, panel, sectionLabel, text, tile, type TileHandle } from '../ui/widgets'
 import { sceneBackground } from '../ui/sceneBackground'
 
 /**
@@ -24,6 +24,7 @@ export class LobbyScene extends Phaser.Scene {
   private trackText!: Phaser.GameObjects.Text
   private statusText!: Phaser.GameObjects.Text
   private hint!: Phaser.GameObjects.Text
+  private startTile!: TileHandle
   private disconnectTimer?: Phaser.Time.TimerEvent
   private onNetMessage!: (msg: ServerMsg) => void
   private onNetClose!: () => void
@@ -67,8 +68,9 @@ export class LobbyScene extends Phaser.Scene {
       size: 'body', color: C.danger, origin: [0.5, 0.5], wordWrapWidth: 1200, align: 'center',
     })
 
-    const startTile = tile(this, cx, 960, 700, 80, 'START — networked race lands in Phase 3', { size: 'action' })
-    startTile.setState(false, false)
+    this.startTile = tile(this, cx, 960, 700, 80, '', { size: 'action' })
+    this.startTile.rect.setInteractive({ useHandCursor: true })
+    this.startTile.rect.on('pointerup', () => this.tryStart())
 
     this.hint = hintBar(this, '')
     backButton(this, () => this.leave())
@@ -111,7 +113,24 @@ export class LobbyScene extends Phaser.Scene {
       (event.code === 'BracketLeft' || event.code === 'BracketRight' || event.code === 'KeyT')
     ) {
       this.cycleTrack(event.code === 'BracketLeft' ? -1 : 1)
+    } else if (event.code === 'Space') {
+      this.tryStart()
     }
+  }
+
+  private canStart(): boolean {
+    return (
+      this.lobby.hostId === this.youId &&
+      this.lobby.players.length >= 2 &&
+      this.lobby.players.every((p) => p.ready)
+    )
+  }
+
+  /** Host-only start trigger (keyboard or pointer). Recomputes eligibility at press time. */
+  private tryStart() {
+    if (this.transitioning) return
+    if (!this.canStart()) return
+    this.net.send({ t: 'start' })
   }
 
   private changeCar(me: LobbyPlayer, delta: number) {
@@ -133,6 +152,23 @@ export class LobbyScene extends Phaser.Scene {
       this.render()
     } else if (msg.t === 'error') {
       this.setStatus(msg.message)
+    } else if (msg.t === 'raceStart') {
+      this.transitioning = true
+      // The race scene owns `net` from here on — detach the lobby's own handlers
+      // first so neither scene reacts to messages/close meant for the other.
+      this.net.offMessage(this.onNetMessage)
+      this.net.offClose(this.onNetClose)
+      this.scene.start('Race', {
+        mode: 'network',
+        net: this.net,
+        raceStart: {
+          seed: msg.seed,
+          trackId: msg.trackId,
+          laps: msg.laps,
+          roster: msg.roster,
+          youId: msg.youId,
+        },
+      })
     }
     // 'joined' is only ever sent once, pre-Lobby — nothing to do with it here.
   }
@@ -185,8 +221,17 @@ export class LobbyScene extends Phaser.Scene {
       row.setColor(hex(isYou ? C.oxide : p.ready ? C.ok : C.textPrimary))
     }
 
+    const canStart = this.canStart()
+    this.startTile.setState(false, canStart)
+    if (isHost) {
+      this.startTile.label.setText(canStart ? 'START RACE' : 'Waiting for all players…')
+    } else {
+      this.startTile.label.setText('Waiting for host…')
+    }
+
     this.hint.setText(
-      `←/→ change car · Enter/R ready${isHost ? ' · [ / ] or T change track' : ''} · Esc leave`,
+      `←/→ change car · Enter/R ready${isHost ? ' · [ / ] or T change track' : ''}` +
+        `${isHost && canStart ? ' · Space to start' : ''} · Esc leave`,
     )
   }
 }
