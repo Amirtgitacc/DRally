@@ -38,6 +38,7 @@ const CAR_RADIUS = 34
 const CAR_BODY_RADIUS = 30
 const TIRE_RADIUS = 24
 const OFF_TRACK_DRAG = 1.4
+const MAX_RACE_MS = 10 * 60 * 1000
 
 export interface PlayerCommand {
   input: CarInput
@@ -165,7 +166,8 @@ export function stepRace(state: RaceState, env: RaceEnv, commands: CommandSet, d
   updateMines(state, env, events)
   updatePickups(state, env, events)
   state.placementOrder = racePlacements(state.cars, env.gates)
-  checkAllRivalsDone(state, events)
+  checkAllRivalsDone(state, env, events)
+  checkAllHumansDone(state, env, events)
   return events
 }
 
@@ -189,7 +191,7 @@ function checkGateCrossing(state: RaceState, env: RaceEnv, car: CarSim, events: 
   if (result.finished && car.finishedAt === null) {
     car.finishedAt = now
     events.push({ type: 'car-finished', carId: car.id })
-    if (car.isPlayer) {
+    if (car.isPlayer && env.raceEndMode === 'single-player') {
       state.phase = 'finished'
       events.push({ type: 'race-over', reason: 'player-finished' })
     }
@@ -330,7 +332,8 @@ function resolveCarCollisions(state: RaceState, env: RaceEnv, events: SimEvent[]
 }
 
 /** If every rival is finished or wrecked, give the player a short grace, then end the race. */
-function checkAllRivalsDone(state: RaceState, events: SimEvent[]): void {
+function checkAllRivalsDone(state: RaceState, env: RaceEnv, events: SimEvent[]): void {
+  if (env.raceEndMode === 'all-humans') return
   const now = state.simTimeMs
   const player = state.cars.find((c) => c.isPlayer)
   if (!player || state.phase !== 'racing' || player.finishedAt !== null || player.wrecked) return
@@ -345,5 +348,24 @@ function checkAllRivalsDone(state: RaceState, events: SimEvent[]): void {
   if (now >= state.allRivalsDoneAt + 5000) {
     state.phase = 'finished'
     events.push({ type: 'race-over', reason: 'rivals-done' })
+  }
+}
+
+/** all-humans mode: end only when every human car is finished or wrecked, plus a short grace,
+ *  with a 10-minute backstop in case of a stalemate. */
+function checkAllHumansDone(state: RaceState, env: RaceEnv, events: SimEvent[]): void {
+  if (env.raceEndMode !== 'all-humans' || state.phase !== 'racing') return
+  const now = state.simTimeMs
+  const humans = state.cars.filter((c) => c.isPlayer)
+  const allDone = humans.length > 0 && humans.every((c) => c.finishedAt !== null || c.wrecked)
+  const timedOut = now >= state.raceStartAt + MAX_RACE_MS
+  if (!allDone && !timedOut) {
+    state.allRivalsDoneAt = null
+    return
+  }
+  if (state.allRivalsDoneAt === null) state.allRivalsDoneAt = now
+  if (timedOut || now >= state.allRivalsDoneAt + 3000) {
+    state.phase = 'finished'
+    events.push({ type: 'race-over', reason: 'all-humans-done' })
   }
 }

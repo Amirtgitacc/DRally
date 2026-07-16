@@ -47,6 +47,7 @@ export function buildRaceEnvFixture(overrides: Partial<RaceEnv> = {}): RaceEnv {
     weaponsEnabled: false,
     hasPlating: false,
     hasOverTurbo: false,
+    raceEndMode: 'single-player',
     ...overrides,
   }
 }

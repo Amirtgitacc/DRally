@@ -70,6 +70,9 @@ export interface RaceEnv {
   weaponsEnabled: boolean
   hasPlating: boolean
   hasOverTurbo: boolean
+  /** 'single-player' (default) ends the race when the sole human finishes;
+   *  'all-humans' ends only when every human car is finished or wrecked. */
+  raceEndMode: 'single-player' | 'all-humans'
 }
 
 export interface RaceState {

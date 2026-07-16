@@ -258,6 +258,7 @@ export class RaceScene extends Phaser.Scene {
       weaponsEnabled: this.career.profile.weaponsEnabled,
       hasPlating: this.hasPlating,
       hasOverTurbo: this.hasOverTurbo,
+      raceEndMode: 'single-player',
     }
     const setups = this.buildCarSetups()
     this.sim = createRaceState(this.env, setups, this.raceSeed)
@@ -370,7 +371,7 @@ export class RaceScene extends Phaser.Scene {
     }
   }
 
-  private onRaceOver(reason: 'player-finished' | 'player-wrecked' | 'rivals-done') {
+  private onRaceOver(reason: 'player-finished' | 'player-wrecked' | 'rivals-done' | 'all-humans-done') {
     if (reason === 'player-finished') this.time.delayedCall(1400, () => this.transitionToResults(this.sim.simTimeMs, false))
     else if (reason === 'player-wrecked') this.time.delayedCall(2200, () => this.transitionToResults(this.sim.simTimeMs, true))
     else this.transitionToResults(this.sim.simTimeMs, false)
