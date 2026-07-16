@@ -1,3 +1,7 @@
+import type { PlayerCommand } from '../race/stepRace'
+import type { SimEvent } from '../race/simEvents'
+import type { RaceSnapshot } from './snapshot'
+
 /** Maximum human players per room. AI fills remaining grid slots at race time (Phase 3). */
 export const MAX_PLAYERS = 4
 
@@ -16,6 +20,26 @@ export interface LobbySnapshot {
   players: LobbyPlayer[]
 }
 
+export interface RaceCarInfo {
+  id: string
+  name: string
+  /** livery tint applied over the shared car texture */
+  color: number
+  /** CAR_CATALOG id → texture key `car-top-${chassisId}` */
+  chassisId: string
+  /** always false in Phase 3 (AI grid fill is deferred) */
+  isAi: boolean
+}
+
+export interface RaceStanding {
+  id: string
+  name: string
+  place: number
+  finishedAt: number | null
+  wrecked: boolean
+  lapTimes: number[]
+}
+
 /** Messages the client sends to the server. */
 export type ClientMsg =
   | { t: 'create'; name: string; carId: string; trackId: string }
@@ -24,6 +48,9 @@ export type ClientMsg =
   | { t: 'setTrack'; trackId: string }
   | { t: 'ready'; ready: boolean }
   | { t: 'leave' }
+  | { t: 'start' }
+  | { t: 'input'; command: PlayerCommand }
+  | { t: 'rematch' }
 
 export type ServerErrorCode =
   | 'ROOM_NOT_FOUND'
@@ -40,3 +67,9 @@ export type ServerMsg =
   | { t: 'joined'; youId: string; lobby: LobbySnapshot }
   | { t: 'lobby'; lobby: LobbySnapshot }
   | { t: 'error'; code: ServerErrorCode; message: string }
+  | { t: 'raceStart'; seed: number; trackId: string; laps: number; roster: RaceCarInfo[]; youId: string }
+  | { t: 'snapshot'; snap: RaceSnapshot; events: SimEvent[] }
+  | { t: 'raceEnd'; standings: RaceStanding[] }
+
+/** Scene-handoff shape consumed by Tasks 9 & 11. */
+export type RaceStartPayload = Omit<Extract<ServerMsg, { t: 'raceStart' }>, 't'>
