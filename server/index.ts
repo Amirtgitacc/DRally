@@ -10,6 +10,7 @@ import { createRaceHost, RaceHost } from './raceHost'
 import { trackById } from '../src/data/tracks'
 import { STARTER_CAR, carById } from '../src/data/cars'
 import { effectiveCarSpec, NO_UPGRADES } from '../src/core/vehicle/carSpec'
+import type { PlayerCommand } from '../src/core/race/stepRace'
 
 const PORT = Number(process.env.PORT ?? 8080)
 const store = new RoomStore()
@@ -70,6 +71,24 @@ function sanitizeName(raw: unknown): string | null {
   if (typeof raw !== 'string') return null
   const name = raw.trim().slice(0, 16)
   return name.length > 0 ? name : null
+}
+
+/** Shape-checks an inbound `input` command before it reaches the sim: a
+ * malformed frame (e.g. `{}`) must never be stored, since `stepRace` reads
+ * `cmd.input.*` unconditionally and would throw on the next tick. */
+function isValidCommand(x: unknown): x is PlayerCommand {
+  if (x === null || typeof x !== 'object') return false
+  const c = x as Record<string, unknown>
+  if (typeof c.fire !== 'boolean' || typeof c.turbo !== 'boolean' || typeof c.dropMine !== 'boolean') return false
+  const input = c.input
+  if (input === null || typeof input !== 'object') return false
+  const i = input as Record<string, unknown>
+  return (
+    typeof i.throttle === 'number' &&
+    typeof i.brake === 'number' &&
+    typeof i.steer === 'number' &&
+    typeof i.handbrake === 'boolean'
+  )
 }
 
 function handleLeave(conn: Conn): void {
@@ -164,6 +183,7 @@ wss.on('connection', (ws) => {
       }
       case 'start': {
         if (!conn.code || !conn.playerId) return
+        if (hosts.has(conn.code)) return fail(ws, 'MALFORMED', 'Race already running')
         const room = store.get(conn.code)
         if (!room) return
         const res = startRace(room, conn.playerId)
@@ -186,6 +206,7 @@ wss.on('connection', (ws) => {
           (standings) => {
             broadcastRaw(conn.code!, { t: 'raceEnd', standings })
             store.apply(conn.code!, (r) => endRace(r))
+            hosts.delete(conn.code!)
           },
         )
         return
@@ -193,7 +214,7 @@ wss.on('connection', (ws) => {
       case 'input': {
         if (!conn.code || !conn.playerId) return
         const host = hosts.get(conn.code)
-        if (host && msg.command && typeof msg.command === 'object') host.setInput(conn.playerId, msg.command)
+        if (host && isValidCommand(msg.command)) host.setInput(conn.playerId, msg.command)
         return
       }
       case 'rematch': {

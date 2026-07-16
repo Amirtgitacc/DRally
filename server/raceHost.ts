@@ -34,11 +34,20 @@ export class RaceHost {
 
   start(onTick: (msg: Extract<ServerMsg, { t: 'snapshot' }>) => void, onEnd: (standings: RaceStanding[]) => void): void {
     this.timer = setInterval(() => {
-      const events = stepRace(this.state, this.env, this.commands, TICK_MS)
-      onTick({ t: 'snapshot', snap: toRaceSnapshot(this.state), events })
-      if (this.state.phase === 'finished') {
+      // Defense in depth: a throwing tick must never spin forever. The
+      // Phase-2 process-level uncaughtException handler keeps the server
+      // alive but does NOT clear this interval, so without this try/catch
+      // a bad frame re-throws at TICK_MS cadence indefinitely.
+      try {
+        const events = stepRace(this.state, this.env, this.commands, TICK_MS)
+        onTick({ t: 'snapshot', snap: toRaceSnapshot(this.state), events })
+        if (this.state.phase === 'finished') {
+          this.stop()
+          onEnd(computeStandings(this.state, this.roster))
+        }
+      } catch (err) {
+        console.error('[mp] race host tick error, stopping host:', err)
         this.stop()
-        onEnd(computeStandings(this.state, this.roster))
       }
     }, TICK_MS)
   }
