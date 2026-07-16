@@ -1,12 +1,24 @@
 // server/index.ts
 import { WebSocketServer, type WebSocket } from 'ws'
 import { type ClientMsg, type ServerErrorCode, type ServerMsg } from '../src/core/net/protocol'
-import { leaveRoom, setCar, setReady, setTrack, toSnapshot } from '../src/core/net/roomState'
+import { endRace, leaveRoom, rematch, setCar, setReady, setTrack, startRace, toSnapshot } from '../src/core/net/roomState'
 import { isValidRoomCode, normalizeRoomCode } from '../src/core/net/roomCode'
 import { RoomStore, isValidCarId, isValidTrackId } from './rooms'
+import { buildRaceEnv } from '../src/core/race/raceEnvBuilder'
+import { buildNetworkRace } from './raceSetup'
+import { createRaceHost, RaceHost } from './raceHost'
+import { trackById } from '../src/data/tracks'
+import { STARTER_CAR, carById } from '../src/data/cars'
+import { effectiveCarSpec, NO_UPGRADES } from '../src/core/vehicle/carSpec'
 
 const PORT = Number(process.env.PORT ?? 8080)
 const store = new RoomStore()
+const hosts = new Map<string, RaceHost>()
+
+// Every human car this phase drives with this one stock spec (no career/save
+// data on the server); car choice still varies mass via CarSetup. See
+// docs/DECISIONS.md multiplayer notes for the deferred per-car handling follow-up.
+const DEFAULT_PLAYER_SPEC = effectiveCarSpec(carById(STARTER_CAR.id), NO_UPGRADES)
 
 process.on('uncaughtException', (err) => {
   console.error('[mp] uncaught exception (continuing):', err)
@@ -42,6 +54,18 @@ function broadcast(code: string): void {
   }
 }
 
+/** Send an arbitrary ServerMsg to every connected member of a room. */
+function broadcastRaw(code: string, msg: ServerMsg): void {
+  const room = store.get(code)
+  if (!room) return
+  const memberIds = new Set(room.players.map((p) => p.id))
+  for (const c of conns) {
+    if (c.code === code && c.playerId && memberIds.has(c.playerId)) {
+      send(c.ws, msg)
+    }
+  }
+}
+
 function sanitizeName(raw: unknown): string | null {
   if (typeof raw !== 'string') return null
   const name = raw.trim().slice(0, 16)
@@ -52,9 +76,13 @@ function handleLeave(conn: Conn): void {
   if (!conn.code || !conn.playerId) return
   const code = conn.code
   const pid = conn.playerId
-  store.apply(code, (room) => leaveRoom(room, pid))
+  const next = store.apply(code, (room) => leaveRoom(room, pid))
   conn.code = null
   conn.playerId = null
+  if (!next) {
+    hosts.get(code)?.stop()
+    hosts.delete(code)
+  }
   broadcast(code)
 }
 
@@ -132,6 +160,48 @@ wss.on('connection', (ws) => {
       }
       case 'leave': {
         handleLeave(conn)
+        return
+      }
+      case 'start': {
+        if (!conn.code || !conn.playerId) return
+        const room = store.get(conn.code)
+        if (!room) return
+        const res = startRace(room, conn.playerId)
+        if (!res.ok) return fail(ws, res.error, res.error === 'NOT_HOST' ? 'Only the host can start' : 'Not everyone is ready')
+        store.apply(conn.code, () => res.room)
+        const track = trackById(room.trackId)
+        const seed = Math.floor(Math.random() * 2 ** 31)
+        const { setups, roster } = buildNetworkRace(room.players, /* weaponsEnabled */ true)
+        const env = buildRaceEnv(track, { playerSpec: DEFAULT_PLAYER_SPEC, weaponsEnabled: true, hasPlating: false, hasOverTurbo: false, raceEndMode: 'all-humans' })
+        const host = createRaceHost(env, roster, setups, seed, room.trackId, track.laps)
+        hosts.set(conn.code, host)
+        // tell every member the race is starting, each with their own youId
+        for (const c of conns) {
+          if (c.code === conn.code && c.playerId && room.players.some((p) => p.id === c.playerId)) {
+            send(c.ws, { t: 'raceStart', seed, trackId: room.trackId, laps: track.laps, roster, youId: c.playerId })
+          }
+        }
+        host.start(
+          (snapMsg) => broadcastRaw(conn.code!, snapMsg),
+          (standings) => {
+            broadcastRaw(conn.code!, { t: 'raceEnd', standings })
+            store.apply(conn.code!, (r) => endRace(r))
+          },
+        )
+        return
+      }
+      case 'input': {
+        if (!conn.code || !conn.playerId) return
+        const host = hosts.get(conn.code)
+        if (host && msg.command && typeof msg.command === 'object') host.setInput(conn.playerId, msg.command)
+        return
+      }
+      case 'rematch': {
+        if (!conn.code || !conn.playerId) return
+        const host = hosts.get(conn.code)
+        if (host) { host.stop(); hosts.delete(conn.code) }
+        const next = store.apply(conn.code, (r) => rematch(r))
+        if (next) broadcast(conn.code) // sends the lobby snapshot; clients return to LobbyScene
         return
       }
       default:
