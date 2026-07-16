@@ -55,6 +55,8 @@ export class NetworkSource implements RaceSource {
 
     this.env = buildRaceEnv(trackById(payload.trackId), {
       playerSpec: spec,
+      // Multiplayer races always run weapons-on; weapons-off is a career-only
+      // constraint (see AGENTS.md) and does not apply here. Intentional, not a placeholder.
       weaponsEnabled: true,
       hasPlating: false,
       hasOverTurbo: false,
@@ -129,5 +131,13 @@ export class NetworkSource implements RaceSource {
 
   onRaceEnd(cb: (standings: RaceStanding[]) => void): void {
     this.raceEndCbs.push(cb)
+  }
+
+  /** Detaches this source's listeners from the shared NetClient. Does not
+   *  close the socket — the scene owns the connection lifecycle. Call this
+   *  when a race ends/rematches so a freshly constructed NetworkSource
+   *  doesn't stack handlers on the same NetClient. */
+  dispose(): void {
+    this.net.offMessage(this.onMsg)
   }
 }

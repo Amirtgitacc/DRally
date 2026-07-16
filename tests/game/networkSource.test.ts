@@ -7,14 +7,19 @@ import { TEST_CIRCUIT } from '../../src/data/tracks/testCircuit'
 import { effectiveCarSpec, NO_UPGRADES } from '../../src/core/vehicle/carSpec'
 import { carById } from '../../src/data/cars'
 
-// Minimal fake NetClient capturing handlers + sent messages.
+// Minimal fake NetClient capturing handlers + sent messages. offMessage/offClose
+// actually remove handlers (mirrors real NetClient) so dispose() is testable.
 function fakeNet() {
   const msgHandlers: any[] = []
+  const closeHandlers: any[] = []
   return {
     sent: [] as any[],
+    msgHandlers,
+    closeHandlers,
     onMessage: (fn: any) => msgHandlers.push(fn),
-    onClose: () => {},
-    offMessage: () => {}, offClose: () => {},
+    onClose: (fn: any) => closeHandlers.push(fn),
+    offMessage: (fn: any) => { const i = msgHandlers.indexOf(fn); if (i >= 0) msgHandlers.splice(i, 1) },
+    offClose: (fn: any) => { const i = closeHandlers.indexOf(fn); if (i >= 0) closeHandlers.splice(i, 1) },
     send: function (m: any) { (this as any).sent.push(m) },
     emit: (m: any) => msgHandlers.forEach((h) => h(m)),
   }
@@ -62,5 +67,22 @@ describe('NetworkSource', () => {
     const src = new NetworkSource(net as any, { seed: 1, trackId: 'test-circuit', laps: 3, roster, youId: 'a' }, spec)
     src.sendInput({ input: { throttle: 1, brake: 0, steer: 0, handbrake: false }, fire: false, turbo: false, dropMine: false })
     expect(net.sent.some((m) => m.t === 'input')).toBe(true)
+  })
+
+  it('dispose() detaches the message handler so later snapshots have no effect', () => {
+    const net = fakeNet()
+    const src = new NetworkSource(net as any, { seed: 1, trackId: 'test-circuit', laps: 3, roster, youId: 'a' }, spec)
+    net.emit({ t: 'snapshot', snap: snapAt(0, 0), events: [] })
+    net.emit({ t: 'snapshot', snap: snapAt(100, 100), events: [] })
+    src.ingest(0, 0)
+    const before = src.state.simTimeMs
+
+    src.dispose()
+    expect(net.msgHandlers).toHaveLength(0)
+
+    net.emit({ t: 'snapshot', snap: snapAt(200, 200), events: [] })
+    src.ingest(0, 0)
+    expect(src.state.simTimeMs).toBe(before)
+    expect(src.drainEvents()).toHaveLength(0)
   })
 })
