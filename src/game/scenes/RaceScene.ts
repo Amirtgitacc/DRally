@@ -9,9 +9,6 @@ import {
   type CarState,
 } from '../../core/vehicle/carPhysics'
 import {
-  buildGates,
-  catmullRomClosed,
-  closedPolylineLength,
   lineTangentAt,
   offsetClosedPolyline,
   scatterPointsAlong,
@@ -21,6 +18,7 @@ import {
   type Pose,
   type Vec2,
 } from '../../core/track/geometry'
+import { buildRaceEnv, computeBarriers } from '../../core/race/raceEnvBuilder'
 import { placeSpritesAlong, scatterImages } from '../track/placement'
 import { currentLap } from '../../core/race/progress'
 import { ordinal } from '../../core/race/placement'
@@ -34,7 +32,6 @@ import {
   talentTuning,
 } from '../../core/ai/talent'
 import { mineIsArmed } from '../../core/combat/mines'
-import { buildRacingLine } from '../../core/track/racingLine'
 import { formatTime } from '../../core/race/format'
 import { effectiveCarSpec } from '../../core/vehicle/carSpec'
 import { applyAbandonOutcome, applyRaceOutcome, updateTrackRecord, type CareerState } from '../../core/progression/career'
@@ -93,7 +90,6 @@ import { damageCarSim } from '../../core/race/combatStep'
 import { tryDropMine as tryDropMineSim } from '../../core/race/minesStep'
 
 const CAR_SCALE = 0.44
-const CAR_RADIUS = 34
 const MPH_PER_PX = 0.14
 
 /** The visual half of the old CarUnit: the Phaser objects a car renders through. */
@@ -123,11 +119,8 @@ export class RaceScene extends Phaser.Scene {
   private track!: TrackDef
   private rivalIds: string[] = []
   private centerline: Vec2[] = []
-  /** the line the AI drives: apex-clipping, straighter and shorter than centre */
-  private racingLine: Vec2[] = []
   private gates: Gate[] = []
   private barriers: Vec2[] = []
-  private gateSpacing = 1
 
   private career!: CareerState
   private playerSpec = { ...STARTER_CAR }
@@ -237,29 +230,19 @@ export class RaceScene extends Phaser.Scene {
     this.hasPlating = this.career.ramPlating
     this.hasOverTurbo = this.career.overTurbo
 
-    this.centerline = catmullRomClosed(this.track.controls, this.track.samplesPerSegment)
-    // leave a car's width of tarmac between the line and the paint
-    this.racingLine = buildRacingLine(this.centerline, { maxOffset: this.track.width / 2 - CAR_RADIUS - 8 })
-    this.gates = buildGates(this.centerline, this.track.gateCount, this.track.width / 2 + this.track.shoulder)
-    this.gateSpacing = closedPolylineLength(this.centerline) / this.track.gateCount
-
-    this.buildWorld()
-
-    this.env = {
-      centerline: this.centerline,
-      racingLine: this.racingLine,
-      gates: this.gates,
-      barriers: this.barriers,
-      gateSpacing: this.gateSpacing,
-      trackWidth: this.track.width,
-      laps: this.track.laps,
-      tier: this.track.tier,
+    this.env = buildRaceEnv(this.track, {
       playerSpec: this.playerSpec,
       weaponsEnabled: this.career.profile.weaponsEnabled,
       hasPlating: this.hasPlating,
       hasOverTurbo: this.hasOverTurbo,
       raceEndMode: 'single-player',
-    }
+    })
+    this.centerline = this.env.centerline
+    this.gates = this.env.gates
+
+    this.buildWorld()
+    this.env.barriers = this.barriers // keep the scene's authored barrier list identity
+
     const setups = this.buildCarSetups()
     this.sim = createRaceState(this.env, setups, this.raceSeed)
 
@@ -1246,12 +1229,9 @@ export class RaceScene extends Phaser.Scene {
     this.skidStamp = this.add.image(0, 0, 'skid-stamp').setVisible(false)
     this.scorchStamp = this.add.image(0, 0, 'scorch').setVisible(false)
 
-    for (const side of [1, -1]) {
-      const wallLine = offsetClosedPolyline(this.centerline, side * (shoulderHalf + 24))
-      for (const p of spacedPointsAlong(wallLine, 54)) {
-        this.barriers.push(p)
-        this.add.image(p.x, p.y, 'tire-wall').setDepth(3)
-      }
+    for (const p of computeBarriers(this.centerline, halfW, this.track.shoulder)) {
+      this.barriers.push(p)
+      this.add.image(p.x, p.y, 'tire-wall').setDepth(3)
     }
 
     this.dressTrackForNight(halfW, shoulderHalf)

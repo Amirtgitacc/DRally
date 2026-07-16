@@ -1,14 +1,9 @@
 // Minimal RaceEnv fixture for tests that don't care about real track content —
-// a small closed square track built from the pure geometry helpers.
+// a small closed square track built from the pure geometry helpers, via the
+// same buildRaceEnv the game and server use.
 import type { RaceEnv } from '../../src/core/race/raceState'
-import {
-  buildGates,
-  catmullRomClosed,
-  closedPolylineLength,
-  offsetClosedPolyline,
-  spacedPointsAlong,
-} from '../../src/core/track/geometry'
-import { buildRacingLine } from '../../src/core/track/racingLine'
+import { buildRaceEnv } from '../../src/core/race/raceEnvBuilder'
+import type { TrackDef } from '../../src/data/tracks/testCircuit'
 import { STARTER_CAR } from '../../src/data/cars'
 
 const SQUARE_CONTROLS = [
@@ -18,36 +13,26 @@ const SQUARE_CONTROLS = [
   { x: 0, y: 1000 },
 ]
 
+const SQUARE_TRACK: TrackDef = {
+  id: 'fixture-square',
+  name: 'Fixture Square',
+  laps: 2,
+  tier: 'street',
+  width: 200,
+  shoulder: 40,
+  gateCount: 8,
+  samplesPerSegment: 16,
+  world: { w: 1200, h: 1200 },
+  controls: SQUARE_CONTROLS,
+}
+
 export function buildRaceEnvFixture(overrides: Partial<RaceEnv> = {}): RaceEnv {
-  const samplesPerSegment = 16
-  const gateCount = 8
-  const trackWidth = 200
-  const shoulder = 40
-
-  const centerline = catmullRomClosed(SQUARE_CONTROLS, samplesPerSegment)
-  const racingLine = buildRacingLine(centerline, { maxOffset: trackWidth / 2 - 34 - 8 })
-  const gates = buildGates(centerline, gateCount, trackWidth / 2 + shoulder)
-
-  const barriers: { x: number; y: number }[] = []
-  for (const side of [1, -1]) {
-    const wallLine = offsetClosedPolyline(centerline, side * (trackWidth / 2 + shoulder + 24))
-    for (const p of spacedPointsAlong(wallLine, 54)) barriers.push(p)
-  }
-
-  return {
-    centerline,
-    racingLine,
-    gates,
-    barriers,
-    gateSpacing: closedPolylineLength(centerline) / gateCount,
-    trackWidth,
-    laps: 2,
-    tier: 'street',
+  const env = buildRaceEnv(SQUARE_TRACK, {
     playerSpec: { ...STARTER_CAR },
     weaponsEnabled: false,
     hasPlating: false,
     hasOverTurbo: false,
     raceEndMode: 'single-player',
-    ...overrides,
-  }
+  })
+  return { ...env, ...overrides }
 }
