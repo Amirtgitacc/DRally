@@ -69,7 +69,7 @@ import {
 import type { TrackDef } from '../../data/tracks/testCircuit'
 import type { RaceResults } from './ResultsScene'
 import { C, STROKE, hex } from '../ui/theme'
-import { damageColor, heading, hintBar, plate, statBar, text } from '../ui/widgets'
+import { damageColor, heading, hintBar, modal, plate, statBar, text, tile, wireTiles, type TileHandle } from '../ui/widgets'
 import { InputManager } from '../input/inputManager'
 import { TouchControls } from '../input/touchControls'
 import { isTouchDevice } from '../input/device'
@@ -90,7 +90,7 @@ import { damageCarSim } from '../../core/race/combatStep'
 import { tryDropMine as tryDropMineSim } from '../../core/race/minesStep'
 import { NetworkSource } from '../race/raceSource'
 import type { NetClient } from '../net/netClient'
-import type { RaceStartPayload, RaceStanding } from '../../core/net/protocol'
+import type { RaceStartPayload, RaceStanding, ServerMsg } from '../../core/net/protocol'
 
 const CAR_SCALE = 0.44
 const MPH_PER_PX = 0.14
@@ -136,8 +136,16 @@ export class RaceScene extends Phaser.Scene {
   private net?: NetClient
   private netSource?: NetworkSource
   private raceStart?: RaceStartPayload
-  /** final server standings, captured on raceEnd; Task 12 builds the results overlay */
+  /** final server standings, captured on raceEnd */
   private netStandings: RaceStanding[] = []
+  /** guards showNetworkResults() against building the overlay twice */
+  private resultsShown = false
+  private resultsOverlay?: Phaser.GameObjects.Container
+  private resultsHandles: TileHandle[] = []
+  private resultsSelected = 0
+  private onResultsKey?: (event: KeyboardEvent) => void
+  /** one-shot: fires on the server's post-`rematch` `lobby` message, then removes itself */
+  private pendingRematchHandler?: (msg: ServerMsg) => void
 
   // the sim owns all race state; the scene only renders it
   private sim!: RaceState
@@ -225,6 +233,12 @@ export class RaceScene extends Phaser.Scene {
     this.fireToggled = false
     this.turboToggled = false
     this.netStandings = []
+    this.resultsShown = false
+    this.resultsOverlay = undefined
+    this.resultsHandles = []
+    this.resultsSelected = 0
+    this.onResultsKey = undefined
+    this.pendingRematchHandler = undefined
     this.clock = new FixedStepClock()
 
     // settings are career-independent (volume, bindings, reduced fx) — load in both modes
@@ -448,10 +462,11 @@ export class RaceScene extends Phaser.Scene {
     else this.transitionToResults(this.sim.simTimeMs, false)
   }
 
-  /** Server declared the race over. Task 12 builds the MP results overlay + rematch;
-   *  for now we just capture the standings and stop — no career machinery. */
+  /** Server declared the race over: capture standings and raise the results
+   *  overlay. No career/save/offer machinery — this is a standalone quick race. */
   private onNetworkRaceOver(standings: RaceStanding[]) {
     this.netStandings = standings
+    this.showNetworkResults(standings)
   }
 
   /** Final server standings once a network race ends (consumed by the Task 12 overlay). */
@@ -466,6 +481,96 @@ export class RaceScene extends Phaser.Scene {
     this.net?.send({ t: 'leave' })
     this.net?.close()
     this.scene.start('Menu')
+  }
+
+  /** Depth-topped, keyboard-navigable results overlay built inside `hudContainer`
+   *  (screen space, rendered only by the fixed hudCam — see setupCameras) so it
+   *  sits over the frozen race without inheriting the world camera's follow/zoom.
+   *  Not a new Phaser scene: single-player's RacePause pattern doesn't apply here
+   *  since network mode never pauses (see setupInput). */
+  private showNetworkResults(standings: RaceStanding[]) {
+    if (this.resultsShown) return
+    this.resultsShown = true
+    audioBus.engineStop()
+
+    const cx = this.scale.width / 2
+    const cy = this.scale.height / 2
+    const panelW = 820
+    const panelH = 300 + standings.length * 56
+    const topY = cy - panelH / 2
+
+    const objects: Phaser.GameObjects.GameObject[] = []
+    objects.push(this.add.rectangle(cx, cy, this.scale.width, this.scale.height, 0x000000, 0.72))
+    objects.push(modal(this, cx, cy, panelW, panelH))
+    objects.push(heading(this, cx, topY + 62, 'RACE COMPLETE'))
+
+    standings.forEach((s, i) => {
+      const best = s.lapTimes.length ? formatTime(Math.min(...s.lapTimes)) : '—'
+      const isYou = s.id === this.localCarId
+      objects.push(
+        text(this, cx, topY + 130 + i * 52, `${s.place}. ${s.name}${isYou ? ' (you)' : ''}   ${best}`, {
+          size: 'bodyLg',
+          color: isYou ? C.oxide : C.textPrimary,
+          origin: [0.5, 0.5],
+        }),
+      )
+    })
+
+    const tilesY = topY + panelH - 90
+    const rematch = tile(this, cx - 220, tilesY, 400, 74, 'REMATCH')
+    const leave = tile(this, cx + 220, tilesY, 400, 74, 'LEAVE', { select: C.danger })
+    objects.push(rematch.rect, rematch.label, leave.rect, leave.label)
+
+    this.resultsHandles = [rematch, leave]
+    this.resultsSelected = 0
+    this.refreshResultsSelection()
+    wireTiles(
+      this.resultsHandles,
+      (i) => { this.resultsSelected = i; this.refreshResultsSelection() },
+      (i) => this.activateResultsTile(i),
+    )
+
+    // screen space, above every existing hudContainer child (touch controls sit at depth 1000)
+    this.resultsOverlay = this.add.container(0, 0, objects).setDepth(5000)
+    this.hudContainer.add(this.resultsOverlay)
+
+    this.cameraFlash(220, 255, 246, 220) // respects reducedFlash internally; skipped when set
+
+    const onKey = (event: KeyboardEvent) => {
+      if (event.code === 'ArrowUp' || event.code === 'ArrowDown') {
+        this.resultsSelected = this.resultsSelected === 0 ? 1 : 0
+        this.refreshResultsSelection()
+      } else if (event.code === 'Enter') {
+        this.activateResultsTile(this.resultsSelected)
+      }
+    }
+    this.onResultsKey = onKey
+    this.input.keyboard?.on('keydown', onKey)
+  }
+
+  private refreshResultsSelection() {
+    this.resultsHandles.forEach((h, i) => h.setState(i === this.resultsSelected, true))
+  }
+
+  private activateResultsTile(i: number) {
+    if (i === 0) this.requestRematch()
+    else this.leaveNetworkRace()
+  }
+
+  /** Ask the server for a rematch, then wait for its next `lobby` message (the
+   *  server resets the room and re-seats every still-connected player) before
+   *  handing off to LobbyScene — mirroring the initial `joined` → Lobby flow. */
+  private requestRematch() {
+    this.net!.send({ t: 'rematch' })
+    const onLobby = (msg: ServerMsg) => {
+      if (msg.t !== 'lobby') return
+      this.net!.offMessage(onLobby)
+      this.pendingRematchHandler = undefined
+      this.netSource?.dispose()
+      this.scene.start('Lobby', { net: this.net, youId: this.localCarId, lobby: msg.lobby })
+    }
+    this.pendingRematchHandler = onLobby
+    this.net!.onMessage(onLobby)
   }
 
   // ---------------------------------------------------------------- FX handlers
@@ -1761,6 +1866,10 @@ export class RaceScene extends Phaser.Scene {
       audioBus.engineStop()
       this.netSource?.dispose() // detach net handlers so repeated visits don't stack
       this.input.keyboard?.off('keydown', onKey)
+      if (this.onResultsKey) this.input.keyboard?.off('keydown', this.onResultsKey)
+      this.onResultsKey = undefined
+      if (this.pendingRematchHandler) this.net?.offMessage(this.pendingRematchHandler)
+      this.pendingRematchHandler = undefined
       this.touchControls?.destroy()
       this.touchControls = undefined
       this.inputManager.destroy()
