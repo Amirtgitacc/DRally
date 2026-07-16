@@ -33,7 +33,7 @@ import {
 } from '../../core/ai/talent'
 import { mineIsArmed } from '../../core/combat/mines'
 import { formatTime } from '../../core/race/format'
-import { effectiveCarSpec } from '../../core/vehicle/carSpec'
+import { effectiveCarSpec, NO_UPGRADES } from '../../core/vehicle/carSpec'
 import { applyAbandonOutcome, applyRaceOutcome, updateTrackRecord, type CareerState } from '../../core/progression/career'
 import { applyDuelOutcome } from '../../core/progression/duel'
 import { rewardFor } from '../../core/economy/rewards'
@@ -88,6 +88,9 @@ import { stepRace, type PlayerCommand } from '../../core/race/stepRace'
 import type { SimEvent } from '../../core/race/simEvents'
 import { damageCarSim } from '../../core/race/combatStep'
 import { tryDropMine as tryDropMineSim } from '../../core/race/minesStep'
+import { NetworkSource } from '../race/raceSource'
+import type { NetClient } from '../net/netClient'
+import type { RaceStartPayload, RaceStanding } from '../../core/net/protocol'
 
 const CAR_SCALE = 0.44
 const MPH_PER_PX = 0.14
@@ -127,6 +130,14 @@ export class RaceScene extends Phaser.Scene {
   private isDuel = false
   private hasPlating = false
   private hasOverTurbo = false
+
+  /** career: local single-player sim. network: render a server race via NetworkSource. */
+  private mode: 'career' | 'network' = 'career'
+  private net?: NetClient
+  private netSource?: NetworkSource
+  private raceStart?: RaceStartPayload
+  /** final server standings, captured on raceEnd; Task 12 builds the results overlay */
+  private netStandings: RaceStanding[] = []
 
   // the sim owns all race state; the scene only renders it
   private sim!: RaceState
@@ -191,6 +202,12 @@ export class RaceScene extends Phaser.Scene {
     super('Race')
   }
 
+  init(data?: { mode?: 'network'; net?: NetClient; raceStart?: RaceStartPayload }) {
+    this.mode = data?.mode === 'network' ? 'network' : 'career'
+    this.net = data?.net
+    this.raceStart = data?.raceStart
+  }
+
   create() {
     this.carInfo = new Map()
     this.carViews = new Map()
@@ -207,46 +224,53 @@ export class RaceScene extends Phaser.Scene {
     this.resultCommitted = false
     this.fireToggled = false
     this.turboToggled = false
+    this.netStandings = []
     this.clock = new FixedStepClock()
 
-    this.career = loadCareer()
+    // settings are career-independent (volume, bindings, reduced fx) — load in both modes
     this.settings = loadSettings()
-    this.playerSpec = effectiveCarSpec(carById(this.career.carId), this.career.upgrades)
 
-    // the accepted sign-up offer decides track and grid; fall back to a
-    // default pro-tier round if the scene starts without one
-    let offer = getCurrentOffer()
-    if (!offer) {
-      offer = {
-        track: TRACKS_BY_TIER.pro[0],
-        rivalIds: pickRivals('pro', this.random),
-        seed: randomSeed(),
+    if (this.mode === 'network') {
+      this.setupNetworkRace()
+    } else {
+      this.career = loadCareer()
+      this.playerSpec = effectiveCarSpec(carById(this.career.carId), this.career.upgrades)
+
+      // the accepted sign-up offer decides track and grid; fall back to a
+      // default pro-tier round if the scene starts without one
+      let offer = getCurrentOffer()
+      if (!offer) {
+        offer = {
+          track: TRACKS_BY_TIER.pro[0],
+          rivalIds: pickRivals('pro', this.random),
+          seed: randomSeed(),
+        }
+        setCurrentOffer(offer)
       }
-      setCurrentOffer(offer)
+      this.track = offer.track
+      this.rivalIds = offer.rivalIds
+      this.isDuel = offer.duel === true
+      this.raceSeed = offer.seed ?? randomSeed()
+      this.random = createSeededRandom(this.raceSeed)
+      this.hasPlating = this.career.ramPlating
+      this.hasOverTurbo = this.career.overTurbo
+
+      this.env = buildRaceEnv(this.track, {
+        playerSpec: this.playerSpec,
+        weaponsEnabled: this.career.profile.weaponsEnabled,
+        hasPlating: this.hasPlating,
+        hasOverTurbo: this.hasOverTurbo,
+        raceEndMode: 'single-player',
+      })
+      this.centerline = this.env.centerline
+      this.gates = this.env.gates
+
+      this.buildWorld()
+      this.env.barriers = this.barriers // keep the scene's authored barrier list identity
+
+      const setups = this.buildCarSetups()
+      this.sim = createRaceState(this.env, setups, this.raceSeed)
     }
-    this.track = offer.track
-    this.rivalIds = offer.rivalIds
-    this.isDuel = offer.duel === true
-    this.raceSeed = offer.seed ?? randomSeed()
-    this.random = createSeededRandom(this.raceSeed)
-    this.hasPlating = this.career.ramPlating
-    this.hasOverTurbo = this.career.overTurbo
-
-    this.env = buildRaceEnv(this.track, {
-      playerSpec: this.playerSpec,
-      weaponsEnabled: this.career.profile.weaponsEnabled,
-      hasPlating: this.hasPlating,
-      hasOverTurbo: this.hasOverTurbo,
-      raceEndMode: 'single-player',
-    })
-    this.centerline = this.env.centerline
-    this.gates = this.env.gates
-
-    this.buildWorld()
-    this.env.barriers = this.barriers // keep the scene's authored barrier list identity
-
-    const setups = this.buildCarSetups()
-    this.sim = createRaceState(this.env, setups, this.raceSeed)
 
     this.buildCarViews()
     this.buildPickupViews()
@@ -259,7 +283,70 @@ export class RaceScene extends Phaser.Scene {
     if (DEBUG) this.setupDebug()
   }
 
+  /** Network mode: the sim/env come from the server via NetworkSource; the scene
+   *  only renders interpolated snapshots. No career, offer, or local stepping. */
+  private setupNetworkRace() {
+    const raceStart = this.raceStart!
+    this.track = trackById(raceStart.trackId)
+    this.raceSeed = raceStart.seed
+    this.random = createSeededRandom(this.raceSeed) // cosmetics only; server owns gameplay
+    this.localCarId = raceStart.youId
+    // stock chassis with no upgrades — network camera/HUD read spec, never the career
+    this.playerSpec = effectiveCarSpec(carById(STARTER_CAR.id), NO_UPGRADES)
+    this.hasPlating = false
+    this.hasOverTurbo = false
+    this.isDuel = false
+
+    this.netSource = new NetworkSource(this.net!, raceStart, this.playerSpec)
+    this.netSource.onRaceEnd((standings) => this.onNetworkRaceOver(standings))
+    this.env = this.netSource.env
+    this.sim = this.netSource.state
+    this.centerline = this.env.centerline
+    this.gates = this.env.gates
+
+    for (const r of raceStart.roster) {
+      this.carInfo.set(r.id, {
+        name: r.name,
+        color: r.color,
+        textureKey: `car-top-${r.chassisId}`,
+        chassisId: r.chassisId,
+      })
+    }
+
+    this.buildWorld()
+    this.env.barriers = this.barriers
+  }
+
   update(_time: number, delta: number) {
+    if (this.mode === 'network') {
+      // still poll local input and forward it; the server simulates it
+      this.inputManager.update()
+      if (this.settings.toggleFire && this.inputManager.justDown('fire')) this.fireToggled = !this.fireToggled
+      if (this.settings.toggleTurbo && this.inputManager.justDown('turbo')) this.turboToggled = !this.turboToggled
+      if (this.inputManager.justDown('mine')) this.mineQueued = true
+      this.netSource!.sendInput(this.buildPlayerCommand())
+      this.mineQueued = false // consumed the moment it is sent
+      this.netSource!.ingest(this.time.now, delta)
+      this.sim = this.netSource!.state
+      this.handleSimEvents(this.netSource!.drainEvents())
+    } else {
+      this.careerUpdate(delta)
+    }
+
+    // render sync (both modes; every frame, even 0-step frames)
+    for (const car of this.sim.cars) {
+      const view = this.carViews.get(car.id)!
+      this.syncCarVisuals(car, view)
+      this.updateCarEffects(car, view)
+    }
+    this.syncBulletViews()
+    this.syncMineViews()
+    this.syncPickupViews()
+    this.updateCamera(this.sim.simTimeMs)
+    this.updateHud(this.sim.simTimeMs)
+  }
+
+  private careerUpdate(delta: number) {
     this.inputManager.update()
     if (this.settings.toggleFire && this.inputManager.justDown('fire')) this.fireToggled = !this.fireToggled
     if (this.settings.toggleTurbo && this.inputManager.justDown('turbo')) this.turboToggled = !this.turboToggled
@@ -272,18 +359,6 @@ export class RaceScene extends Phaser.Scene {
       command.dropMine = false // consumed by the first step this frame
       this.mineQueued = false
     })
-
-    // render sync (every frame, even 0-step frames)
-    for (const car of this.sim.cars) {
-      const view = this.carViews.get(car.id)!
-      this.syncCarVisuals(car, view)
-      this.updateCarEffects(car, view)
-    }
-    this.syncBulletViews()
-    this.syncMineViews()
-    this.syncPickupViews()
-    this.updateCamera(this.sim.simTimeMs)
-    this.updateHud(this.sim.simTimeMs)
   }
 
   private myCar(): CarSim {
@@ -365,9 +440,32 @@ export class RaceScene extends Phaser.Scene {
   }
 
   private onRaceOver(reason: 'player-finished' | 'player-wrecked' | 'rivals-done' | 'all-humans-done') {
+    // network races end via the server's raceEnd message (onNetworkRaceOver);
+    // the career results/save path must never run for a network race.
+    if (this.mode !== 'career') return
     if (reason === 'player-finished') this.time.delayedCall(1400, () => this.transitionToResults(this.sim.simTimeMs, false))
     else if (reason === 'player-wrecked') this.time.delayedCall(2200, () => this.transitionToResults(this.sim.simTimeMs, true))
     else this.transitionToResults(this.sim.simTimeMs, false)
+  }
+
+  /** Server declared the race over. Task 12 builds the MP results overlay + rematch;
+   *  for now we just capture the standings and stop — no career machinery. */
+  private onNetworkRaceOver(standings: RaceStanding[]) {
+    this.netStandings = standings
+  }
+
+  /** Final server standings once a network race ends (consumed by the Task 12 overlay). */
+  get finalStandings(): RaceStanding[] {
+    return this.netStandings
+  }
+
+  /** Leave a network race cleanly: detach the source, tell the server, drop the
+   *  socket, and return to the menu. Network mode never opens RacePause. */
+  private leaveNetworkRace() {
+    this.netSource?.dispose()
+    this.net?.send({ t: 'leave' })
+    this.net?.close()
+    this.scene.start('Menu')
   }
 
   // ---------------------------------------------------------------- FX handlers
@@ -1640,8 +1738,10 @@ export class RaceScene extends Phaser.Scene {
   private setupInput() {
     this.inputManager = new InputManager(this)
     const onKey = (event: KeyboardEvent) => {
-      if (this.inputManager.matches('pause', event.code) && this.sim.phase !== 'finished' && !this.scene.isPaused()) {
-        this.openPause()
+      if (this.inputManager.matches('pause', event.code)) {
+        // single-player pauses into RacePause; a network race leaves cleanly (no pause)
+        if (this.mode === 'network') this.leaveNetworkRace()
+        else if (this.sim.phase !== 'finished' && !this.scene.isPaused()) this.openPause()
       } else if (this.inputManager.matches('mute', event.code)) {
         this.settings.muted = !this.settings.muted
         saveSettings(this.settings)
@@ -1652,12 +1752,14 @@ export class RaceScene extends Phaser.Scene {
 
     if (isTouchDevice()) {
       this.touchControls = new TouchControls(this, this.hudContainer, this.inputManager, () => {
-        if (this.sim.phase !== 'finished' && !this.scene.isPaused()) this.openPause()
+        if (this.mode === 'network') this.leaveNetworkRace()
+        else if (this.sim.phase !== 'finished' && !this.scene.isPaused()) this.openPause()
       })
     }
 
     this.events.once('shutdown', () => {
       audioBus.engineStop()
+      this.netSource?.dispose() // detach net handlers so repeated visits don't stack
       this.input.keyboard?.off('keydown', onKey)
       this.touchControls?.destroy()
       this.touchControls = undefined
@@ -1765,8 +1867,19 @@ export class RaceScene extends Phaser.Scene {
       strokeThickness: STROKE.text,
     })
 
-    const identityText = text(this, 16, 94, `${this.career.profile.driverName.toUpperCase()} · WEAPONS ${this.career.profile.weaponsEnabled ? 'ON' : 'OFF'}`, {
-      size: 'caption', color: this.career.profile.liveryColor, stroke: C.shadow, strokeThickness: STROKE.text,
+    // identity is driven by the career in single-player, by the local roster entry online
+    let identityLabel: string
+    let identityColor: number
+    if (this.mode === 'network') {
+      const me = this.raceStart!.roster.find((r) => r.id === this.raceStart!.youId)!
+      identityLabel = `${me.name.toUpperCase()} · WEAPONS ON`
+      identityColor = me.color
+    } else {
+      identityLabel = `${this.career.profile.driverName.toUpperCase()} · WEAPONS ${this.career.profile.weaponsEnabled ? 'ON' : 'OFF'}`
+      identityColor = this.career.profile.liveryColor
+    }
+    const identityText = text(this, 16, 94, identityLabel, {
+      size: 'caption', color: identityColor, stroke: C.shadow, strokeThickness: STROKE.text,
     })
 
     const hudChildren: Phaser.GameObjects.GameObject[] = [
@@ -1837,7 +1950,9 @@ export class RaceScene extends Phaser.Scene {
       this.hudBars.strokeCircle(x, y, 7)
     }
 
-    const weapons = this.career.profile.weaponsEnabled
+    // env.weaponsEnabled mirrors career.profile.weaponsEnabled in single-player and
+    // is always true online — read it so this per-frame HUD never touches the career
+    const weapons = this.mode === 'network' ? this.env.weaponsEnabled : this.career.profile.weaponsEnabled
     this.hudStatusValues[0].setText(`${Math.round(hullRemaining)}% LEFT`).setColor(hex(damageColor(player.damage)))
     this.hudStatusValues[1].setText(weapons ? `${player.ammo} / ${GUN.ammoMax}` : 'DISABLED').setColor(hex(weapons ? C.ammo : C.textDisabled))
     this.hudStatusValues[2].setText(`${Math.round(player.turbo * 100)}%`).setColor(hex(this.hasOverTurbo ? C.warn : C.turbo))
