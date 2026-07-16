@@ -140,6 +140,10 @@ export class RaceScene extends Phaser.Scene {
   private netStandings: RaceStanding[] = []
   /** guards showNetworkResults() against building the overlay twice */
   private resultsShown = false
+  /** guards activateResultsTile() against a second REMATCH/LEAVE firing before
+   *  the first completes (double-click, or Enter pressed twice) — see
+   *  activateResultsTile() for why this must be a hard gate, not just UI state */
+  private resultsActioned = false
   private resultsOverlay?: Phaser.GameObjects.Container
   private resultsHandles: TileHandle[] = []
   private resultsSelected = 0
@@ -234,6 +238,7 @@ export class RaceScene extends Phaser.Scene {
     this.turboToggled = false
     this.netStandings = []
     this.resultsShown = false
+    this.resultsActioned = false
     this.resultsOverlay = undefined
     this.resultsHandles = []
     this.resultsSelected = 0
@@ -469,7 +474,9 @@ export class RaceScene extends Phaser.Scene {
     this.showNetworkResults(standings)
   }
 
-  /** Final server standings once a network race ends (consumed by the Task 12 overlay). */
+  /** Final server standings once a network race ends. The results overlay reads
+   *  standings from the onNetworkRaceOver() parameter directly; this getter exists
+   *  for external/debug access to the last-known standings. */
   get finalStandings(): RaceStanding[] {
     return this.netStandings
   }
@@ -552,7 +559,15 @@ export class RaceScene extends Phaser.Scene {
     this.resultsHandles.forEach((h, i) => h.setState(i === this.resultsSelected, true))
   }
 
+  /** Guarded against firing twice for the same overlay: without this, a
+   *  double-click or a double Enter-press before the server responds could
+   *  register two `onLobby` handlers (NetClient.offMessage doesn't affect an
+   *  in-flight forEach in onMessage), so both would fire on the single `lobby`
+   *  broadcast and run the rematch/leave handoff twice. */
   private activateResultsTile(i: number) {
+    if (this.resultsActioned) return
+    this.resultsActioned = true
+    this.resultsHandles.forEach((h, hi) => h.setState(hi === i, false))
     if (i === 0) this.requestRematch()
     else this.leaveNetworkRace()
   }
