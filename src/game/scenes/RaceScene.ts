@@ -148,8 +148,12 @@ export class RaceScene extends Phaser.Scene {
   private resultsHandles: TileHandle[] = []
   private resultsSelected = 0
   private onResultsKey?: (event: KeyboardEvent) => void
-  /** one-shot: fires on the server's post-`rematch` `lobby` message, then removes itself */
+  /** shared, scene-scoped: every client showing the results overlay registers this once
+   *  (in showNetworkResults) so any player's REMATCH returns ALL of them to the lobby via
+   *  the server's broadcast `lobby` message; it removes itself once fired */
   private pendingRematchHandler?: (msg: ServerMsg) => void
+  /** guards pendingRematchHandler against firing the Lobby transition twice */
+  private lobbyTransitionStarted = false
 
   // the sim owns all race state; the scene only renders it
   private sim!: RaceState
@@ -244,6 +248,7 @@ export class RaceScene extends Phaser.Scene {
     this.resultsSelected = 0
     this.onResultsKey = undefined
     this.pendingRematchHandler = undefined
+    this.lobbyTransitionStarted = false
     this.clock = new FixedStepClock()
 
     // settings are career-independent (volume, bindings, reduced fx) — load in both modes
@@ -500,6 +505,22 @@ export class RaceScene extends Phaser.Scene {
     this.resultsShown = true
     audioBus.engineStop()
 
+    // Shown to every client at race end, so register the shared lobby-return
+    // handler here (not in requestRematch): the server broadcasts `lobby` to the
+    // whole room on any one player's rematch, and every client still on this
+    // overlay must follow it back to the Lobby together.
+    const onLobby = (msg: ServerMsg) => {
+      if (msg.t !== 'lobby') return
+      if (this.lobbyTransitionStarted) return
+      this.lobbyTransitionStarted = true
+      this.net!.offMessage(onLobby)
+      this.pendingRematchHandler = undefined
+      this.netSource?.dispose()
+      this.scene.start('Lobby', { net: this.net, youId: this.localCarId, lobby: msg.lobby })
+    }
+    this.pendingRematchHandler = onLobby
+    this.net!.onMessage(onLobby)
+
     const cx = this.scale.width / 2
     const cy = this.scale.height / 2
     const panelW = 820
@@ -572,20 +593,12 @@ export class RaceScene extends Phaser.Scene {
     else this.leaveNetworkRace()
   }
 
-  /** Ask the server for a rematch, then wait for its next `lobby` message (the
-   *  server resets the room and re-seats every still-connected player) before
-   *  handing off to LobbyScene — mirroring the initial `joined` → Lobby flow. */
+  /** Ask the server for a rematch. The server resets the room, re-seats every
+   *  still-connected player, and broadcasts `lobby` to the whole room — the shared
+   *  handler registered in showNetworkResults() (for every client on the overlay,
+   *  including this one) handles the handoff to LobbyScene. */
   private requestRematch() {
     this.net!.send({ t: 'rematch' })
-    const onLobby = (msg: ServerMsg) => {
-      if (msg.t !== 'lobby') return
-      this.net!.offMessage(onLobby)
-      this.pendingRematchHandler = undefined
-      this.netSource?.dispose()
-      this.scene.start('Lobby', { net: this.net, youId: this.localCarId, lobby: msg.lobby })
-    }
-    this.pendingRematchHandler = onLobby
-    this.net!.onMessage(onLobby)
   }
 
   // ---------------------------------------------------------------- FX handlers
@@ -1775,11 +1788,11 @@ export class RaceScene extends Phaser.Scene {
         this.skidStamp.setPosition(wx, wy).setRotation(car.state.heading).setAlpha(0.4)
         this.skidRT.draw(this.skidStamp)
       }
-      if (car.isPlayer) {
+      if (car.id === this.localCarId) {
         this.tireSmoke.setPosition(car.state.x + rearX * cos, car.state.y + rearX * sin)
       }
     }
-    if (car.isPlayer) this.tireSmoke.emitting = skidding
+    if (car.id === this.localCarId) this.tireSmoke.emitting = skidding
   }
 
   private updateCamera(now: number) {
@@ -1939,6 +1952,9 @@ export class RaceScene extends Phaser.Scene {
       stroke: C.shadow,
       strokeThickness: STROKE.text,
     })
+    // network races have no economy — cash always reads $0 there, so hide the chip
+    // instead of showing a misleading static value (F3)
+    this.cashText.setVisible(this.mode !== 'network')
 
     this.speedText = text(this, 28, this.scale.height - 28, '0 MPH', {
       size: 'speed',
@@ -2091,7 +2107,7 @@ export class RaceScene extends Phaser.Scene {
       const row = this.standingsTexts[i]
       const status = car.wrecked ? ' ✗' : car.finishedAt !== null ? ' *' : ` ${Math.round(car.damage)}%`
       row.setText(`${i + 1}. ${info.name}${status}`)
-      row.setColor(hex(car.isPlayer ? C.oxide : info.color))
+      row.setColor(hex(car.id === this.localCarId ? C.oxide : info.color))
     })
 
     // rivals-done grace countdown toast — owned by the HUD, driven by sim state
