@@ -5,6 +5,7 @@ export interface RoomState {
   hostId: string
   trackId: string
   players: LobbyPlayer[]
+  phase: 'lobby' | 'racing' | 'results'
 }
 
 export interface NewPlayer {
@@ -23,6 +24,7 @@ export function createRoom(code: string, host: NewPlayer, trackId: string): Room
     hostId: host.id,
     trackId,
     players: [{ id: host.id, name: host.name, carId: host.carId, ready: false }],
+    phase: 'lobby',
   }
 }
 
@@ -67,6 +69,20 @@ export function setReady(room: RoomState, playerId: string, ready: boolean): Roo
 
 export function allReady(room: RoomState): boolean {
   return room.players.length > 0 && room.players.every((p) => p.ready)
+}
+
+export function startRace(room: RoomState, playerId: string): RoomResult {
+  if (room.hostId !== playerId) return { ok: false, error: 'NOT_HOST' }
+  if (room.players.length < 2 || !allReady(room)) return { ok: false, error: 'MALFORMED' }
+  return { ok: true, room: { ...room, phase: 'racing' } }
+}
+
+export function endRace(room: RoomState): RoomState {
+  return { ...room, phase: 'results' }
+}
+
+export function rematch(room: RoomState): RoomState {
+  return { ...room, phase: 'lobby', players: room.players.map((p) => ({ ...p, ready: false })) }
 }
 
 export function toSnapshot(room: RoomState): LobbySnapshot {
