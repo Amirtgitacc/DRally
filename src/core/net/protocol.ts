@@ -2,7 +2,7 @@ import type { PlayerCommand } from '../race/stepRace'
 import type { SimEvent } from '../race/simEvents'
 import type { RaceSnapshot } from './snapshot'
 
-/** Maximum human players per room. AI fills remaining grid slots at race time (Phase 3). */
+/** Maximum grid slots per room (humans + AI combined). */
 export const MAX_PLAYERS = 4
 
 export interface LobbyPlayer {
