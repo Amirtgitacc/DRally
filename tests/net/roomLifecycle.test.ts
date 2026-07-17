@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { createRoom, setReady, joinRoom, startRace, endRace, rematch } from '../../src/core/net/roomState'
+import { createRoom, setReady, joinRoom, startRace, endRace, rematch, addAi } from '../../src/core/net/roomState'
+import { ROSTER } from '../../src/data/roster'
+
+const firstUnused = (used: Set<string>) => ROSTER.find((d) => !used.has(d.id)) ?? null
 
 function room2() {
   let r = createRoom('TIGER-42', { id: 'h', name: 'Host', carId: 'jackal' }, 'test-circuit')
@@ -32,5 +35,12 @@ describe('room lifecycle', () => {
     const back = rematch(r)
     expect(back.phase).toBe('lobby')
     expect(back.players.every((p) => !p.ready)).toBe(true)
+  })
+  it('a solo host can start once an AI fills a slot', () => {
+    let room = createRoom('SOLO-01', { id: 'h', name: 'Host', carId: 'jackal' }, 'test-circuit')
+    room = addAi(room, 'h', firstUnused)      // 1 human + 1 AI
+    room = setReady(room, 'h', true)          // AI already ready
+    const res = startRace(room, 'h')
+    expect(res.ok).toBe(true)
   })
 })
