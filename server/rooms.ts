@@ -6,6 +6,7 @@ import {
 import { generateRoomCode } from '../src/core/net/roomCode'
 import { ALL_TRACKS } from '../src/data/tracks/index'
 import { CAR_CATALOG } from '../src/data/cars'
+import { ROSTER, type RosterDriver } from '../src/data/roster'
 
 const VALID_CAR_IDS = new Set(CAR_CATALOG.map((c) => c.id))
 const VALID_TRACK_IDS = new Set(ALL_TRACKS.map((t) => t.id))
@@ -16,6 +17,13 @@ export function isValidCarId(id: string): boolean {
 }
 export function isValidTrackId(id: string): boolean {
   return VALID_TRACK_IDS.has(id)
+}
+
+/** Random roster driver not already used in a room; null when all are taken. */
+export function pickUnusedDriver(used: Set<string>): RosterDriver | null {
+  const free = ROSTER.filter((d) => !used.has(d.id))
+  if (free.length === 0) return null
+  return free[Math.floor(Math.random() * free.length)]
 }
 
 export class RoomStore {

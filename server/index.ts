@@ -1,9 +1,9 @@
 // server/index.ts
 import { WebSocketServer, type WebSocket } from 'ws'
 import { type ClientMsg, type ServerErrorCode, type ServerMsg } from '../src/core/net/protocol'
-import { endRace, leaveRoom, rematch, setCar, setReady, setTrack, startRace, toSnapshot } from '../src/core/net/roomState'
+import { addAi, endRace, leaveRoom, rematch, removeAi, setCar, setReady, setTrack, startRace, toSnapshot } from '../src/core/net/roomState'
 import { isValidRoomCode, normalizeRoomCode } from '../src/core/net/roomCode'
-import { RoomStore, isValidCarId, isValidTrackId } from './rooms'
+import { RoomStore, isValidCarId, isValidTrackId, pickUnusedDriver } from './rooms'
 import { buildRaceEnv } from '../src/core/race/raceEnvBuilder'
 import { buildNetworkRace } from './raceSetup'
 import { createRaceHost, RaceHost } from './raceHost'
@@ -174,6 +174,19 @@ wss.on('connection', (ws) => {
       case 'ready': {
         if (!conn.code || !conn.playerId) return
         store.apply(conn.code, (room) => setReady(room, conn.playerId!, !!msg.ready))
+        broadcast(conn.code)
+        return
+      }
+      case 'addAi': {
+        if (!conn.code || !conn.playerId) return
+        store.apply(conn.code, (room) => addAi(room, conn.playerId!, pickUnusedDriver))
+        broadcast(conn.code)
+        return
+      }
+      case 'removeAi': {
+        if (!conn.code || !conn.playerId) return
+        if (typeof msg.id !== 'string') return
+        store.apply(conn.code, (room) => removeAi(room, conn.playerId!, msg.id))
         broadcast(conn.code)
         return
       }
