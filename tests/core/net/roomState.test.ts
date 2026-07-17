@@ -1,9 +1,14 @@
 import { describe, it, expect } from 'vitest'
 import {
-  createRoom, joinRoom, leaveRoom, setCar, setTrack, setReady, toSnapshot, allReady,
+  createRoom, joinRoom, leaveRoom, setCar, setTrack, setReady, toSnapshot, allReady, addAi, removeAi, rematch,
 } from '../../../src/core/net/roomState'
+import { ROSTER } from '../../../src/data/roster'
+import { rivalChassisId } from '../../../src/core/progression/ladder'
 
 const host = { id: 'p1', name: 'Nyx', carId: 'jackal' }
+
+// deterministic picker: always the first unused roster driver
+const firstUnused = (used: Set<string>) => ROSTER.find((d) => !used.has(d.id)) ?? null
 
 describe('roomState', () => {
   it('creates a room whose creator is host and only player', () => {
@@ -78,5 +83,79 @@ describe('roomState', () => {
       code: 'TIGER-42', hostId: 'p1', trackId: 'test-circuit',
       players: [{ id: 'p1', name: 'Nyx', carId: 'jackal', ready: false, isAi: false }],
     })
+  })
+})
+
+describe('roomState AI fill', () => {
+  it('addAi appends a ready AI for an unused driver with a truthful carId', () => {
+    const room = createRoom('TIGER-42', host, 'test-circuit')
+    const next = addAi(room, 'p1', firstUnused)
+    expect(next.players).toHaveLength(2)
+    const ai = next.players[1]
+    const driver = ROSTER[0]
+    expect(ai.id).toBe(`ai:${driver.id}`)
+    expect(ai.name).toBe(driver.name)
+    expect(ai.isAi).toBe(true)
+    expect(ai.ready).toBe(true)
+    // carId is the chassis the AI will actually drive (rank = ROSTER index + 1)
+    expect(ai.carId).toBe(rivalChassisId(1))
+  })
+
+  it('addAi never picks the same driver twice', () => {
+    let room = createRoom('TIGER-42', host, 'test-circuit')
+    room = addAi(room, 'p1', firstUnused)
+    room = addAi(room, 'p1', firstUnused)
+    const aiIds = room.players.filter((p) => p.isAi).map((p) => p.id)
+    expect(new Set(aiIds).size).toBe(aiIds.length)
+    expect(aiIds).toEqual([`ai:${ROSTER[0].id}`, `ai:${ROSTER[1].id}`])
+  })
+
+  it('addAi is host-only and respects MAX_PLAYERS', () => {
+    let room = createRoom('TIGER-42', host, 'test-circuit')
+    expect(addAi(room, 'intruder', firstUnused).players).toHaveLength(1) // not host → no-op
+    room = addAi(room, 'p1', firstUnused)
+    room = addAi(room, 'p1', firstUnused)
+    room = addAi(room, 'p1', firstUnused) // now 4 (1 human + 3 AI)
+    const full = addAi(room, 'p1', firstUnused)
+    expect(full.players).toHaveLength(4) // no 5th
+  })
+
+  it('addAi no-ops when the picker returns null (roster exhausted)', () => {
+    const room = createRoom('TIGER-42', host, 'test-circuit')
+    expect(addAi(room, 'p1', () => null).players).toHaveLength(1)
+  })
+
+  it('removeAi removes only AI, host-only', () => {
+    let room = createRoom('TIGER-42', host, 'test-circuit')
+    room = addAi(room, 'p1', firstUnused)
+    const aiId = room.players[1].id
+    expect(removeAi(room, 'intruder', aiId).players).toHaveLength(2) // not host → no-op
+    expect(removeAi(room, 'p1', 'p1').players).toHaveLength(2) // can't remove a human
+    expect(removeAi(room, 'p1', aiId).players).toHaveLength(1) // AI gone
+  })
+
+  it('leaveRoom hands host to the first remaining human, skipping AI', () => {
+    let room = createRoom('TIGER-42', host, 'test-circuit') // p1 host
+    const j = joinRoom(room, { id: 'p2', name: 'Rook', carId: 'jackal' })
+    if (j.ok) room = j.room
+    room = addAi(room, 'p1', firstUnused) // AI sits at index 1, before p2
+    const after = leaveRoom(room, 'p1')
+    expect(after).not.toBeNull()
+    expect(after!.hostId).toBe('p2') // not the AI at index 1
+  })
+
+  it('leaveRoom closes the room when the last human leaves even if AI remain', () => {
+    let room = createRoom('TIGER-42', host, 'test-circuit')
+    room = addAi(room, 'p1', firstUnused)
+    expect(leaveRoom(room, 'p1')).toBeNull()
+  })
+
+  it('rematch clears human ready but keeps AI ready', () => {
+    let room = createRoom('TIGER-42', host, 'test-circuit')
+    room = setReady(room, 'p1', true)
+    room = addAi(room, 'p1', firstUnused)
+    const next = rematch(room)
+    expect(next.players.find((p) => p.id === 'p1')!.ready).toBe(false)
+    expect(next.players.find((p) => p.isAi)!.ready).toBe(true)
   })
 })
