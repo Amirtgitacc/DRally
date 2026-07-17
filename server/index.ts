@@ -204,7 +204,7 @@ wss.on('connection', (ws) => {
         store.apply(conn.code, () => res.room)
         const track = trackById(room.trackId)
         const seed = Math.floor(Math.random() * 2 ** 31)
-        const { setups, roster } = buildNetworkRace(room.players, /* weaponsEnabled */ true)
+        const { setups, roster } = buildNetworkRace(room.players, /* weaponsEnabled */ true, track)
         const env = buildRaceEnv(track, { playerSpec: DEFAULT_PLAYER_SPEC, weaponsEnabled: true, hasPlating: false, hasOverTurbo: false, raceEndMode: 'all-humans' })
         const host = createRaceHost(env, roster, setups, seed, room.trackId, track.laps)
         hosts.set(conn.code, host)
