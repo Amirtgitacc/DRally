@@ -10,6 +10,8 @@ export interface LobbyPlayer {
   name: string
   carId: string
   ready: boolean
+  /** true for AI grid-fill opponents; false for humans */
+  isAi: boolean
 }
 
 export interface LobbySnapshot {
@@ -27,7 +29,7 @@ export interface RaceCarInfo {
   color: number
   /** CAR_CATALOG id → texture key `car-top-${chassisId}` */
   chassisId: string
-  /** always false in Phase 3 (AI grid fill is deferred) */
+  /** true for AI grid-fill opponents */
   isAi: boolean
 }
 
@@ -49,6 +51,8 @@ export type ClientMsg =
   | { t: 'ready'; ready: boolean }
   | { t: 'leave' }
   | { t: 'start' }
+  | { t: 'addAi' }
+  | { t: 'removeAi'; id: string }
   | { t: 'input'; command: PlayerCommand }
   | { t: 'rematch' }
 

@@ -23,7 +23,7 @@ export function createRoom(code: string, host: NewPlayer, trackId: string): Room
     code,
     hostId: host.id,
     trackId,
-    players: [{ id: host.id, name: host.name, carId: host.carId, ready: false }],
+    players: [{ id: host.id, name: host.name, carId: host.carId, ready: false, isAi: false }],
     phase: 'lobby',
   }
 }
@@ -34,7 +34,7 @@ export function joinRoom(room: RoomState, player: NewPlayer): RoomResult {
     ok: true,
     room: {
       ...room,
-      players: [...room.players, { id: player.id, name: player.name, carId: player.carId, ready: false }],
+      players: [...room.players, { id: player.id, name: player.name, carId: player.carId, ready: false, isAi: false }],
     },
   }
 }

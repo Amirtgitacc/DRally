@@ -16,7 +16,7 @@ describe('protocol', () => {
       t: 'lobby',
       lobby: {
         code: 'TIGER-42', hostId: 'p1', trackId: 'test-circuit',
-        players: [{ id: 'p1', name: 'Nyx', carId: 'jackal', ready: false }],
+        players: [{ id: 'p1', name: 'Nyx', carId: 'jackal', ready: false, isAi: false }],
       },
     }
     expect(JSON.parse(JSON.stringify(msg))).toEqual(msg)

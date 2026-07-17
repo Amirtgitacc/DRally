@@ -76,7 +76,7 @@ describe('roomState', () => {
     const room = createRoom('TIGER-42', host, 'test-circuit')
     expect(toSnapshot(room)).toEqual({
       code: 'TIGER-42', hostId: 'p1', trackId: 'test-circuit',
-      players: [{ id: 'p1', name: 'Nyx', carId: 'jackal', ready: false }],
+      players: [{ id: 'p1', name: 'Nyx', carId: 'jackal', ready: false, isAi: false }],
     })
   })
 })
