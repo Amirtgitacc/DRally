@@ -19,9 +19,21 @@ const STATS: Array<{ label: string; key: keyof CarSpec & ('topSpeed' | 'accel' |
   { label: 'MASS', key: 'mass' },
 ]
 
-const BAR_X = 220
-const BAR_W = 520
+// Poster sits in a left panel; the name/price/stats/caps read as a spec
+// sheet in the right two-thirds so the (portrait, 2:3) poster never covers them.
+const POSTER_CX = 420
+const POSTER_CY = 510
+const POSTER_MAX_W = 460
+const POSTER_MAX_H = 680
+const ARROW_X_OFFSET = 340
+
+const RIGHT_CX = 1300
+
+const BAR_X = 980
+const BAR_W = 460
 const BAR_H = 20
+const BAR_BASE_Y = 380
+const BAR_STEP = 48
 
 /**
  * The dealer: browse all six chassis, see exactly how each compares to the car
@@ -59,14 +71,15 @@ export class CarDealerScene extends Phaser.Scene {
     heading(this, cx, 70, 'CAR DEALER')
     subheading(this, cx, 132, 'Every chassis on the ladder. The marker on each bar is the car you own.')
 
-    // hero sprite, flanked by the browse arrows
-    this.carImage = this.add.image(cx, 300, `car-hero-${CAR_CATALOG[this.idx].id}`)
-    fitImage(this.carImage, 620, 320)
-    this.tweens.add({ targets: this.carImage, y: '-=8', duration: 1500, yoyo: true, repeat: -1, ease: 'sine.inout' })
+    // dealer poster — portrait, fit into the left panel; a subtle idle pulse
+    // reads better on a large poster than the old hero's bounce.
+    this.carImage = this.add.image(POSTER_CX, POSTER_CY, `car-poster-${CAR_CATALOG[this.idx].id}`)
+    fitImage(this.carImage, POSTER_MAX_W, POSTER_MAX_H)
+    this.tweens.add({ targets: this.carImage, alpha: 0.92, duration: 1600, yoyo: true, repeat: -1, ease: 'sine.inout' })
 
     this.arrows = [-1, 1].map((dir) => {
       // arrows stay mono: Oswald has no ◄ / ► glyph
-      const arrow = text(this, cx + dir * 420, 300, dir < 0 ? '◄' : '►', {
+      const arrow = text(this, POSTER_CX + dir * ARROW_X_OFFSET, POSTER_CY, dir < 0 ? '◄' : '►', {
         size: 'title',
         color: C.oxide,
         origin: [0.5, 0.5],
@@ -76,8 +89,8 @@ export class CarDealerScene extends Phaser.Scene {
       return arrow
     })
 
-    this.nameText = text(this, cx, 462, '', { size: 'heading', origin: [0.5, 0.5] })
-    this.priceText = text(this, cx, 524, '', {
+    this.nameText = text(this, RIGHT_CX, 210, '', { size: 'heading', origin: [0.5, 0.5] })
+    this.priceText = text(this, RIGHT_CX, 280, '', {
       size: 'action',
       color: C.money,
       align: 'center',
@@ -85,7 +98,7 @@ export class CarDealerScene extends Phaser.Scene {
       origin: [0.5, 0.5],
     })
 
-    // stat bars
+    // stat bars — the "spec sheet" that reads down the right column
     this.barsGfx = this.add.graphics()
     STATS.forEach((stat, row) => {
       const y = this.barY(row)
@@ -93,7 +106,7 @@ export class CarDealerScene extends Phaser.Scene {
       this.statValueTexts.push(text(this, BAR_X + BAR_W + 24, y - 4, '', { size: 'bodySm' }))
     })
 
-    this.capsText = text(this, GAME_WIDTH - 640, this.barY(0) - 4, '', {
+    this.capsText = text(this, BAR_X + BAR_W + 220, this.barY(0) - 4, '', {
       size: 'bodySm',
       color: C.textSecondary,
       lineSpacing: 8,
@@ -131,7 +144,7 @@ export class CarDealerScene extends Phaser.Scene {
   }
 
   private barY(row: number): number {
-    return 616 + row * 48
+    return BAR_BASE_Y + row * BAR_STEP
   }
 
   private browse(dir: number) {
@@ -181,8 +194,8 @@ export class CarDealerScene extends Phaser.Scene {
     const net = carNetPrice(this.career, showing.id)
     const affordable = this.career.cash >= net
 
-    this.carImage.setTexture(`car-hero-${showing.id}`)
-    fitImage(this.carImage, 620, 320)
+    this.carImage.setTexture(`car-poster-${showing.id}`)
+    fitImage(this.carImage, POSTER_MAX_W, POSTER_MAX_H)
     this.nameText.setText(`${showing.name}${isOwned ? '  (yours)' : ''}`)
     this.blurbText.setText(showing.blurb)
 
