@@ -1,4 +1,5 @@
 import type { CarPhysicsSpec } from '../core/vehicle/carPhysics'
+import type { CarVariantSpec } from './cars'
 
 // The champion — an original character who sits ABOVE the 20-driver ladder.
 // Reaching rank #1 earns you a mandatory 1-v-1 duel against them; winning
@@ -9,6 +10,11 @@ export const BOSS = {
   name: 'The Sovereign',
   bodyColor: 0x16161c,
   accentColor: 0xc9a227,
+  variants: [
+    { key: 'base', label: 'Factory' },
+    { key: 'a', label: 'Oxblood Black Champion' },
+    { key: 'b', label: 'Ivory Lapis Imperator' },
+  ] as CarVariantSpec[],
   /** pace multiplier, a step above the rank-#1 ladder rival */
   paceScale: 1.06,
   /** collision mass — the heaviest thing on any grid */

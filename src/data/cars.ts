@@ -9,6 +9,14 @@ import type { UpgradeKind } from './economy'
  *  kept as a data field for save/schema stability. */
 export type CarVariant = 'compact' | 'muscle' | 'sleek'
 
+/** A cosmetic livery variant. Texture key = `car-top-<id>-<key>`, except
+ *  'base' which reuses the plain `car-top-<id>` texture. Cosmetic only —
+ *  never affects stats, difficulty, or economy. */
+export interface CarVariantSpec {
+  key: string
+  label: string
+}
+
 export interface CarSpec extends CarPhysicsSpec {
   id: string
   name: string
@@ -20,12 +28,14 @@ export interface CarSpec extends CarPhysicsSpec {
   mass: number
   variant: CarVariant
   blurb: string
+  /** cosmetic livery variants available for this chassis */
+  variants: CarVariantSpec[]
 }
 
 export const CAR_CATALOG: CarSpec[] = [
   {
     id: 'jackal',
-    name: 'Jackal',
+    name: 'Daewoo Cielo',
     price: 500,
     bodyColor: 0x35d07f,
     accentColor: 0xf0f0e8,
@@ -33,6 +43,11 @@ export const CAR_CATALOG: CarSpec[] = [
     upgradeCaps: { engine: 1, tires: 2, armor: 1 },
     mass: 1.0,
     variant: 'compact',
+    variants: [
+      { key: 'base', label: 'Factory' },
+      { key: 'a', label: 'Ivory Courier' },
+      { key: 'b', label: 'Azure Scrap Runner' },
+    ],
 
     accel: 620,
     brakeForce: 950,
@@ -47,7 +62,7 @@ export const CAR_CATALOG: CarSpec[] = [
   },
   {
     id: 'vandal',
-    name: 'Vandal',
+    name: 'Peykan',
     price: 1400,
     bodyColor: 0xd0b435,
     accentColor: 0x16161c,
@@ -55,6 +70,11 @@ export const CAR_CATALOG: CarSpec[] = [
     upgradeCaps: { engine: 2, tires: 2, armor: 1 },
     mass: 0.92,
     variant: 'compact',
+    variants: [
+      { key: 'base', label: 'Factory' },
+      { key: 'a', label: 'Saffron Street Brawler' },
+      { key: 'b', label: 'Cobalt Copper Outlaw' },
+    ],
 
     accel: 655,
     brakeForce: 970,
@@ -69,7 +89,7 @@ export const CAR_CATALOG: CarSpec[] = [
   },
   {
     id: 'marauder',
-    name: 'Marauder',
+    name: 'Pride',
     price: 2600,
     bodyColor: 0xd07a35,
     accentColor: 0x16161c,
@@ -77,6 +97,11 @@ export const CAR_CATALOG: CarSpec[] = [
     upgradeCaps: { engine: 2, tires: 3, armor: 2 },
     mass: 1.18,
     variant: 'muscle',
+    variants: [
+      { key: 'base', label: 'Factory' },
+      { key: 'a', label: 'Oxide Gunmetal Bruiser' },
+      { key: 'b', label: 'Desert Lapis Enforcer' },
+    ],
 
     accel: 690,
     brakeForce: 1000,
@@ -91,7 +116,7 @@ export const CAR_CATALOG: CarSpec[] = [
   },
   {
     id: 'harrier',
-    name: 'Harrier',
+    name: 'Peugeot 405',
     price: 4400,
     bodyColor: 0x4f8fd0,
     accentColor: 0xf0f0e8,
@@ -99,6 +124,11 @@ export const CAR_CATALOG: CarSpec[] = [
     upgradeCaps: { engine: 3, tires: 3, armor: 2 },
     mass: 1.05,
     variant: 'muscle',
+    variants: [
+      { key: 'base', label: 'Factory' },
+      { key: 'a', label: 'Bone Cobalt Interceptor' },
+      { key: 'b', label: 'Black Saffron Pursuit' },
+    ],
 
     accel: 730,
     brakeForce: 1040,
@@ -113,7 +143,7 @@ export const CAR_CATALOG: CarSpec[] = [
   },
   {
     id: 'basilisk',
-    name: 'Basilisk',
+    name: 'Nissan Vanet',
     price: 6800,
     bodyColor: 0x8a5fd0,
     accentColor: 0xf0f0e8,
@@ -121,6 +151,11 @@ export const CAR_CATALOG: CarSpec[] = [
     upgradeCaps: { engine: 3, tires: 3, armor: 3 },
     mass: 1.12,
     variant: 'sleek',
+    variants: [
+      { key: 'base', label: 'Factory' },
+      { key: 'a', label: 'Cobalt Salt Raider' },
+      { key: 'b', label: 'Violet Brass Ravager' },
+    ],
 
     accel: 760,
     brakeForce: 1080,
@@ -135,7 +170,7 @@ export const CAR_CATALOG: CarSpec[] = [
   },
   {
     id: 'leviathan',
-    name: 'Leviathan',
+    name: 'Patrol',
     price: 16000,
     bodyColor: 0xc23b4e,
     accentColor: 0xc9a227,
@@ -143,6 +178,11 @@ export const CAR_CATALOG: CarSpec[] = [
     upgradeCaps: { engine: 3, tires: 3, armor: 3 },
     mass: 1.3,
     variant: 'sleek',
+    variants: [
+      { key: 'base', label: 'Factory' },
+      { key: 'a', label: 'Obsidian Crimson Fortress' },
+      { key: 'b', label: 'Desert Teal Bulwark' },
+    ],
 
     accel: 830,
     brakeForce: 1150,
