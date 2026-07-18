@@ -75,6 +75,31 @@ describe('LocalPredictor', () => {
     expect(Math.hypot(renderRacing.state.x - x0, renderRacing.state.y - y0)).toBeGreaterThan(0)
   })
 
+  it('does not locally wreck on a predicted wall impact when the server says alive', () => {
+    const env = buildRaceEnvFixture()
+    const setups: CarSetup[] = [{ id: 'a', isPlayer: true, mass: 1000, damage: 0, ammo: 0, mines: 0, armorTier: 0, ai: null }]
+    const state = createRaceState(env, setups, 1)
+    state.phase = 'racing'
+    const car = state.cars[0]
+    // Park the local car right against a barrier, driving hard into it, one hit
+    // from death. The server snapshot (seedCar) says it is alive (damage 99,
+    // not wrecked); the predicted wall impact must NOT flip it to wrecked.
+    const wall = env.barriers[0]
+    car.state = { ...car.state, x: wall.x + 20, y: wall.y, vx: -900, vy: 0, z: 0, vz: 0 }
+    car.prevPos = { x: car.state.x, y: car.state.y }
+    car.damage = 99
+    car.wrecked = false
+
+    const pred = new LocalPredictor(state, env, car)
+    const idle: PlayerCommand = { input: { throttle: 0, brake: 0, steer: 0, handbrake: false }, fire: false, turbo: false, dropMine: false }
+    pred.predict(1, idle, 1000 / 60)
+
+    const render = { ...car, state: { ...car.state } }
+    pred.writeInto(render as any)
+    expect(render.wrecked).toBe(false) // server-owned; predictor must not wreck it
+    expect(state.phase).toBe('racing') // predictor must never mutate the shared phase
+  })
+
   it('eases a small correction instead of snapping, and decays it to zero', () => {
     const { env, state, car } = setup()
     const pred = new LocalPredictor(state, env, car)

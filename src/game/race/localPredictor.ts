@@ -30,6 +30,14 @@ export class LocalPredictor {
   private pending: PendingInput[] = []
   private offsetX = 0
   private offsetY = 0
+  // Wreck + damage are SERVER-owned. The predictor runs the same
+  // stepCarMovement the server does, which can locally accrue wall damage and
+  // even trip a transient (1-2 frame) self-healing wreck before the next
+  // snapshot corrects it — freezing local input for those frames. Cache the
+  // last server-acked values and restore them after every predictive step so a
+  // predicted impact never flips the local car to wrecked on its own.
+  private serverWrecked: boolean
+  private serverDamage: number
 
   constructor(
     private readonly state: RaceState,
@@ -37,6 +45,8 @@ export class LocalPredictor {
     seedCar: CarSim,
   ) {
     this.truth = cloneCar(seedCar)
+    this.serverWrecked = seedCar.wrecked
+    this.serverDamage = seedCar.damage
   }
 
   /** Advance the predicted truth one frame with the command just sent. */
@@ -64,6 +74,10 @@ export class LocalPredictor {
     // drive an independent (phantom) wreck. Server damage is authoritative.
     this.truth.damage = server.damage
     this.truth.stuckMs = 0
+    // remember the authoritative wreck/damage so step() can restore them after
+    // each predictive movement integration
+    this.serverWrecked = server.wrecked
+    this.serverDamage = server.damage
 
     this.pending = this.pending.filter((p) => p.seq > ackSeq)
     for (const p of this.pending) this.step(p.command, p.dtMs)
@@ -108,6 +122,16 @@ export class LocalPredictor {
     const wantsTurbo = drivable ? command.turbo : false
     // No slow-mo dilation client-side (slowMoUntil isn't in the snapshot); the
     // 30Hz reconcile corrects the small difference. dt in seconds.
+    const phaseBefore = this.state.phase
     stepCarMovement(this.state, this.env, this.truth, input, wantsTurbo, dtMs / 1000, [])
+    // Wreck/damage are server-owned: discard whatever this local step derived so
+    // a predicted wall impact can neither wreck the car nor advance its damage
+    // ahead of the server. The next reconcile refreshes the cached truth.
+    this.truth.wrecked = this.serverWrecked
+    this.truth.damage = this.serverDamage
+    // Defense in depth: stepCarMovement's damage path could flip the shared
+    // skeleton phase (single-player wreck rule). The predictor must never mutate
+    // it — restore if it changed.
+    if (this.state.phase !== phaseBefore) this.state.phase = phaseBefore
   }
 }

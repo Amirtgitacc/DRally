@@ -22,6 +22,11 @@ import { LocalPredictor } from './localPredictor'
 import { GUN } from '../../data/weapons'
 
 const SNAPSHOT_BUFFER_CAP = 30
+// Cosmetic sim events (sparks, audio, etc.) buffered until the render loop drains
+// them. A backgrounded tab keeps receiving 30Hz snapshots but stops draining, so
+// this would grow unbounded (memory + an FX/audio burst on refocus). Authoritative
+// state lives in the snapshots, never here — dropping the oldest events is safe.
+const PENDING_EVENTS_CAP = 256
 
 /** Shape a race-scene render loop drives, whether local or networked. */
 export interface RaceSource {
@@ -54,6 +59,10 @@ export class NetworkSource implements RaceSource {
       this.buffer.push({ snap: msg.snap, acks: msg.acks })
       if (this.buffer.length > SNAPSHOT_BUFFER_CAP) this.buffer.shift()
       this.pendingEvents.push(...msg.events)
+      // keep only the newest events on overflow (drop oldest); cosmetic-only
+      if (this.pendingEvents.length > PENDING_EVENTS_CAP) {
+        this.pendingEvents.splice(0, this.pendingEvents.length - PENDING_EVENTS_CAP)
+      }
     } else if (msg.t === 'raceEnd') {
       this.raceEndCbs.forEach((cb) => cb(msg.standings))
     }
@@ -139,6 +148,7 @@ export class NetworkSource implements RaceSource {
       this.skeleton.simTimeMs = b.simTimeMs
       this.skeleton.countdownAnnounced = b.countdownAnnounced
       this.skeleton.raceStartAt = b.raceStartAt
+      this.skeleton.trapUntil = b.trapUntil
       this.skeleton.placementOrder = [...b.placementOrder]
       this.skeleton.bullets = b.bullets.map((x) => ({ ...x }))
       this.skeleton.mines = b.mines.map((x) => ({ ...x }))

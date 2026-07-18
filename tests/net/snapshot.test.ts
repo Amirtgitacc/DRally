@@ -23,6 +23,15 @@ describe('toRaceSnapshot', () => {
     expect(snap.placementOrder).toEqual(state.placementOrder)
   })
 
+  it('carries trapUntil so the trap camera effect fires online', () => {
+    const { state } = twoCarState()
+    state.trapUntil = state.simTimeMs + 1500
+    const snap = toRaceSnapshot(state)
+    expect(snap.trapUntil).toBe(state.trapUntil)
+    const round = JSON.parse(JSON.stringify(snap))
+    expect(round.trapUntil).toBe(state.trapUntil)
+  })
+
   it('survives a JSON round-trip unchanged', () => {
     const { state } = twoCarState()
     const snap = toRaceSnapshot(state)

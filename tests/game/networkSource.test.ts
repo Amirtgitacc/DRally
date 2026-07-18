@@ -114,6 +114,22 @@ describe('NetworkSource', () => {
     expect(src.drainEvents()).toHaveLength(0)
   })
 
+  it('caps pendingEvents on overflow, keeping the newest (backgrounded tab)', () => {
+    const net = fakeNet()
+    const src = new NetworkSource(net as any, { seed: 1, trackId: 'test-circuit', laps: 3, roster, youId: 'a' }, spec)
+    // Simulate a backgrounded tab: many snapshots arrive but the render loop
+    // never drains. 2000 wall-hit events with a rising `impact` marker.
+    for (let i = 0; i < 2000; i++) {
+      net.emit({ t: 'snapshot', snap: snapAt(i, i), events: [{ type: 'wall-hit', carId: 'a', impact: i }], acks: { a: 0 } })
+    }
+    const drained = src.drainEvents()
+    expect(drained.length).toBeLessThanOrEqual(256)
+    // newest event preserved, oldest dropped
+    const last = drained[drained.length - 1] as any
+    expect(last.impact).toBe(1999)
+    expect((drained[0] as any).impact).toBeGreaterThan(0) // early events were dropped
+  })
+
   it('sendLocalInput forwards an input message with a seq', () => {
     const net = fakeNet()
     const src = new NetworkSource(net as any, { seed: 1, trackId: 'test-circuit', laps: 3, roster, youId: 'a' }, spec)
