@@ -82,14 +82,12 @@ const JOBS = [
   { src: 'variants/car_top_sovereign-a.png', out: 'cars/top/variants/sovereign-a.webp', w: 220, fit: 'inside', q: 85, trim: true },
   { src: 'variants/car_top_sovereign-b.png', out: 'cars/top/variants/sovereign-b.webp', w: 220, fit: 'inside', q: 85, trim: true },
   // --- MP-only car: anahita (top-down + 3/4 hero) ---
-  // BLOCKED: source renders (cars/green/variants/206-Anahita Version.png,
-  // 206-anahita-hero.png) bake in a real Peugeot grille badge/wordmark and
-  // reference the real "206" model in their filenames -- this violates the
-  // no-real-branding constraint in AGENTS.md and cannot be fixed by
-  // cropping/despill. Re-generate the source art without real automaker
-  // branding, then uncomment these two jobs.
-  // { src: 'variants/car_top_anahita.png',  out: 'cars/top/anahita.webp',  w: 220, fit: 'inside', q: 85, trim: true },
-  // { src: 'variants/car_hero_anahita.png', out: 'cars/hero/anahita.webp', w: 460, fit: 'inside', q: 85, trim: true },
+  // Real-world car model (Peugeot 206) used deliberately per project owner
+  // direction -- AGENTS.md's no-branding constraint targets the reference
+  // game's material (manual/screenshots), not real car models; owner
+  // supplied these renders for this exact purpose.
+  { src: 'variants/car_top_anahita.png',  out: 'cars/top/anahita.webp',  w: 220, fit: 'inside', q: 85, trim: true },
+  { src: 'variants/car_hero_anahita.png', out: 'cars/hero/anahita.webp', w: 460, fit: 'inside', q: 85, trim: true },
   // --- Poster art (full-bleed, not green-screen: straight encode, no trim) ---
   { src: 'posters/jackal-poster.png',    out: 'cars/posters/jackal.webp',    w: 768, fit: 'inside', q: 82 },
   { src: 'posters/vandal-poster.png',    out: 'cars/posters/vandal.webp',    w: 768, fit: 'inside', q: 82 },
