@@ -35,6 +35,7 @@ export class MultiplayerScene extends Phaser.Scene {
   private busy = false
   private rows: TileHandle[] = []
   private statusText!: Phaser.GameObjects.Text
+  private helperText!: Phaser.GameObjects.Text
   private disposeNativeInput?: () => void
   /** The in-flight (not-yet-joined) client, if any — ours to close on error/back-out. */
   private pendingNet?: NetClient
@@ -69,6 +70,9 @@ export class MultiplayerScene extends Phaser.Scene {
     this.rows.push(tile(this, cx, 520, 900, 90, '', { size: 'action' }))
     this.rows.push(tile(this, cx, 650, 900, 90, '', { accent: C.oxideDim }))
     this.rows.push(tile(this, cx, 760, 900, 90, ''))
+
+    // sits in the gap above CREATE ROOM — only shown while CREATE is highlighted
+    this.helperText = text(this, cx, 585, '', { size: 'caption', color: C.textSecondary, origin: [0.5, 0.5] })
 
     this.statusText = text(this, cx, 850, '', { size: 'body', color: C.danger, origin: [0.5, 0.5], wordWrapWidth: 1200, align: 'center' })
 
@@ -233,7 +237,7 @@ export class MultiplayerScene extends Phaser.Scene {
     const car = CAR_CATALOG[this.carIndex]
     this.rows[NAME_ROW].label.setText(`DRIVER NAME\n${this.name || 'TYPE A NAME'}`)
     this.rows[CAR_ROW].label.setText(`CAR\n◄ ${car.name} ►`)
-    this.rows[CODE_ROW].label.setText(`ROOM CODE (JOIN)\n${this.code || 'e.g. TIGER-42'}`)
+    this.rows[CODE_ROW].label.setText(`ROOM CODE — TO JOIN A FRIEND\n${this.code || 'e.g. TIGER-42'}`)
     this.rows[CREATE_ROW].label.setText(this.busy ? 'CONNECTING…' : 'CREATE ROOM')
     this.rows[JOIN_ROW].label.setText(this.busy ? 'CONNECTING…' : 'JOIN ROOM')
 
@@ -241,6 +245,12 @@ export class MultiplayerScene extends Phaser.Scene {
       const enabled = i === CREATE_ROW || i === JOIN_ROW ? !this.busy : true
       row.setState(i === this.selected, enabled)
     })
+
+    // the typed code is only ever read by JOIN — grey it out so it never
+    // reads as an input CREATE ROOM will pick up.
+    if (this.selected === CREATE_ROW) this.rows[CODE_ROW].label.setColor(hex(C.textMuted))
+    this.helperText.setText(this.selected === CREATE_ROW ? 'a fresh code will be generated for you' : '')
+
     this.statusText.setColor(hex(C.danger))
   }
 }
