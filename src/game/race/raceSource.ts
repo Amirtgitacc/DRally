@@ -1,7 +1,11 @@
 // NetworkSource — client-side race source for online multiplayer. Consumes
 // server `snapshot`/`raceEnd` messages, buffers them, and interpolates each
-// car ~INTERP_DELAY_MS behind the newest snapshot into a persistent RaceState
-// that RaceScene can render like a local sim. Pure logic; no Phaser imports.
+// remote car ~INTERP_DELAY_MS behind the newest snapshot. The local car is
+// driven by a LocalPredictor instead: predicted forward every frame from the
+// input just sent, reconciled once per new snapshot against the server's
+// authoritative movement, and smoothed into the render car. All of it feeds a
+// persistent RaceState that RaceScene can render like a local sim. Pure
+// logic; no Phaser imports.
 
 import type { NetClient } from '../net/netClient'
 import type { RaceStartPayload, RaceStanding, ServerMsg } from '../../core/net/protocol'
@@ -14,6 +18,7 @@ import { buildRaceEnv } from '../../core/race/raceEnvBuilder'
 import { createRaceState } from '../../core/race/raceState'
 import { trackById } from '../../data/tracks'
 import { bracket, lerpCarState, INTERP_DELAY_MS } from './interpolation'
+import { LocalPredictor } from './localPredictor'
 import { GUN } from '../../data/weapons'
 
 const SNAPSHOT_BUFFER_CAP = 30
@@ -24,7 +29,7 @@ export interface RaceSource {
   ingest(nowMs: number, deltaMs: number): void
   readonly state: RaceState
   drainEvents(): SimEvent[]
-  sendInput?(cmd: PlayerCommand): void
+  sendLocalInput?(cmd: PlayerCommand): void
 }
 
 export class NetworkSource implements RaceSource {
@@ -33,16 +38,20 @@ export class NetworkSource implements RaceSource {
   readonly env: RaceEnv
 
   private readonly net: NetClient
-  private readonly buffer: RaceSnapshot[] = []
+  private readonly buffer: Array<{ snap: RaceSnapshot; acks: Record<string, number> }> = []
   private readonly pendingEvents: SimEvent[] = []
   private readonly skeleton: RaceState
   private readonly raceEndCbs: Array<(standings: RaceStanding[]) => void> = []
   private renderTimeMs = 0
   private clockStarted = false
+  private predictor!: LocalPredictor
+  private seq = 0
+  private lastReconciledSimMs = -1
+  private pendingCommand: PlayerCommand | null = null
 
   private readonly onMsg = (msg: ServerMsg): void => {
     if (msg.t === 'snapshot') {
-      this.buffer.push(msg.snap)
+      this.buffer.push({ snap: msg.snap, acks: msg.acks })
       if (this.buffer.length > SNAPSHOT_BUFFER_CAP) this.buffer.shift()
       this.pendingEvents.push(...msg.events)
     } else if (msg.t === 'raceEnd') {
@@ -76,17 +85,22 @@ export class NetworkSource implements RaceSource {
     }))
     this.skeleton = createRaceState(this.env, setups, payload.seed)
 
+    const localCar = this.skeleton.cars.find((c) => c.id === this.youId)!
+    this.predictor = new LocalPredictor(this.skeleton, this.env, localCar)
+
     this.net.onMessage(this.onMsg)
   }
 
-  /** Advances a local render clock by the real frame delta and interpolates each
-   *  car ~INTERP_DELAY_MS behind the newest snapshot. Driving the clock by frame
-   *  time (rather than snapping it onto each arriving snapshot) is what makes
-   *  motion smooth at the render frame rate instead of stepping at the 30Hz
-   *  snapshot rate — the whole point of interpolation. */
+  /** Advances a local render clock by the real frame delta and interpolates every
+   *  OTHER car ~INTERP_DELAY_MS behind the newest snapshot. Driving the clock by
+   *  frame time (rather than snapping it onto each arriving snapshot) is what
+   *  makes motion smooth at the render frame rate instead of stepping at the 30Hz
+   *  snapshot rate — the whole point of interpolation. The local car skips
+   *  interpolation entirely: it is predicted forward every frame and reconciled
+   *  against the newest snapshot once per new snapshot (see steps 1-4 below). */
   ingest(_nowMs: number, deltaMs: number): void {
     if (this.buffer.length === 0) return
-    const latest = this.buffer[this.buffer.length - 1]
+    const latest = this.buffer[this.buffer.length - 1].snap
     const target = latest.simTimeMs - INTERP_DELAY_MS
 
     if (!this.clockStarted) {
@@ -102,36 +116,60 @@ export class NetworkSource implements RaceSource {
       if (this.renderTimeMs > latest.simTimeMs) this.renderTimeMs = latest.simTimeMs
     }
 
-    const br = bracket(this.buffer, this.renderTimeMs)
-    if (!br) return
-    const { a, b, t } = br // b is the newer (or equal) snapshot of the pair
-
-    this.skeleton.phase = b.phase
-    this.skeleton.simTimeMs = b.simTimeMs
-    this.skeleton.countdownAnnounced = b.countdownAnnounced
-    this.skeleton.raceStartAt = b.raceStartAt
-    this.skeleton.placementOrder = [...b.placementOrder]
-    this.skeleton.bullets = b.bullets.map((x) => ({ ...x }))
-    this.skeleton.mines = b.mines.map((x) => ({ ...x }))
-    this.skeleton.pickups = b.pickups.map((x) => ({ ...x }))
-
-    for (const car of this.skeleton.cars) {
-      const carA = a.cars.find((c) => c.id === car.id)
-      const carB = b.cars.find((c) => c.id === car.id)
-      if (!carA || !carB) continue
-      car.state = lerpCarState(carA.state, carB.state, t)
-      car.damage = carB.damage
-      car.wrecked = carB.wrecked
-      car.finishedAt = carB.finishedAt
-      car.turbo = carB.turbo
-      car.ammo = carB.ammo
-      car.mines = carB.mines
-      car.progress = { ...carB.progress }
-      car.lapTimes = [...carB.lapTimes]
-      car.lastInput = { ...carB.lastInput }
-      car.lastTurboActive = carB.lastTurboActive
-      car.isPlayer = carB.isPlayer
+    // 1. predict the local car forward with this frame's command
+    if (this.pendingCommand) {
+      this.predictor.predict(this.seq, this.pendingCommand, deltaMs)
+      this.pendingCommand = null
     }
+
+    // 2. reconcile against the newest snapshot, once per new snapshot
+    const newest = this.buffer[this.buffer.length - 1]
+    if (newest.snap.simTimeMs > this.lastReconciledSimMs) {
+      const serverLocal = newest.snap.cars.find((c) => c.id === this.youId)
+      if (serverLocal) this.predictor.reconcile(serverLocal, newest.acks[this.youId] ?? 0)
+      this.lastReconciledSimMs = newest.snap.simTimeMs
+    }
+
+    // 3. interpolate every OTHER car; copy server non-movement fields for the local one
+    const br = bracket(this.buffer.map((e) => e.snap), this.renderTimeMs)
+    if (br) {
+      const { a, b, t } = br // b is the newer (or equal) snapshot of the pair
+
+      this.skeleton.phase = b.phase
+      this.skeleton.simTimeMs = b.simTimeMs
+      this.skeleton.countdownAnnounced = b.countdownAnnounced
+      this.skeleton.raceStartAt = b.raceStartAt
+      this.skeleton.placementOrder = [...b.placementOrder]
+      this.skeleton.bullets = b.bullets.map((x) => ({ ...x }))
+      this.skeleton.mines = b.mines.map((x) => ({ ...x }))
+      this.skeleton.pickups = b.pickups.map((x) => ({ ...x }))
+
+      for (const car of this.skeleton.cars) {
+        const carB = b.cars.find((c) => c.id === car.id)
+        if (!carB) continue
+        // server-authoritative non-movement fields (both local and remote)
+        car.damage = carB.damage
+        car.wrecked = carB.wrecked
+        car.finishedAt = carB.finishedAt
+        car.ammo = carB.ammo
+        car.mines = carB.mines
+        car.progress = { ...carB.progress }
+        car.lapTimes = [...carB.lapTimes]
+        car.isPlayer = carB.isPlayer
+        if (car.id === this.youId) continue // movement comes from the predictor
+        const carA = a.cars.find((c) => c.id === car.id)
+        if (!carA) continue
+        car.state = lerpCarState(carA.state, carB.state, t)
+        car.turbo = carB.turbo
+        car.mines = carB.mines
+        car.lastInput = { ...carB.lastInput }
+        car.lastTurboActive = carB.lastTurboActive
+      }
+    }
+
+    // 4. write the predicted + smoothed local car
+    const localCar = this.skeleton.cars.find((c) => c.id === this.youId)
+    if (localCar) this.predictor.writeInto(localCar)
   }
 
   get state(): RaceState {
@@ -142,8 +180,13 @@ export class NetworkSource implements RaceSource {
     return this.pendingEvents.splice(0)
   }
 
-  sendInput(cmd: PlayerCommand): void {
-    this.net.send({ t: 'input', command: cmd })
+  /** Assign a seq, send the input, and stash it so the next ingest() predicts
+   *  the local car forward by the frame's delta. Call once per frame before
+   *  ingest(). */
+  sendLocalInput(command: PlayerCommand): void {
+    this.seq += 1
+    this.net.send({ t: 'input', command, seq: this.seq })
+    this.pendingCommand = command
   }
 
   onRaceEnd(cb: (standings: RaceStanding[]) => void): void {

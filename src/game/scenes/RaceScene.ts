@@ -348,7 +348,7 @@ export class RaceScene extends Phaser.Scene {
       if (this.settings.toggleFire && this.inputManager.justDown('fire')) this.fireToggled = !this.fireToggled
       if (this.settings.toggleTurbo && this.inputManager.justDown('turbo')) this.turboToggled = !this.turboToggled
       if (this.inputManager.justDown('mine')) this.mineQueued = true
-      this.netSource!.sendInput(this.buildPlayerCommand())
+      this.netSource!.sendLocalInput(this.buildPlayerCommand())
       this.mineQueued = false // consumed the moment it is sent
       this.netSource!.ingest(this.time.now, delta)
       this.sim = this.netSource!.state
