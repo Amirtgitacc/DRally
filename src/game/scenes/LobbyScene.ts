@@ -5,7 +5,7 @@ import { ALL_TRACKS, trackById } from '../../data/tracks'
 import { MAX_PLAYERS, type LobbyPlayer, type LobbySnapshot, type ServerMsg } from '../../core/net/protocol'
 import { NetClient } from '../net/netClient'
 import { C, hex } from '../ui/theme'
-import { backButton, heading, hintBar, panel, sectionLabel, text, tile } from '../ui/widgets'
+import { backButton, heading, hintBar, panel, sectionLabel, text, tile, type TileHandle } from '../ui/widgets'
 import { sceneBackground } from '../ui/sceneBackground'
 
 /**
@@ -24,6 +24,9 @@ export class LobbyScene extends Phaser.Scene {
   private trackText!: Phaser.GameObjects.Text
   private statusText!: Phaser.GameObjects.Text
   private hint!: Phaser.GameObjects.Text
+  private startTile!: TileHandle
+  private copiedLabel!: Phaser.GameObjects.Text
+  private shareUrl = ''
   private disconnectTimer?: Phaser.Time.TimerEvent
   private onNetMessage!: (msg: ServerMsg) => void
   private onNetClose!: () => void
@@ -48,6 +51,15 @@ export class LobbyScene extends Phaser.Scene {
 
     heading(this, cx, 110, `ROOM ${this.lobby.code}`)
     const shareUrl = `${window.location.origin}${window.location.pathname}?room=${this.lobby.code}`
+    this.shareUrl = shareUrl
+
+    const copyTile = tile(this, cx + 430, 110, 150, 56, 'COPY', { size: 'bodySm' })
+    copyTile.rect.setInteractive({ useHandCursor: true })
+    copyTile.rect.on('pointerup', () => this.copyShareLink(shareUrl))
+    this.copiedLabel = text(this, cx + 430, 150, '', {
+      size: 'caption', color: C.ok, origin: [0.5, 0.5],
+    })
+
     text(this, cx, 168, `Share this link to invite: ${shareUrl}`, {
       size: 'body', color: C.textSecondary, origin: [0.5, 0.5],
     })
@@ -67,8 +79,9 @@ export class LobbyScene extends Phaser.Scene {
       size: 'body', color: C.danger, origin: [0.5, 0.5], wordWrapWidth: 1200, align: 'center',
     })
 
-    const startTile = tile(this, cx, 960, 700, 80, 'START — networked race lands in Phase 3', { size: 'action' })
-    startTile.setState(false, false)
+    this.startTile = tile(this, cx, 960, 700, 80, '', { size: 'action' })
+    this.startTile.rect.setInteractive({ useHandCursor: true })
+    this.startTile.rect.on('pointerup', () => this.tryStart())
 
     this.hint = hintBar(this, '')
     backButton(this, () => this.leave())
@@ -111,7 +124,56 @@ export class LobbyScene extends Phaser.Scene {
       (event.code === 'BracketLeft' || event.code === 'BracketRight' || event.code === 'KeyT')
     ) {
       this.cycleTrack(event.code === 'BracketLeft' ? -1 : 1)
+    } else if (event.code === 'Space') {
+      this.tryStart()
+    } else if (event.code === 'KeyC') {
+      this.copyShareLink(this.shareUrl)
+    } else if (event.code === 'KeyA' && this.lobby.hostId === this.youId) {
+      if (this.lobby.players.length < MAX_PLAYERS) this.net.send({ t: 'addAi' })
+    } else if (event.code === 'KeyX' && this.lobby.hostId === this.youId) {
+      const lastAi = [...this.lobby.players].reverse().find((p) => p.isAi)
+      if (lastAi) this.net.send({ t: 'removeAi', id: lastAi.id })
     }
+  }
+
+  /** Copy the invite link; async clipboard first, hidden-textarea fallback. */
+  private copyShareLink(url: string) {
+    const done = () => {
+      this.copiedLabel.setText('Copied!')
+      this.time.delayedCall(1200, () => this.copiedLabel.setText(''))
+    }
+    const nav = navigator as Navigator & { clipboard?: { writeText(t: string): Promise<void> } }
+    if (nav.clipboard?.writeText) {
+      nav.clipboard.writeText(url).then(done).catch(() => this.copyFallback(url, done))
+    } else {
+      this.copyFallback(url, done)
+    }
+  }
+
+  private copyFallback(url: string, done: () => void) {
+    const ta = document.createElement('textarea')
+    ta.value = url
+    ta.style.position = 'fixed'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.select()
+    try { document.execCommand('copy'); done() } catch { /* clipboard blocked; no-op */ }
+    document.body.removeChild(ta)
+  }
+
+  private canStart(): boolean {
+    return (
+      this.lobby.hostId === this.youId &&
+      this.lobby.players.length >= 2 &&
+      this.lobby.players.every((p) => p.ready)
+    )
+  }
+
+  /** Host-only start trigger (keyboard or pointer). Recomputes eligibility at press time. */
+  private tryStart() {
+    if (this.transitioning) return
+    if (!this.canStart()) return
+    this.net.send({ t: 'start' })
   }
 
   private changeCar(me: LobbyPlayer, delta: number) {
@@ -133,6 +195,23 @@ export class LobbyScene extends Phaser.Scene {
       this.render()
     } else if (msg.t === 'error') {
       this.setStatus(msg.message)
+    } else if (msg.t === 'raceStart') {
+      this.transitioning = true
+      // The race scene owns `net` from here on — detach the lobby's own handlers
+      // first so neither scene reacts to messages/close meant for the other.
+      this.net.offMessage(this.onNetMessage)
+      this.net.offClose(this.onNetClose)
+      this.scene.start('Race', {
+        mode: 'network',
+        net: this.net,
+        raceStart: {
+          seed: msg.seed,
+          trackId: msg.trackId,
+          laps: msg.laps,
+          roster: msg.roster,
+          youId: msg.youId,
+        },
+      })
     }
     // 'joined' is only ever sent once, pre-Lobby — nothing to do with it here.
   }
@@ -170,23 +249,48 @@ export class LobbyScene extends Phaser.Scene {
 
     for (let i = 0; i < MAX_PLAYERS; i++) {
       const row = this.playerRows[i]
+      row.removeAllListeners('pointerup')
+      row.disableInteractive()
       const p = this.lobby.players[i]
+      const isHost = this.lobby.hostId === this.youId
       if (!p) {
-        row.setText('— open slot —')
-        row.setColor(hex(C.textMuted))
+        // first open slot shows the host's Add-AI affordance
+        const firstOpen = this.lobby.players.length === i
+        row.setText(isHost && firstOpen ? '+ Add AI  (A)' : '— open slot —')
+        row.setColor(hex(isHost && firstOpen ? C.oxide : C.textMuted))
+        if (isHost && firstOpen) {
+          row.setInteractive({ useHandCursor: true })
+          row.on('pointerup', () => {
+            if (this.lobby.players.length < MAX_PLAYERS) this.net.send({ t: 'addAi' })
+          })
+        }
         continue
       }
       const car = carById(p.carId)
       const isRowHost = p.id === this.lobby.hostId
       const isYou = p.id === this.youId
       const star = isRowHost ? '★ ' : '   '
+      const tag = p.isAi ? ' [AI]' : ''
       const readyMark = p.ready ? '✓ READY' : '✗ NOT READY'
-      row.setText(`${star}${p.name}${isYou ? ' (you)' : ''}  —  ${car.name}  —  ${readyMark}`)
+      row.setText(`${star}${p.name}${isYou ? ' (you)' : ''}${tag}  —  ${car.name}  —  ${readyMark}`)
       row.setColor(hex(isYou ? C.oxide : p.ready ? C.ok : C.textPrimary))
+      if (isHost && p.isAi) {
+        row.setInteractive({ useHandCursor: true })
+        row.on('pointerup', () => this.net.send({ t: 'removeAi', id: p.id }))
+      }
+    }
+
+    const canStart = this.canStart()
+    this.startTile.setState(false, canStart)
+    if (isHost) {
+      this.startTile.label.setText(canStart ? 'START RACE' : 'Waiting for all players…')
+    } else {
+      this.startTile.label.setText('Waiting for host…')
     }
 
     this.hint.setText(
-      `←/→ change car · Enter/R ready${isHost ? ' · [ / ] or T change track' : ''} · Esc leave`,
+      `←/→ change car · Enter/R ready${isHost ? ' · [ / ] or T change track · A add AI · X remove AI' : ''}` +
+        ` · C copy link${isHost && canStart ? ' · Space to start' : ''} · Esc leave`,
     )
   }
 }

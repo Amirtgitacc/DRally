@@ -9,9 +9,6 @@ import {
   type CarState,
 } from '../../core/vehicle/carPhysics'
 import {
-  buildGates,
-  catmullRomClosed,
-  closedPolylineLength,
   lineTangentAt,
   offsetClosedPolyline,
   scatterPointsAlong,
@@ -21,6 +18,7 @@ import {
   type Pose,
   type Vec2,
 } from '../../core/track/geometry'
+import { buildRaceEnv, computeBarriers } from '../../core/race/raceEnvBuilder'
 import { placeSpritesAlong, scatterImages } from '../track/placement'
 import { currentLap } from '../../core/race/progress'
 import { ordinal } from '../../core/race/placement'
@@ -34,9 +32,8 @@ import {
   talentTuning,
 } from '../../core/ai/talent'
 import { mineIsArmed } from '../../core/combat/mines'
-import { buildRacingLine } from '../../core/track/racingLine'
 import { formatTime } from '../../core/race/format'
-import { effectiveCarSpec } from '../../core/vehicle/carSpec'
+import { effectiveCarSpec, NO_UPGRADES } from '../../core/vehicle/carSpec'
 import { applyAbandonOutcome, applyRaceOutcome, updateTrackRecord, type CareerState } from '../../core/progression/career'
 import { applyDuelOutcome } from '../../core/progression/duel'
 import { rewardFor } from '../../core/economy/rewards'
@@ -72,7 +69,7 @@ import {
 import type { TrackDef } from '../../data/tracks/testCircuit'
 import type { RaceResults } from './ResultsScene'
 import { C, STROKE, hex } from '../ui/theme'
-import { damageColor, heading, hintBar, plate, statBar, text } from '../ui/widgets'
+import { damageColor, heading, hintBar, modal, plate, statBar, text, tile, wireTiles, type TileHandle } from '../ui/widgets'
 import { InputManager } from '../input/inputManager'
 import { TouchControls } from '../input/touchControls'
 import { isTouchDevice } from '../input/device'
@@ -91,9 +88,11 @@ import { stepRace, type PlayerCommand } from '../../core/race/stepRace'
 import type { SimEvent } from '../../core/race/simEvents'
 import { damageCarSim } from '../../core/race/combatStep'
 import { tryDropMine as tryDropMineSim } from '../../core/race/minesStep'
+import { NetworkSource } from '../race/raceSource'
+import type { NetClient } from '../net/netClient'
+import type { RaceStartPayload, RaceStanding, ServerMsg } from '../../core/net/protocol'
 
 const CAR_SCALE = 0.44
-const CAR_RADIUS = 34
 const MPH_PER_PX = 0.14
 
 /** The visual half of the old CarUnit: the Phaser objects a car renders through. */
@@ -123,11 +122,8 @@ export class RaceScene extends Phaser.Scene {
   private track!: TrackDef
   private rivalIds: string[] = []
   private centerline: Vec2[] = []
-  /** the line the AI drives: apex-clipping, straighter and shorter than centre */
-  private racingLine: Vec2[] = []
   private gates: Gate[] = []
   private barriers: Vec2[] = []
-  private gateSpacing = 1
 
   private career!: CareerState
   private playerSpec = { ...STARTER_CAR }
@@ -135,9 +131,35 @@ export class RaceScene extends Phaser.Scene {
   private hasPlating = false
   private hasOverTurbo = false
 
+  /** career: local single-player sim. network: render a server race via NetworkSource. */
+  private mode: 'career' | 'network' = 'career'
+  private net?: NetClient
+  private netSource?: NetworkSource
+  private raceStart?: RaceStartPayload
+  /** final server standings, captured on raceEnd */
+  private netStandings: RaceStanding[] = []
+  /** guards showNetworkResults() against building the overlay twice */
+  private resultsShown = false
+  /** guards activateResultsTile() against a second REMATCH/LEAVE firing before
+   *  the first completes (double-click, or Enter pressed twice) — see
+   *  activateResultsTile() for why this must be a hard gate, not just UI state */
+  private resultsActioned = false
+  private resultsOverlay?: Phaser.GameObjects.Container
+  private resultsHandles: TileHandle[] = []
+  private resultsSelected = 0
+  private onResultsKey?: (event: KeyboardEvent) => void
+  /** shared, scene-scoped: every client showing the results overlay registers this once
+   *  (in showNetworkResults) so any player's REMATCH returns ALL of them to the lobby via
+   *  the server's broadcast `lobby` message; it removes itself once fired */
+  private pendingRematchHandler?: (msg: ServerMsg) => void
+  /** guards pendingRematchHandler against firing the Lobby transition twice */
+  private lobbyTransitionStarted = false
+
   // the sim owns all race state; the scene only renders it
   private sim!: RaceState
   private env!: RaceEnv
+  /** which sim car this client controls/watches; 'player' in single-player (cars[0]) */
+  private localCarId = 'player'
   private clock = new FixedStepClock()
   private carInfo = new Map<string, { name: string; color: number; textureKey: string; chassisId?: string }>()
   private carViews = new Map<string, CarView>()
@@ -196,6 +218,12 @@ export class RaceScene extends Phaser.Scene {
     super('Race')
   }
 
+  init(data?: { mode?: 'network'; net?: NetClient; raceStart?: RaceStartPayload }) {
+    this.mode = data?.mode === 'network' ? 'network' : 'career'
+    this.net = data?.net
+    this.raceStart = data?.raceStart
+  }
+
   create() {
     this.carInfo = new Map()
     this.carViews = new Map()
@@ -212,55 +240,61 @@ export class RaceScene extends Phaser.Scene {
     this.resultCommitted = false
     this.fireToggled = false
     this.turboToggled = false
+    this.netStandings = []
+    this.resultsShown = false
+    this.resultsActioned = false
+    this.resultsOverlay = undefined
+    this.resultsHandles = []
+    this.resultsSelected = 0
+    this.onResultsKey = undefined
+    this.pendingRematchHandler = undefined
+    this.lobbyTransitionStarted = false
     this.clock = new FixedStepClock()
 
-    this.career = loadCareer()
+    // settings are career-independent (volume, bindings, reduced fx) — load in both modes
     this.settings = loadSettings()
-    this.playerSpec = effectiveCarSpec(carById(this.career.carId), this.career.upgrades)
 
-    // the accepted sign-up offer decides track and grid; fall back to a
-    // default pro-tier round if the scene starts without one
-    let offer = getCurrentOffer()
-    if (!offer) {
-      offer = {
-        track: TRACKS_BY_TIER.pro[0],
-        rivalIds: pickRivals('pro', this.random),
-        seed: randomSeed(),
+    if (this.mode === 'network') {
+      this.setupNetworkRace()
+    } else {
+      this.career = loadCareer()
+      this.playerSpec = effectiveCarSpec(carById(this.career.carId), this.career.upgrades)
+
+      // the accepted sign-up offer decides track and grid; fall back to a
+      // default pro-tier round if the scene starts without one
+      let offer = getCurrentOffer()
+      if (!offer) {
+        offer = {
+          track: TRACKS_BY_TIER.pro[0],
+          rivalIds: pickRivals('pro', this.random),
+          seed: randomSeed(),
+        }
+        setCurrentOffer(offer)
       }
-      setCurrentOffer(offer)
+      this.track = offer.track
+      this.rivalIds = offer.rivalIds
+      this.isDuel = offer.duel === true
+      this.raceSeed = offer.seed ?? randomSeed()
+      this.random = createSeededRandom(this.raceSeed)
+      this.hasPlating = this.career.ramPlating
+      this.hasOverTurbo = this.career.overTurbo
+
+      this.env = buildRaceEnv(this.track, {
+        playerSpec: this.playerSpec,
+        weaponsEnabled: this.career.profile.weaponsEnabled,
+        hasPlating: this.hasPlating,
+        hasOverTurbo: this.hasOverTurbo,
+        raceEndMode: 'single-player',
+      })
+      this.centerline = this.env.centerline
+      this.gates = this.env.gates
+
+      this.buildWorld()
+      this.env.barriers = this.barriers // keep the scene's authored barrier list identity
+
+      const setups = this.buildCarSetups()
+      this.sim = createRaceState(this.env, setups, this.raceSeed)
     }
-    this.track = offer.track
-    this.rivalIds = offer.rivalIds
-    this.isDuel = offer.duel === true
-    this.raceSeed = offer.seed ?? randomSeed()
-    this.random = createSeededRandom(this.raceSeed)
-    this.hasPlating = this.career.ramPlating
-    this.hasOverTurbo = this.career.overTurbo
-
-    this.centerline = catmullRomClosed(this.track.controls, this.track.samplesPerSegment)
-    // leave a car's width of tarmac between the line and the paint
-    this.racingLine = buildRacingLine(this.centerline, { maxOffset: this.track.width / 2 - CAR_RADIUS - 8 })
-    this.gates = buildGates(this.centerline, this.track.gateCount, this.track.width / 2 + this.track.shoulder)
-    this.gateSpacing = closedPolylineLength(this.centerline) / this.track.gateCount
-
-    this.buildWorld()
-
-    this.env = {
-      centerline: this.centerline,
-      racingLine: this.racingLine,
-      gates: this.gates,
-      barriers: this.barriers,
-      gateSpacing: this.gateSpacing,
-      trackWidth: this.track.width,
-      laps: this.track.laps,
-      tier: this.track.tier,
-      playerSpec: this.playerSpec,
-      weaponsEnabled: this.career.profile.weaponsEnabled,
-      hasPlating: this.hasPlating,
-      hasOverTurbo: this.hasOverTurbo,
-    }
-    const setups = this.buildCarSetups()
-    this.sim = createRaceState(this.env, setups, this.raceSeed)
 
     this.buildCarViews()
     this.buildPickupViews()
@@ -273,21 +307,57 @@ export class RaceScene extends Phaser.Scene {
     if (DEBUG) this.setupDebug()
   }
 
+  /** Network mode: the sim/env come from the server via NetworkSource; the scene
+   *  only renders interpolated snapshots. No career, offer, or local stepping. */
+  private setupNetworkRace() {
+    const raceStart = this.raceStart!
+    this.track = trackById(raceStart.trackId)
+    this.raceSeed = raceStart.seed
+    this.random = createSeededRandom(this.raceSeed) // cosmetics only; server owns gameplay
+    this.localCarId = raceStart.youId
+    // stock chassis with no upgrades — network camera/HUD read spec, never the career
+    this.playerSpec = effectiveCarSpec(carById(STARTER_CAR.id), NO_UPGRADES)
+    this.hasPlating = false
+    this.hasOverTurbo = false
+    this.isDuel = false
+
+    this.netSource = new NetworkSource(this.net!, raceStart, this.playerSpec)
+    this.netSource.onRaceEnd((standings) => this.onNetworkRaceOver(standings))
+    this.env = this.netSource.env
+    this.sim = this.netSource.state
+    this.centerline = this.env.centerline
+    this.gates = this.env.gates
+
+    for (const r of raceStart.roster) {
+      this.carInfo.set(r.id, {
+        name: r.name,
+        color: r.color,
+        textureKey: `car-top-${r.chassisId}`,
+        chassisId: r.chassisId,
+      })
+    }
+
+    this.buildWorld()
+    this.env.barriers = this.barriers
+  }
+
   update(_time: number, delta: number) {
-    this.inputManager.update()
-    if (this.settings.toggleFire && this.inputManager.justDown('fire')) this.fireToggled = !this.fireToggled
-    if (this.settings.toggleTurbo && this.inputManager.justDown('turbo')) this.turboToggled = !this.turboToggled
-    if (this.inputManager.justDown('mine')) this.mineQueued = true // latch across 0-step frames
+    if (this.mode === 'network') {
+      // still poll local input and forward it; the server simulates it
+      this.inputManager.update()
+      if (this.settings.toggleFire && this.inputManager.justDown('fire')) this.fireToggled = !this.fireToggled
+      if (this.settings.toggleTurbo && this.inputManager.justDown('turbo')) this.turboToggled = !this.turboToggled
+      if (this.inputManager.justDown('mine')) this.mineQueued = true
+      this.netSource!.sendLocalInput(this.buildPlayerCommand())
+      this.mineQueued = false // consumed the moment it is sent
+      this.netSource!.ingest(this.time.now, delta)
+      this.sim = this.netSource!.state
+      this.handleSimEvents(this.netSource!.drainEvents())
+    } else {
+      this.careerUpdate(delta)
+    }
 
-    const command = this.buildPlayerCommand()
-    this.clock.advance(delta, () => {
-      const events = stepRace(this.sim, this.env, command, this.clock.stepMs)
-      this.handleSimEvents(events)
-      command.dropMine = false // consumed by the first step this frame
-      this.mineQueued = false
-    })
-
-    // render sync (every frame, even 0-step frames)
+    // render sync (both modes; every frame, even 0-step frames)
     for (const car of this.sim.cars) {
       const view = this.carViews.get(car.id)!
       this.syncCarVisuals(car, view)
@@ -298,6 +368,29 @@ export class RaceScene extends Phaser.Scene {
     this.syncPickupViews()
     this.updateCamera(this.sim.simTimeMs)
     this.updateHud(this.sim.simTimeMs)
+  }
+
+  private careerUpdate(delta: number) {
+    this.inputManager.update()
+    if (this.settings.toggleFire && this.inputManager.justDown('fire')) this.fireToggled = !this.fireToggled
+    if (this.settings.toggleTurbo && this.inputManager.justDown('turbo')) this.turboToggled = !this.turboToggled
+    if (this.inputManager.justDown('mine')) this.mineQueued = true // latch across 0-step frames
+
+    const command = this.buildPlayerCommand()
+    this.clock.advance(delta, () => {
+      const events = stepRace(this.sim, this.env, { player: command }, this.clock.stepMs)
+      this.handleSimEvents(events)
+      command.dropMine = false // consumed by the first step this frame
+      this.mineQueued = false
+    })
+  }
+
+  private myCar(): CarSim {
+    return this.sim.cars.find((c) => c.id === this.localCarId)!
+  }
+
+  private myView() {
+    return this.carViews.get(this.localCarId)!
   }
 
   private buildPlayerCommand(): PlayerCommand {
@@ -340,7 +433,7 @@ export class RaceScene extends Phaser.Scene {
           this.onCarsCollidedFx(e)
           break
         case 'wall-hit':
-          if (e.carId === 'player' && e.impact > 160) this.shake(90, Math.min(0.006, e.impact / 60000))
+          if (e.carId === this.localCarId && e.impact > 160) this.shake(90, Math.min(0.006, e.impact / 60000))
           break
         case 'crash-lurch':
           this.crashLurch(e.x, e.y)
@@ -358,7 +451,7 @@ export class RaceScene extends Phaser.Scene {
           this.onPickupRespawned(e.index)
           break
         case 'car-rescued':
-          if (e.carId === 'player') this.cameraFlash(160, 40, 40, 50)
+          if (e.carId === this.localCarId) this.cameraFlash(160, 40, 40, 50)
           break
         case 'lap-completed':
         case 'car-finished':
@@ -370,10 +463,142 @@ export class RaceScene extends Phaser.Scene {
     }
   }
 
-  private onRaceOver(reason: 'player-finished' | 'player-wrecked' | 'rivals-done') {
+  private onRaceOver(reason: 'player-finished' | 'player-wrecked' | 'rivals-done' | 'all-humans-done') {
+    // network races end via the server's raceEnd message (onNetworkRaceOver);
+    // the career results/save path must never run for a network race.
+    if (this.mode !== 'career') return
     if (reason === 'player-finished') this.time.delayedCall(1400, () => this.transitionToResults(this.sim.simTimeMs, false))
     else if (reason === 'player-wrecked') this.time.delayedCall(2200, () => this.transitionToResults(this.sim.simTimeMs, true))
     else this.transitionToResults(this.sim.simTimeMs, false)
+  }
+
+  /** Server declared the race over: capture standings and raise the results
+   *  overlay. No career/save/offer machinery — this is a standalone quick race. */
+  private onNetworkRaceOver(standings: RaceStanding[]) {
+    this.netStandings = standings
+    this.showNetworkResults(standings)
+  }
+
+  /** Final server standings once a network race ends. The results overlay reads
+   *  standings from the onNetworkRaceOver() parameter directly; this getter exists
+   *  for external/debug access to the last-known standings. */
+  get finalStandings(): RaceStanding[] {
+    return this.netStandings
+  }
+
+  /** Leave a network race cleanly: detach the source, tell the server, drop the
+   *  socket, and return to the menu. Network mode never opens RacePause. */
+  private leaveNetworkRace() {
+    this.netSource?.dispose()
+    this.net?.send({ t: 'leave' })
+    this.net?.close()
+    this.scene.start('Menu')
+  }
+
+  /** Depth-topped, keyboard-navigable results overlay built inside `hudContainer`
+   *  (screen space, rendered only by the fixed hudCam — see setupCameras) so it
+   *  sits over the frozen race without inheriting the world camera's follow/zoom.
+   *  Not a new Phaser scene: single-player's RacePause pattern doesn't apply here
+   *  since network mode never pauses (see setupInput). */
+  private showNetworkResults(standings: RaceStanding[]) {
+    if (this.resultsShown) return
+    this.resultsShown = true
+    audioBus.engineStop()
+
+    // Shown to every client at race end, so register the shared lobby-return
+    // handler here (not in requestRematch): the server broadcasts `lobby` to the
+    // whole room on any one player's rematch, and every client still on this
+    // overlay must follow it back to the Lobby together.
+    const onLobby = (msg: ServerMsg) => {
+      if (msg.t !== 'lobby') return
+      if (this.lobbyTransitionStarted) return
+      this.lobbyTransitionStarted = true
+      this.net!.offMessage(onLobby)
+      this.pendingRematchHandler = undefined
+      this.netSource?.dispose()
+      this.scene.start('Lobby', { net: this.net, youId: this.localCarId, lobby: msg.lobby })
+    }
+    this.pendingRematchHandler = onLobby
+    this.net!.onMessage(onLobby)
+
+    const cx = this.scale.width / 2
+    const cy = this.scale.height / 2
+    const panelW = 820
+    const panelH = 300 + standings.length * 56
+    const topY = cy - panelH / 2
+
+    const objects: Phaser.GameObjects.GameObject[] = []
+    objects.push(this.add.rectangle(cx, cy, this.scale.width, this.scale.height, 0x000000, 0.72))
+    objects.push(modal(this, cx, cy, panelW, panelH))
+    objects.push(heading(this, cx, topY + 62, 'RACE COMPLETE'))
+
+    standings.forEach((s, i) => {
+      const best = s.lapTimes.length ? formatTime(Math.min(...s.lapTimes)) : '—'
+      const isYou = s.id === this.localCarId
+      objects.push(
+        text(this, cx, topY + 130 + i * 52, `${s.place}. ${s.name}${isYou ? ' (you)' : ''}   ${best}`, {
+          size: 'bodyLg',
+          color: isYou ? C.oxide : C.textPrimary,
+          origin: [0.5, 0.5],
+        }),
+      )
+    })
+
+    const tilesY = topY + panelH - 90
+    const rematch = tile(this, cx - 220, tilesY, 400, 74, 'REMATCH')
+    const leave = tile(this, cx + 220, tilesY, 400, 74, 'LEAVE', { select: C.danger })
+    objects.push(rematch.rect, rematch.label, leave.rect, leave.label)
+
+    this.resultsHandles = [rematch, leave]
+    this.resultsSelected = 0
+    this.refreshResultsSelection()
+    wireTiles(
+      this.resultsHandles,
+      (i) => { this.resultsSelected = i; this.refreshResultsSelection() },
+      (i) => this.activateResultsTile(i),
+    )
+
+    // screen space, above every existing hudContainer child (touch controls sit at depth 1000)
+    this.resultsOverlay = this.add.container(0, 0, objects).setDepth(5000)
+    this.hudContainer.add(this.resultsOverlay)
+
+    this.cameraFlash(220, 255, 246, 220) // respects reducedFlash internally; skipped when set
+
+    const onKey = (event: KeyboardEvent) => {
+      if (event.code === 'ArrowUp' || event.code === 'ArrowDown') {
+        this.resultsSelected = this.resultsSelected === 0 ? 1 : 0
+        this.refreshResultsSelection()
+      } else if (event.code === 'Enter') {
+        this.activateResultsTile(this.resultsSelected)
+      }
+    }
+    this.onResultsKey = onKey
+    this.input.keyboard?.on('keydown', onKey)
+  }
+
+  private refreshResultsSelection() {
+    this.resultsHandles.forEach((h, i) => h.setState(i === this.resultsSelected, true))
+  }
+
+  /** Guarded against firing twice for the same overlay: without this, a
+   *  double-click or a double Enter-press before the server responds could
+   *  register two `onLobby` handlers (NetClient.offMessage doesn't affect an
+   *  in-flight forEach in onMessage), so both would fire on the single `lobby`
+   *  broadcast and run the rematch/leave handoff twice. */
+  private activateResultsTile(i: number) {
+    if (this.resultsActioned) return
+    this.resultsActioned = true
+    this.resultsHandles.forEach((h, hi) => h.setState(hi === i, false))
+    if (i === 0) this.requestRematch()
+    else this.leaveNetworkRace()
+  }
+
+  /** Ask the server for a rematch. The server resets the room, re-seats every
+   *  still-connected player, and broadcasts `lobby` to the whole room — the shared
+   *  handler registered in showNetworkResults() (for every client on the overlay,
+   *  including this one) handles the handoff to LobbyScene. */
+  private requestRematch() {
+    this.net!.send({ t: 'rematch' })
   }
 
   // ---------------------------------------------------------------- FX handlers
@@ -394,9 +619,9 @@ export class RaceScene extends Phaser.Scene {
       this.bulletViews.set(target.id, sprite)
     }
 
-    const distToPlayer = e.carId === 'player'
+    const distToPlayer = e.carId === this.localCarId
       ? 0
-      : Math.hypot(e.x - this.sim.cars[0].state.x, e.y - this.sim.cars[0].state.y)
+      : Math.hypot(e.x - this.myCar().state.x, e.y - this.myCar().state.y)
     if (distToPlayer < 900) audioBus.shot(1 - distToPlayer / 1000)
 
     // muzzle flash (audio hook: gunshot)
@@ -412,7 +637,7 @@ export class RaceScene extends Phaser.Scene {
   private onBulletHitFx(e: Extract<SimEvent, { type: 'bullet-hit' }>) {
     this.hitSparks.explode(5, e.x, e.y)
     this.flashCar(e.carId)
-    if (e.carId === 'player') {
+    if (e.carId === this.localCarId) {
       this.shake(60, IMPACT_FX.playerHitShake)
       this.flashScreenEdge(C.danger, IMPACT_FX.playerHitFlashAlpha)
     }
@@ -425,7 +650,7 @@ export class RaceScene extends Phaser.Scene {
       this.flashCar(e.aId)
       this.flashCar(e.bId)
     }
-    if ((e.aId === 'player' || e.bId === 'player') && e.impact > 180) {
+    if ((e.aId === this.localCarId || e.bId === this.localCarId) && e.impact > 180) {
       this.shake(70 + Math.min(140, e.impact / 6), Math.min(IMPACT_FX.crashMaxShake, e.impact / 45000))
     }
   }
@@ -509,8 +734,8 @@ export class RaceScene extends Phaser.Scene {
       ease: 'quad.out',
     })
 
-    const player = this.sim.cars[0]
-    const nearPlayer = e.carId === 'player' || Math.hypot(player.state.x - x, player.state.y - y) < 420
+    const player = this.myCar()
+    const nearPlayer = e.carId === this.localCarId || Math.hypot(player.state.x - x, player.state.y - y) < 420
     if (nearPlayer) {
       this.shake(160, IMPACT_FX.landingShake)
       audioBus.thud()
@@ -551,7 +776,7 @@ export class RaceScene extends Phaser.Scene {
     this.scorchStamp.setPosition(e.x, e.y).setRotation(this.random() * Math.PI)
     this.skidRT.draw(this.scorchStamp)
 
-    const player = this.sim.cars[0]
+    const player = this.myCar()
     if (Math.hypot(player.state.x - e.x, player.state.y - e.y) < 500) {
       this.shake(200, 0.008)
     }
@@ -566,7 +791,7 @@ export class RaceScene extends Phaser.Scene {
   }
 
   private onPickupCollected(e: Extract<SimEvent, { type: 'pickup-collected' }>) {
-    if (e.carId === 'player') {
+    if (e.carId === this.localCarId) {
       audioBus.pickup(e.pickup !== 'trap')
       const toasts: Record<PickupType, [string, number]> = {
         ammo: [`+${PICKUPS.ammoAmount} AMMO`, C.ammo],
@@ -1039,8 +1264,8 @@ export class RaceScene extends Phaser.Scene {
         dnf: car.isPlayer && abandoned,
       }
     })
-    const player = this.sim.cars[0]
-    const playerPosition = this.sim.placementOrder.indexOf('player') + 1
+    const player = this.myCar()
+    const playerPosition = this.sim.placementOrder.indexOf(this.localCarId) + 1
     const won = playerPosition === 1 && !playerWrecked && !abandoned
     const reward = this.isDuel || abandoned ? { cash: 0, points: 0 } : rewardFor(this.track.tier, playerPosition, playerWrecked)
 
@@ -1067,7 +1292,7 @@ export class RaceScene extends Phaser.Scene {
       // skipped tiers run in the background
       const rivalPlacements = this.sim.placementOrder
         .map((id, i) => ({ id, placement: i + 1, wrecked: this.sim.cars.find((c) => c.id === id)!.wrecked }))
-        .filter((r) => r.id !== 'player')
+        .filter((r) => r.id !== this.localCarId)
       let ladder = applyRaceLadderResults(this.career.ladder, this.track.tier, rivalPlacements)
       ladder = simulateRound(ladder, this.track.tier, this.rivalIds, this.random)
       this.career = { ...this.career, ladder }
@@ -1245,12 +1470,9 @@ export class RaceScene extends Phaser.Scene {
     this.skidStamp = this.add.image(0, 0, 'skid-stamp').setVisible(false)
     this.scorchStamp = this.add.image(0, 0, 'scorch').setVisible(false)
 
-    for (const side of [1, -1]) {
-      const wallLine = offsetClosedPolyline(this.centerline, side * (shoulderHalf + 24))
-      for (const p of spacedPointsAlong(wallLine, 54)) {
-        this.barriers.push(p)
-        this.add.image(p.x, p.y, 'tire-wall').setDepth(3)
-      }
+    for (const p of computeBarriers(this.centerline, halfW, this.track.shoulder)) {
+      this.barriers.push(p)
+      this.add.image(p.x, p.y, 'tire-wall').setDepth(3)
     }
 
     this.dressTrackForNight(halfW, shoulderHalf)
@@ -1566,15 +1788,15 @@ export class RaceScene extends Phaser.Scene {
         this.skidStamp.setPosition(wx, wy).setRotation(car.state.heading).setAlpha(0.4)
         this.skidRT.draw(this.skidStamp)
       }
-      if (car.isPlayer) {
+      if (car.id === this.localCarId) {
         this.tireSmoke.setPosition(car.state.x + rearX * cos, car.state.y + rearX * sin)
       }
     }
-    if (car.isPlayer) this.tireSmoke.emitting = skidding
+    if (car.id === this.localCarId) this.tireSmoke.emitting = skidding
   }
 
   private updateCamera(now: number) {
-    const player = this.sim.cars[0]
+    const player = this.myCar()
     const cam = this.cameras.main
     const speedRatio = Math.min(1, speed(player.state) / this.playerSpec.topSpeed)
     const boosting = player.lastTurboActive && !player.wrecked
@@ -1635,7 +1857,7 @@ export class RaceScene extends Phaser.Scene {
   private setupCameras() {
     const cam = this.cameras.main
     cam.setBounds(0, 0, this.track.world.w, this.track.world.h)
-    cam.startFollow(this.carViews.get('player')!.sprite, true, 0.08, 0.08)
+    cam.startFollow(this.myView().sprite, true, 0.08, 0.08)
     cam.setZoom(1.05)
     if (this.game.renderer.type === Phaser.WEBGL) {
       cam.postFX.addVignette(0.5, 0.5, 1.0, 0.18)
@@ -1649,8 +1871,10 @@ export class RaceScene extends Phaser.Scene {
   private setupInput() {
     this.inputManager = new InputManager(this)
     const onKey = (event: KeyboardEvent) => {
-      if (this.inputManager.matches('pause', event.code) && this.sim.phase !== 'finished' && !this.scene.isPaused()) {
-        this.openPause()
+      if (this.inputManager.matches('pause', event.code)) {
+        // single-player pauses into RacePause; a network race leaves cleanly (no pause)
+        if (this.mode === 'network') this.leaveNetworkRace()
+        else if (this.sim.phase !== 'finished' && !this.scene.isPaused()) this.openPause()
       } else if (this.inputManager.matches('mute', event.code)) {
         this.settings.muted = !this.settings.muted
         saveSettings(this.settings)
@@ -1661,13 +1885,19 @@ export class RaceScene extends Phaser.Scene {
 
     if (isTouchDevice()) {
       this.touchControls = new TouchControls(this, this.hudContainer, this.inputManager, () => {
-        if (this.sim.phase !== 'finished' && !this.scene.isPaused()) this.openPause()
+        if (this.mode === 'network') this.leaveNetworkRace()
+        else if (this.sim.phase !== 'finished' && !this.scene.isPaused()) this.openPause()
       })
     }
 
     this.events.once('shutdown', () => {
       audioBus.engineStop()
+      this.netSource?.dispose() // detach net handlers so repeated visits don't stack
       this.input.keyboard?.off('keydown', onKey)
+      if (this.onResultsKey) this.input.keyboard?.off('keydown', this.onResultsKey)
+      this.onResultsKey = undefined
+      if (this.pendingRematchHandler) this.net?.offMessage(this.pendingRematchHandler)
+      this.pendingRematchHandler = undefined
       this.touchControls?.destroy()
       this.touchControls = undefined
       this.inputManager.destroy()
@@ -1677,10 +1907,10 @@ export class RaceScene extends Phaser.Scene {
   private openPause() {
     audioBus.engineStop()
     this.inputManager.reset()
-    const position = this.sim.placementOrder.indexOf('player') + 1
+    const position = this.sim.placementOrder.indexOf(this.localCarId) + 1
     this.scene.launch('RacePause', {
       trackName: this.track.name,
-      lap: currentLap(this.sim.cars[0].progress),
+      lap: currentLap(this.myCar().progress),
       laps: this.track.laps,
       position,
       weaponsFree: this.env.weaponsEnabled && this.sim.simTimeMs > this.sim.raceStartAt + WEAPONS_FREE_DELAY_MS,
@@ -1722,6 +1952,9 @@ export class RaceScene extends Phaser.Scene {
       stroke: C.shadow,
       strokeThickness: STROKE.text,
     })
+    // network races have no economy — cash always reads $0 there, so hide the chip
+    // instead of showing a misleading static value (F3)
+    this.cashText.setVisible(this.mode !== 'network')
 
     this.speedText = text(this, 28, this.scale.height - 28, '0 MPH', {
       size: 'speed',
@@ -1774,8 +2007,19 @@ export class RaceScene extends Phaser.Scene {
       strokeThickness: STROKE.text,
     })
 
-    const identityText = text(this, 16, 94, `${this.career.profile.driverName.toUpperCase()} · WEAPONS ${this.career.profile.weaponsEnabled ? 'ON' : 'OFF'}`, {
-      size: 'caption', color: this.career.profile.liveryColor, stroke: C.shadow, strokeThickness: STROKE.text,
+    // identity is driven by the career in single-player, by the local roster entry online
+    let identityLabel: string
+    let identityColor: number
+    if (this.mode === 'network') {
+      const me = this.raceStart!.roster.find((r) => r.id === this.raceStart!.youId)!
+      identityLabel = `${me.name.toUpperCase()} · WEAPONS ON`
+      identityColor = me.color
+    } else {
+      identityLabel = `${this.career.profile.driverName.toUpperCase()} · WEAPONS ${this.career.profile.weaponsEnabled ? 'ON' : 'OFF'}`
+      identityColor = this.career.profile.liveryColor
+    }
+    const identityText = text(this, 16, 94, identityLabel, {
+      size: 'caption', color: identityColor, stroke: C.shadow, strokeThickness: STROKE.text,
     })
 
     const hudChildren: Phaser.GameObjects.GameObject[] = [
@@ -1811,7 +2055,7 @@ export class RaceScene extends Phaser.Scene {
   }
 
   private updateHud(now: number) {
-    const player = this.sim.cars[0]
+    const player = this.myCar()
     this.speedText.setText(`${Math.round(speed(player.state) * MPH_PER_PX)} MPH`)
     this.cashText.setText(`$${player.cash}`)
     this.lapText.setText(`LAP ${currentLap(player.progress)}/${this.track.laps}`)
@@ -1846,13 +2090,15 @@ export class RaceScene extends Phaser.Scene {
       this.hudBars.strokeCircle(x, y, 7)
     }
 
-    const weapons = this.career.profile.weaponsEnabled
+    // env.weaponsEnabled mirrors career.profile.weaponsEnabled in single-player and
+    // is always true online — read it so this per-frame HUD never touches the career
+    const weapons = this.mode === 'network' ? this.env.weaponsEnabled : this.career.profile.weaponsEnabled
     this.hudStatusValues[0].setText(`${Math.round(hullRemaining)}% LEFT`).setColor(hex(damageColor(player.damage)))
     this.hudStatusValues[1].setText(weapons ? `${player.ammo} / ${GUN.ammoMax}` : 'DISABLED').setColor(hex(weapons ? C.ammo : C.textDisabled))
     this.hudStatusValues[2].setText(`${Math.round(player.turbo * 100)}%`).setColor(hex(this.hasOverTurbo ? C.warn : C.turbo))
     this.hudStatusValues[3].setText(weapons ? `${player.mines} / ${MINES.count}` : 'DISABLED').setColor(hex(weapons ? C.danger : C.textDisabled))
 
-    const playerPos = this.sim.placementOrder.indexOf('player') + 1
+    const playerPos = this.sim.placementOrder.indexOf(this.localCarId) + 1
     if (playerPos > 0) this.positionText.setText(player.wrecked ? 'OUT' : ordinal(playerPos))
 
     this.sim.placementOrder.forEach((id, i) => {
@@ -1861,7 +2107,7 @@ export class RaceScene extends Phaser.Scene {
       const row = this.standingsTexts[i]
       const status = car.wrecked ? ' ✗' : car.finishedAt !== null ? ' *' : ` ${Math.round(car.damage)}%`
       row.setText(`${i + 1}. ${info.name}${status}`)
-      row.setColor(hex(car.isPlayer ? C.oxide : info.color))
+      row.setColor(hex(car.id === this.localCarId ? C.oxide : info.color))
     })
 
     // rivals-done grace countdown toast — owned by the HUD, driven by sim state
@@ -1932,14 +2178,14 @@ export class RaceScene extends Phaser.Scene {
         pace: c.ai ? Math.round(c.ai.speedScale * 1000) / 1000 : undefined,
       })),
       track: this.track.id,
-      turboActive: this.sim.cars[0].lastTurboActive,
+      turboActive: this.myCar().lastTurboActive,
       bullets: this.sim.bullets.length,
       minesOnTrack: this.sim.mines.length,
       pickupsActive: this.sim.pickups.filter((p) => p.respawnAt === null).length,
     })
     w.__setCarState = (s: Partial<CarState>) => {
-      this.sim.cars[0].state = { ...this.sim.cars[0].state, ...s }
-      this.sim.cars[0].prevPos = { x: this.sim.cars[0].state.x, y: this.sim.cars[0].state.y }
+      this.myCar().state = { ...this.myCar().state, ...s }
+      this.myCar().prevPos = { x: this.myCar().state.x, y: this.myCar().state.y }
     }
     w.__applyDamage = (id: string, amount: number) => {
       const car = this.sim.cars.find((c) => c.id === id)
@@ -1954,7 +2200,7 @@ export class RaceScene extends Phaser.Scene {
       if (car) car.state = launchCar(car.state, vz)
     }
     w.__dropMineAt = (x: number, y: number) => {
-      const car = this.sim.cars[0]
+      const car = this.myCar()
       const saved = { ...car.state }
       car.state = { ...car.state, x: x + 55 * Math.cos(car.state.heading), y: y + 55 * Math.sin(car.state.heading) }
       car.mines++
@@ -1980,7 +2226,7 @@ export class RaceScene extends Phaser.Scene {
      * The player keeps its own chassis, gets no rank pace and no rubber band.
      */
     w.__autoPilot = (cfg: { fire?: boolean; turbo?: boolean; mines?: boolean; style?: number; talent?: 1 | 2 | 3 | 4 } | null) => {
-      const player = this.sim.cars[0]
+      const player = this.myCar()
       if (!cfg) {
         this.sim.autoPilot = null
         player.ai = null
@@ -2013,12 +2259,12 @@ export class RaceScene extends Phaser.Scene {
     /** Final order + who survived, readable the moment the race ends. */
     w.__raceSummary = () => ({
       phase: this.sim.phase,
-      over: this.sim.phase === 'finished' || this.sim.cars[0].finishedAt !== null || this.sim.cars[0].wrecked,
+      over: this.sim.phase === 'finished' || this.myCar().finishedAt !== null || this.myCar().wrecked,
       placements: [...this.sim.placementOrder],
-      playerPosition: this.sim.placementOrder.indexOf('player') + 1,
-      playerWrecked: this.sim.cars[0].wrecked,
-      playerDamage: Math.round(this.sim.cars[0].damage),
-      playerLap: currentLap(this.sim.cars[0].progress),
+      playerPosition: this.sim.placementOrder.indexOf(this.localCarId) + 1,
+      playerWrecked: this.myCar().wrecked,
+      playerDamage: Math.round(this.myCar().damage),
+      playerLap: currentLap(this.myCar().progress),
       elapsedMs: Math.round(this.sim.simTimeMs - this.sim.raceStartAt),
       cars: this.sim.cars.map((c) => ({
         id: c.id,

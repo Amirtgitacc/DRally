@@ -2,42 +2,24 @@
 // Phaser imports. Identical seed + identical command sequence must produce
 // identical state and identical events: this is the multiplayer contract.
 
-import {
-  IDLE_INPUT,
-  isAirborne,
-  justLanded,
-  speed,
-  stepCar,
-  type CarInput,
-} from '../vehicle/carPhysics'
-import { stepTurboMeter } from '../vehicle/turboMeter'
+import { IDLE_INPUT, isAirborne, type CarInput } from '../vehicle/carPhysics'
 import { collideCars } from '../vehicle/collision'
-import { needsRescue, rescuePose, updateStuckMs } from '../vehicle/rescue'
-import { RESCUE } from '../../data/rescue'
 import { applyGateCrossing, nextGateIndex } from './progress'
-import { distanceToClosedPolyline, segmentsIntersect, turnAmount } from '../track/geometry'
+import { segmentsIntersect, turnAmount } from '../track/geometry'
 import { racePlacements } from './placementSystem'
-import { computeAiCombat, computeAiInput, effectiveSpec, hasTargetInSights, wantsAutoMine } from './aiControl'
+import { computeAiCombat, computeAiInput, hasTargetInSights, wantsAutoMine } from './aiControl'
 import { damageCarSim, tryFire, updateBullets } from './combatStep'
 import { tryDropMine, updateMines } from './minesStep'
 import { updatePickups } from './pickupsStep'
-import {
-  IMPACT_FX,
-  MINE_BLAST,
-  RAM_DAMAGE,
-  TURBO,
-  WALL_DAMAGE,
-  WEAPONS_FREE_DELAY_MS,
-} from '../../data/weapons'
-import { OVERCHARGED_TURBO, RAM_PLATING } from '../../data/blackMarket'
+import { IMPACT_FX, RAM_DAMAGE, WEAPONS_FREE_DELAY_MS } from '../../data/weapons'
+import { RAM_PLATING } from '../../data/blackMarket'
 import { impactDamage } from '../combat/damage'
+import { stepCarMovement } from './carMovement'
 import type { CarSim, RaceEnv, RaceState } from './raceState'
 import type { SimEvent } from './simEvents'
 
-const CAR_RADIUS = 34
 const CAR_BODY_RADIUS = 30
-const TIRE_RADIUS = 24
-const OFF_TRACK_DRAG = 1.4
+const MAX_RACE_MS = 10 * 60 * 1000
 
 export interface PlayerCommand {
   input: CarInput
@@ -48,7 +30,9 @@ export interface PlayerCommand {
 
 export const IDLE_COMMAND: PlayerCommand = { input: { ...IDLE_INPUT }, fire: false, turbo: false, dropMine: false }
 
-export function stepRace(state: RaceState, env: RaceEnv, command: PlayerCommand, dtMs: number): SimEvent[] {
+export type CommandSet = Record<string, PlayerCommand>
+
+export function stepRace(state: RaceState, env: RaceEnv, commands: CommandSet, dtMs: number): SimEvent[] {
   const events: SimEvent[] = []
   state.simTimeMs += dtMs
   const now = state.simTimeMs
@@ -92,10 +76,11 @@ export function stepRace(state: RaceState, env: RaceEnv, command: PlayerCommand,
               tryDropMine(state, car, events)
             }
           } else {
-            input = command.input
-            wantsFire = command.fire
-            wantsTurbo = command.turbo
-            if (command.dropMine && state.phase === 'racing' && env.weaponsEnabled) {
+            const cmd = commands[car.id] ?? IDLE_COMMAND
+            input = cmd.input
+            wantsFire = cmd.fire
+            wantsTurbo = cmd.turbo
+            if (cmd.dropMine && state.phase === 'racing' && env.weaponsEnabled) {
               tryDropMine(state, car, events)
             }
           }
@@ -109,45 +94,7 @@ export function stepRace(state: RaceState, env: RaceEnv, command: PlayerCommand,
       }
     }
 
-    // Empty turbo stays locked while the button is held. Without that latch,
-    // a zero tank alternated recharge/boost every frame and left the VFX on.
-    const overcharged = car.isPlayer && env.hasOverTurbo
-    const drain = TURBO.drainPerSec * (overcharged ? OVERCHARGED_TURBO.drainScale : 1)
-    const turboStep = stepTurboMeter(
-      { charge: car.turbo, depleted: car.turboDepleted },
-      wantsTurbo,
-      !car.wrecked && !locked && !isAirborne(car.state),
-      dt,
-      { drainPerSec: drain, rechargePerSec: TURBO.rechargePerSec, restartThreshold: TURBO.restartThreshold },
-    )
-    car.turbo = turboStep.state.charge
-    car.turboDepleted = turboStep.state.depleted
-    const turboActive = turboStep.active
-    // the overcharged mix cooks your own engine while boosting — it can wreck you
-    if (turboActive && overcharged) {
-      damageCarSim(state, car, OVERCHARGED_TURBO.selfDamagePerSec * dt, events)
-    }
-
-    // record for renderer: what this car did on this step
-    car.lastInput = input
-    car.lastTurboActive = turboActive
-
-    car.prevPos = { x: car.state.x, y: car.state.y }
-    const before = car.state
-    car.state = stepCar(car.state, input, effectiveSpec(state, env, car, turboActive), dt, MINE_BLAST.gravity)
-    if (justLanded(before, car.state)) {
-      events.push({ type: 'car-landed', carId: car.id, x: car.state.x, y: car.state.y })
-    }
-    if (car.wrecked) {
-      const decay = Math.exp(-3 * dt)
-      car.state.vx *= decay
-      car.state.vy *= decay
-    }
-    // a car in the air clears the scenery, but never the tire wall: a mine
-    // launch that sailed into the infield left the car beached in there
-    if (!isAirborne(car.state)) applyOffTrackDrag(env, car, dt)
-    resolveBarrierCollisions(state, env, car, events)
-    updateStuckRescue(state, env, car, dt, events)
+    stepCarMovement(state, env, car, input, wantsTurbo, dt, events)
 
     car.gunCooldown = Math.max(0, car.gunCooldown - dt)
     if (wantsFire && weaponsFree && !car.wrecked && (car.finishedAt === null || !car.isPlayer)) {
@@ -162,7 +109,8 @@ export function stepRace(state: RaceState, env: RaceEnv, command: PlayerCommand,
   updateMines(state, env, events)
   updatePickups(state, env, events)
   state.placementOrder = racePlacements(state.cars, env.gates)
-  checkAllRivalsDone(state, events)
+  checkAllRivalsDone(state, env, events)
+  checkAllHumansDone(state, env, events)
   return events
 }
 
@@ -186,75 +134,9 @@ function checkGateCrossing(state: RaceState, env: RaceEnv, car: CarSim, events: 
   if (result.finished && car.finishedAt === null) {
     car.finishedAt = now
     events.push({ type: 'car-finished', carId: car.id })
-    if (car.isPlayer) {
+    if (car.isPlayer && env.raceEndMode === 'single-player') {
       state.phase = 'finished'
       events.push({ type: 'race-over', reason: 'player-finished' })
-    }
-  }
-}
-
-function applyOffTrackDrag(env: RaceEnv, car: CarSim, dt: number): void {
-  const dist = distanceToClosedPolyline({ x: car.state.x, y: car.state.y }, env.centerline)
-  if (dist > env.trackWidth / 2) {
-    const decay = Math.exp(-OFF_TRACK_DRAG * dt)
-    car.state.vx *= decay
-    car.state.vy *= decay
-  }
-}
-
-/**
- * The safety net. Nothing should be able to strand a car any more, but a car
- * with no way out is an unrecoverable race, so we put it back on the line.
- */
-function updateStuckRescue(state: RaceState, env: RaceEnv, car: CarSim, dt: number, events: SimEvent[]): void {
-  if (state.phase !== 'racing' || car.wrecked || car.finishedAt !== null || isAirborne(car.state)) {
-    car.stuckMs = 0
-    return
-  }
-  const sample = {
-    speed: speed(car.state),
-    offCenter: distanceToClosedPolyline({ x: car.state.x, y: car.state.y }, env.centerline),
-    halfWidth: env.trackWidth / 2,
-  }
-  car.stuckMs = updateStuckMs(car.stuckMs, sample, dt * 1000, RESCUE)
-  if (!needsRescue(car.stuckMs, RESCUE)) return
-
-  car.stuckMs = 0
-  const gate = env.gates[nextGateIndex(car.progress) % env.gates.length]
-  const pose = rescuePose(gate.a, gate.b, gate.tangent)
-  car.state = { ...car.state, ...pose, z: 0, vz: 0, vx: 0, vy: 0 }
-  car.prevPos = { x: pose.x, y: pose.y }
-  events.push({ type: 'car-rescued', carId: car.id })
-}
-
-function resolveBarrierCollisions(state: RaceState, env: RaceEnv, car: CarSim, events: SimEvent[]): void {
-  const s = car.state
-  const minDist = CAR_RADIUS + TIRE_RADIUS
-  for (const b of env.barriers) {
-    const dx = s.x - b.x
-    const dy = s.y - b.y
-    if (Math.abs(dx) > minDist || Math.abs(dy) > minDist) continue
-    const dist = Math.hypot(dx, dy)
-    if (dist > 0 && dist < minDist) {
-      const nx = dx / dist
-      const ny = dy / dist
-      s.x = b.x + nx * minDist
-      s.y = b.y + ny * minDist
-      const vn = s.vx * nx + s.vy * ny
-      if (vn < 0) {
-        s.vx -= 1.5 * vn * nx
-        s.vy -= 1.5 * vn * ny
-        s.vx *= 0.8
-        s.vy *= 0.8
-        const impact = Math.abs(vn)
-        // bouncing off the wall mid-flight is the mine's doing, not a crash
-        if (impact > WALL_DAMAGE.threshold && !isAirborne(s)) {
-          damageCarSim(state, car, impactDamage(impact, WALL_DAMAGE), events)
-        }
-        if (impact > 160) {
-          events.push({ type: 'wall-hit', carId: car.id, impact })
-        }
-      }
     }
   }
 }
@@ -327,7 +209,8 @@ function resolveCarCollisions(state: RaceState, env: RaceEnv, events: SimEvent[]
 }
 
 /** If every rival is finished or wrecked, give the player a short grace, then end the race. */
-function checkAllRivalsDone(state: RaceState, events: SimEvent[]): void {
+function checkAllRivalsDone(state: RaceState, env: RaceEnv, events: SimEvent[]): void {
+  if (env.raceEndMode === 'all-humans') return
   const now = state.simTimeMs
   const player = state.cars.find((c) => c.isPlayer)
   if (!player || state.phase !== 'racing' || player.finishedAt !== null || player.wrecked) return
@@ -342,5 +225,24 @@ function checkAllRivalsDone(state: RaceState, events: SimEvent[]): void {
   if (now >= state.allRivalsDoneAt + 5000) {
     state.phase = 'finished'
     events.push({ type: 'race-over', reason: 'rivals-done' })
+  }
+}
+
+/** all-humans mode: end only when every human car is finished or wrecked, plus a short grace,
+ *  with a 10-minute backstop in case of a stalemate. */
+function checkAllHumansDone(state: RaceState, env: RaceEnv, events: SimEvent[]): void {
+  if (env.raceEndMode !== 'all-humans' || state.phase !== 'racing') return
+  const now = state.simTimeMs
+  const humans = state.cars.filter((c) => c.isPlayer)
+  const allDone = humans.length > 0 && humans.every((c) => c.finishedAt !== null || c.wrecked)
+  const timedOut = now >= state.raceStartAt + MAX_RACE_MS
+  if (!allDone && !timedOut) {
+    state.allRivalsDoneAt = null
+    return
+  }
+  if (state.allRivalsDoneAt === null) state.allRivalsDoneAt = now
+  if (timedOut || now >= state.allRivalsDoneAt + 3000) {
+    state.phase = 'finished'
+    events.push({ type: 'race-over', reason: 'all-humans-done' })
   }
 }

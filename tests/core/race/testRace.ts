@@ -27,6 +27,7 @@ export function buildTestEnv(overrides: Partial<RaceEnv> = {}): RaceEnv {
     weaponsEnabled: true,
     hasPlating: false,
     hasOverTurbo: false,
+    raceEndMode: 'single-player',
     ...overrides,
   }
 }

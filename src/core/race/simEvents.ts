@@ -19,4 +19,4 @@ export type SimEvent =
   | { type: 'car-rescued'; carId: string }
   | { type: 'lap-completed'; carId: string; lapTimeMs: number }
   | { type: 'car-finished'; carId: string }
-  | { type: 'race-over'; reason: 'player-finished' | 'player-wrecked' | 'rivals-done' }
+  | { type: 'race-over'; reason: 'player-finished' | 'player-wrecked' | 'rivals-done' | 'all-humans-done' }
