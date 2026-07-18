@@ -42,4 +42,11 @@ describe('career storage migration', () => {
     expect(career.profile.driverName).toBe('Nova')
     expect(storage.getItem(SETTINGS_KEY)).toBe('{"muted":true}')
   })
+
+  it('clears chosen liveries on career reset', () => {
+    storage.setItem(CAREER_KEY, JSON.stringify({ ...JSON.parse(serializeCareer(createCareer())), liveries: { jackal: 'a' } }))
+    const career = resetCareer()
+    expect(career.liveries).toEqual({})
+    expect(readCareer()!.liveries).toEqual({})
+  })
 })

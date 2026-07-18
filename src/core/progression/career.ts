@@ -1,6 +1,7 @@
 // Pure career state — the persistent between-race game. Plain serializable
 // object so save/load is a JSON round-trip.
 
+import { CAR_CATALOG } from '../../data/cars'
 import { STARTING_CASH } from '../../data/economy'
 import { NO_UPGRADES, type UpgradeLevels } from '../vehicle/carSpec'
 import { initialLadder, type Ladder } from './ladder'
@@ -58,6 +59,9 @@ export interface CareerState {
   /** championship points per AI rival (the player's points are `points`) */
   ladder: Ladder
   records: CareerRecords
+  /** cosmetic livery chosen per owned car — carId -> variant key. Read as
+   *  `career.liveries[carId] ?? 'base'`. */
+  liveries: Record<string, string>
 }
 
 export function createCareer(profile: Partial<DriverProfile> = {}): CareerState {
@@ -79,6 +83,7 @@ export function createCareer(profile: Partial<DriverProfile> = {}): CareerState 
     champion: false,
     ladder: initialLadder(),
     records: {},
+    liveries: {},
   }
 }
 
@@ -215,6 +220,21 @@ function sanitizeRecords(value: unknown): CareerRecords {
   return records
 }
 
+/** Drops entries for unknown cars or variant keys not offered by that car
+ *  (this naturally excludes MP-only cars like `anahita`, which never appear
+ *  in `CAR_CATALOG`). */
+function sanitizeLiveries(value: unknown): Record<string, string> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return {}
+  const liveries: Record<string, string> = {}
+  for (const [carId, raw] of Object.entries(value)) {
+    if (typeof raw !== 'string') continue
+    const car = CAR_CATALOG.find((c) => c.id === carId)
+    if (!car || !car.variants.some((v) => v.key === raw)) continue
+    liveries[carId] = raw
+  }
+  return liveries
+}
+
 /** Returns null on malformed/incompatible data — caller starts fresh. */
 export function deserializeCareer(raw: string): CareerState | null {
   try {
@@ -249,6 +269,7 @@ export function deserializeCareer(raw: string): CareerState | null {
       champion: data.champion === true,
       ladder: isValidLadder(data.ladder) ? data.ladder : initialLadder(),
       records: sanitizeRecords(data.records),
+      liveries: sanitizeLiveries(data.liveries),
     }
   } catch {
     return null

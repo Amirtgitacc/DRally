@@ -141,4 +141,45 @@ describe('career', () => {
     raw.records = { test: { bestLapMs: -2, bestRaceMs: 'fast', bestFinish: 0, wins: -4 } }
     expect(deserializeCareer(JSON.stringify(raw))!.records.test).toEqual({ bestLapMs: null, bestRaceMs: null, bestFinish: null, wins: 0 })
   })
+
+  it('starts with no chosen liveries', () => {
+    expect(createCareer().liveries).toEqual({})
+  })
+
+  it('round-trips chosen liveries', () => {
+    const c = { ...createCareer(), liveries: { jackal: 'a', harrier: 'b' } }
+    expect(deserializeCareer(serializeCareer(c))).toEqual(c)
+  })
+
+  it('defaults liveries to {} for saves predating the field', () => {
+    const old = JSON.parse(serializeCareer(createCareer()))
+    delete old.liveries
+    const c = deserializeCareer(JSON.stringify(old))
+    expect(c).not.toBeNull()
+    expect(c!.liveries).toEqual({})
+  })
+
+  it('drops liveries for unknown cars, unknown variant keys, and MP-only cars', () => {
+    const raw = JSON.parse(serializeCareer(createCareer()))
+    raw.liveries = {
+      jackal: 'a', // valid
+      harrier: 'z', // not a variant on harrier
+      madeUpCar: 'a', // not in CAR_CATALOG
+      anahita: 'base', // MP-only, never valid in a career save
+    }
+    const c = deserializeCareer(JSON.stringify(raw))
+    expect(c!.liveries).toEqual({ jackal: 'a' })
+  })
+
+  it('sanitizes non-object liveries values to {}', () => {
+    const raw = JSON.parse(serializeCareer(createCareer()))
+    raw.liveries = 'not-an-object'
+    expect(deserializeCareer(JSON.stringify(raw))!.liveries).toEqual({})
+
+    raw.liveries = ['jackal', 'a']
+    expect(deserializeCareer(JSON.stringify(raw))!.liveries).toEqual({})
+
+    raw.liveries = null
+    expect(deserializeCareer(JSON.stringify(raw))!.liveries).toEqual({})
+  })
 })
