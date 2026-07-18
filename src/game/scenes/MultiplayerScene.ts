@@ -1,26 +1,39 @@
 import Phaser from 'phaser'
 import { GAME_HEIGHT, GAME_WIDTH } from '../../config/game'
 import { CAR_CATALOG } from '../../data/cars'
+import { MP_ONLY_CARS } from '../../data/mpCars'
 import { ALL_TRACKS } from '../../data/tracks'
 import { isValidRoomCode, normalizeRoomCode } from '../../core/net/roomCode'
 import { NetClient } from '../net/netClient'
 import type { ServerMsg } from '../../core/net/protocol'
 import { C, hex } from '../ui/theme'
-import { backButton, flavor, heading, tile, text, type TileHandle, wireTiles } from '../ui/widgets'
+import { backButton, fitImage, flavor, heading, tile, text, type TileHandle, wireTiles } from '../ui/widgets'
 import { sceneBackground } from '../ui/sceneBackground'
 import { openNativeText } from '../ui/nativeInput'
 import { isTouchDevice } from '../input/device'
 
 const NAME_KEY = 'deathrally-mp-name'
 const CAR_KEY = 'deathrally-mp-car'
+const LIVERY_KEY = 'deathrally-mp-livery'
 const NAME_MAX = 16
 const CODE_MAX = 12
-const ROW_COUNT = 5
+const ROW_COUNT = 6
 const NAME_ROW = 0
 const CAR_ROW = 1
-const CODE_ROW = 2
-const CREATE_ROW = 3
-const JOIN_ROW = 4
+const LIVERY_ROW = 2
+const CODE_ROW = 3
+const CREATE_ROW = 4
+const JOIN_ROW = 5
+
+// Quick-race car choices: the single-player catalog plus MP-only guest cars
+// (currently just the 206 Anahita — see src/data/mpCars.ts).
+const MP_CAR_OPTIONS = [...CAR_CATALOG, ...MP_ONLY_CARS]
+
+// Selected-car art sits in the right margin the row block never uses.
+const ART_CX = 1660
+const ART_CY = 560
+const ART_MAX_W = 440
+const ART_MAX_H = 600
 
 /**
  * Career-independent entry point for online quick-race: pick a driver name and
@@ -31,17 +44,36 @@ export class MultiplayerScene extends Phaser.Scene {
   private selected = 0
   private name = ''
   private carIndex = 0
+  private liveryIndex = 0
   private code = ''
   private busy = false
   private rows: TileHandle[] = []
   private statusText!: Phaser.GameObjects.Text
   private helperText!: Phaser.GameObjects.Text
+  private carArt!: Phaser.GameObjects.Image
   private disposeNativeInput?: () => void
   /** The in-flight (not-yet-joined) client, if any — ours to close on error/back-out. */
   private pendingNet?: NetClient
 
   constructor() {
     super('Multiplayer')
+  }
+
+  /** The car currently shown/selected, across the catalog + MP-only cars. */
+  private currentCar() {
+    return MP_CAR_OPTIONS[this.carIndex]
+  }
+
+  /** The chosen livery variant key ('base' | 'a' | 'b'). Task 8 threads this
+   *  into the create/join network messages once the protocol carries it. */
+  get livery(): string {
+    const car = this.currentCar()
+    return car.variants[this.liveryIndex]?.key ?? car.variants[0]?.key ?? 'base'
+  }
+
+  /** Anahita has no dealer poster (it is never sold) — fall back to its hero cutout. */
+  private artTextureFor(carId: string): string {
+    return carId === 'anahita' ? 'car-hero-anahita' : `car-poster-${carId}`
   }
 
   create() {
@@ -53,8 +85,13 @@ export class MultiplayerScene extends Phaser.Scene {
 
     this.name = localStorage.getItem(NAME_KEY)?.slice(0, NAME_MAX) ?? ''
     const savedCarId = localStorage.getItem(CAR_KEY)
-    const savedCarIndex = savedCarId ? CAR_CATALOG.findIndex((c) => c.id === savedCarId) : -1
+    const savedCarIndex = savedCarId ? MP_CAR_OPTIONS.findIndex((c) => c.id === savedCarId) : -1
     this.carIndex = savedCarIndex >= 0 ? savedCarIndex : 0
+    const savedLiveryKey = localStorage.getItem(LIVERY_KEY)
+    const savedLiveryIndex = savedLiveryKey
+      ? this.currentCar().variants.findIndex((v) => v.key === savedLiveryKey)
+      : -1
+    this.liveryIndex = savedLiveryIndex >= 0 ? savedLiveryIndex : 0
     this.code = ''
 
     const cx = GAME_WIDTH / 2
@@ -65,16 +102,20 @@ export class MultiplayerScene extends Phaser.Scene {
       size: 'body', color: C.textSecondary, origin: [0.5, 0.5],
     })
 
-    this.rows.push(tile(this, cx, 300, 900, 90, '', { size: 'action' }))
-    this.rows.push(tile(this, cx, 410, 900, 90, '', { size: 'action' }))
-    this.rows.push(tile(this, cx, 520, 900, 90, '', { size: 'action' }))
-    this.rows.push(tile(this, cx, 650, 900, 90, '', { accent: C.oxideDim }))
-    this.rows.push(tile(this, cx, 760, 900, 90, ''))
+    this.rows.push(tile(this, cx, 270, 900, 90, '', { size: 'action' }))
+    this.rows.push(tile(this, cx, 380, 900, 90, '', { size: 'action' }))
+    this.rows.push(tile(this, cx, 490, 900, 90, '', { size: 'action' }))
+    this.rows.push(tile(this, cx, 600, 900, 90, '', { size: 'action' }))
+    this.rows.push(tile(this, cx, 710, 900, 90, '', { accent: C.oxideDim }))
+    this.rows.push(tile(this, cx, 840, 900, 90, ''))
 
-    // sits in the gap above CREATE ROOM — only shown while CREATE is highlighted
-    this.helperText = text(this, cx, 585, '', { size: 'caption', color: C.textSecondary, origin: [0.5, 0.5] })
+    this.helperText = text(this, cx, 775, '', { size: 'caption', color: C.textSecondary, origin: [0.5, 0.5] })
 
-    this.statusText = text(this, cx, 850, '', { size: 'body', color: C.danger, origin: [0.5, 0.5], wordWrapWidth: 1200, align: 'center' })
+    // selected car's art, beside the form in the margin the rows never reach
+    this.carArt = this.add.image(ART_CX, ART_CY, this.artTextureFor(this.currentCar().id))
+    fitImage(this.carArt, ART_MAX_W, ART_MAX_H)
+
+    this.statusText = text(this, cx, 920, '', { size: 'body', color: C.danger, origin: [0.5, 0.5], wordWrapWidth: 1200, align: 'center' })
 
     // deep link: prefill + focus JOIN when the URL carries a valid ?room= code
     const roomParam = new URLSearchParams(window.location.search).get('room')
@@ -93,7 +134,7 @@ export class MultiplayerScene extends Phaser.Scene {
     )
     backButton(this, () => this.backToMenu())
 
-    flavor(this, cx, GAME_HEIGHT - 52, 'Type to edit name/code · ←/→ change car · ↑/↓ navigate · Enter select · Esc back')
+    flavor(this, cx, GAME_HEIGHT - 52, 'Type to edit name/code · ←/→ change car/livery · ↑/↓ navigate · Enter select · Esc back')
 
     const kb = this.input.keyboard!
     const onKey = (event: KeyboardEvent) => this.handleKey(event)
@@ -115,6 +156,8 @@ export class MultiplayerScene extends Phaser.Scene {
     else if (event.code === 'ArrowDown') this.selected = (this.selected + 1) % ROW_COUNT
     else if (event.code === 'ArrowLeft' && this.selected === CAR_ROW) this.changeCar(-1)
     else if (event.code === 'ArrowRight' && this.selected === CAR_ROW) this.changeCar(1)
+    else if (event.code === 'ArrowLeft' && this.selected === LIVERY_ROW) this.changeLivery(-1)
+    else if (event.code === 'ArrowRight' && this.selected === LIVERY_ROW) this.changeLivery(1)
     else if (event.code === 'Backspace' && this.selected === NAME_ROW) this.name = this.name.slice(0, -1)
     else if (event.code === 'Backspace' && this.selected === CODE_ROW) this.code = this.code.slice(0, -1)
     else if (event.code === 'Enter' && this.selected === CREATE_ROW) this.attemptCreate()
@@ -139,12 +182,20 @@ export class MultiplayerScene extends Phaser.Scene {
       return
     }
     if (this.selected === CAR_ROW) { this.changeCar(1); this.refresh(); return }
+    if (this.selected === LIVERY_ROW) { this.changeLivery(1); this.refresh(); return }
     if (this.selected === CREATE_ROW) { this.attemptCreate(); return }
     if (this.selected === JOIN_ROW) { this.attemptJoin(); return }
   }
 
   private changeCar(delta: number) {
-    this.carIndex = (this.carIndex + delta + CAR_CATALOG.length) % CAR_CATALOG.length
+    this.carIndex = (this.carIndex + delta + MP_CAR_OPTIONS.length) % MP_CAR_OPTIONS.length
+    this.liveryIndex = 0 // new chassis — always back to its Factory/base livery
+  }
+
+  private changeLivery(delta: number) {
+    const variants = this.currentCar().variants
+    if (variants.length <= 1) return // e.g. Anahita only has 'base' — nothing to cycle
+    this.liveryIndex = (this.liveryIndex + delta + variants.length) % variants.length
   }
 
   private async attemptCreate() {
@@ -166,7 +217,7 @@ export class MultiplayerScene extends Phaser.Scene {
     }
     net.onMessage((msg) => this.handleMessage(msg, net))
     net.onClose(() => this.handleUnexpectedClose(net))
-    net.send({ t: 'create', name, carId: CAR_CATALOG[this.carIndex].id, trackId: ALL_TRACKS[0].id })
+    net.send({ t: 'create', name, carId: this.currentCar().id, trackId: ALL_TRACKS[0].id })
   }
 
   private async attemptJoin() {
@@ -190,14 +241,15 @@ export class MultiplayerScene extends Phaser.Scene {
     }
     net.onMessage((msg) => this.handleMessage(msg, net))
     net.onClose(() => this.handleUnexpectedClose(net))
-    net.send({ t: 'join', code, name, carId: CAR_CATALOG[this.carIndex].id })
+    net.send({ t: 'join', code, name, carId: this.currentCar().id })
   }
 
   private handleMessage(msg: ServerMsg, net: NetClient) {
     if (this.pendingNet !== net) return
     if (msg.t === 'joined') {
       localStorage.setItem(NAME_KEY, this.name.trim())
-      localStorage.setItem(CAR_KEY, CAR_CATALOG[this.carIndex].id)
+      localStorage.setItem(CAR_KEY, this.currentCar().id)
+      localStorage.setItem(LIVERY_KEY, this.livery)
       this.pendingNet = undefined
       // ownership of `net` passes to LobbyScene — do not close it here.
       this.scene.start('Lobby', { net, youId: msg.youId, lobby: msg.lobby })
@@ -234,15 +286,23 @@ export class MultiplayerScene extends Phaser.Scene {
   }
 
   private refresh() {
-    const car = CAR_CATALOG[this.carIndex]
+    const car = this.currentCar()
+    const variants = car.variants
+    const variant = variants[this.liveryIndex] ?? variants[0]
+    const canCycleLivery = variants.length > 1
+
     this.rows[NAME_ROW].label.setText(`DRIVER NAME\n${this.name || 'TYPE A NAME'}`)
     this.rows[CAR_ROW].label.setText(`CAR\n◄ ${car.name} ►`)
+    this.rows[LIVERY_ROW].label.setText(
+      canCycleLivery ? `LIVERY\n◄ ${variant.label} ►` : `LIVERY\n${variant.label}`,
+    )
     this.rows[CODE_ROW].label.setText(`ROOM CODE — TO JOIN A FRIEND\n${this.code || 'e.g. TIGER-42'}`)
     this.rows[CREATE_ROW].label.setText(this.busy ? 'CONNECTING…' : 'CREATE ROOM')
     this.rows[JOIN_ROW].label.setText(this.busy ? 'CONNECTING…' : 'JOIN ROOM')
 
     this.rows.forEach((row, i) => {
-      const enabled = i === CREATE_ROW || i === JOIN_ROW ? !this.busy : true
+      const enabled =
+        i === CREATE_ROW || i === JOIN_ROW ? !this.busy : i === LIVERY_ROW ? canCycleLivery : true
       row.setState(i === this.selected, enabled)
     })
 
@@ -250,6 +310,9 @@ export class MultiplayerScene extends Phaser.Scene {
     // reads as an input CREATE ROOM will pick up.
     if (this.selected === CREATE_ROW) this.rows[CODE_ROW].label.setColor(hex(C.textMuted))
     this.helperText.setText(this.selected === CREATE_ROW ? 'a fresh code will be generated for you' : '')
+
+    this.carArt.setTexture(this.artTextureFor(car.id))
+    fitImage(this.carArt, ART_MAX_W, ART_MAX_H)
 
     this.statusText.setColor(hex(C.danger))
   }
