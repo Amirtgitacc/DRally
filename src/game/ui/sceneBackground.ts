@@ -10,6 +10,7 @@
 
 import Phaser from 'phaser'
 import { GAME_HEIGHT, GAME_WIDTH } from '../../config/game'
+import { BackgroundTransform, coverTransform } from './backgroundTransform'
 import { C } from './theme'
 
 /** Backgrounds sit well below the -100 that procedural grain used to occupy. */
@@ -28,11 +29,17 @@ export interface SceneBackgroundHandle {
   /** Swap the art without recreating objects — venues/preview browse in place. */
   setTexture(key: string): void
   setVeil(alpha: number): void
+  /**
+   * The art-space → canvas-space transform currently applied to the image.
+   * Overlays anchored to features baked into the art must map through this so
+   * they can never drift from it (see menu plate hover rects).
+   */
+  transform(): BackgroundTransform
 }
 
 /** Scale the image to cover the whole canvas without stretching (uniform scale). */
 function cover(image: Phaser.GameObjects.Image) {
-  const scale = Math.max(GAME_WIDTH / image.width, GAME_HEIGHT / image.height)
+  const { scale } = coverTransform(GAME_WIDTH, GAME_HEIGHT, image.width, image.height)
   image.setScale(scale).setPosition(GAME_WIDTH / 2, GAME_HEIGHT / 2)
 }
 
@@ -62,6 +69,9 @@ export function sceneBackground(
     },
     setVeil(alpha: number) {
       veil?.setAlpha(alpha)
+    },
+    transform() {
+      return coverTransform(GAME_WIDTH, GAME_HEIGHT, image.width, image.height)
     },
   }
 }

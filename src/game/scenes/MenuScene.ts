@@ -8,6 +8,7 @@ import { loadSettings } from '../state/settings'
 import { C, hex } from '../ui/theme'
 import { flavor, text } from '../ui/widgets'
 import { sceneBackground } from '../ui/sceneBackground'
+import { BackgroundTransform, artToCanvas } from '../ui/backgroundTransform'
 
 interface MenuItem {
   label: string
@@ -17,14 +18,17 @@ interface MenuItem {
 }
 
 // The bg-menu art bakes the title, hero car and eight empty menu plates plus a
-// lower-left career plate. These are the plate centres (1920×1080 canvas space),
-// measured against the artwork — live labels/focus sit over them, values stay live.
-const PLATE_X = 1583
-const PLATE_W = 586
-const PLATE_H = 74
-const PLATE_Y = [205, 300, 395, 490, 585, 680, 774, 868]
-/** Lower-left career plate. */
-const CAREER_X = 275
+// lower-left career plate. These are ART-SPACE coordinates (measured directly
+// against menu-peykan-background.webp), mapped through the background's cover
+// transform at runtime so the live labels/focus rects can never drift from the
+// baked plates — values stay live. The plates are hand-authored, so their pitch
+// is intentionally uneven rather than a fixed stride.
+const PLATE_ART_X = 1580
+const PLATE_ART_W = 590
+const PLATE_ART_H = 76
+const PLATE_ART_Y = [224, 323, 412, 505, 595, 688, 779, 874]
+/** Lower-left career plate (art-space x). */
+const CAREER_ART_X = 275
 
 interface MenuHandle {
   focus: Phaser.GameObjects.Rectangle
@@ -47,6 +51,7 @@ export class MenuScene extends Phaser.Scene {
   private selected = 0
   private handles: MenuHandle[] = []
   private saved = false
+  private bgTransform: BackgroundTransform = { scale: 1, offsetX: 0, offsetY: 0 }
 
   constructor() {
     super('Menu')
@@ -65,7 +70,11 @@ export class MenuScene extends Phaser.Scene {
     const cx = GAME_WIDTH / 2
 
     // The art already carries the title, hero car and empty plates — no live copies.
-    sceneBackground(this, 'bg-menu', { veil: 0 })
+    // Grab its cover transform so every overlay maps from the same art-space the
+    // plates were baked in (art is 1920×1080 today → identity, but this stays
+    // correct if the source art is ever re-authored at a different size).
+    const bg = sceneBackground(this, 'bg-menu', { veil: 0 })
+    this.bgTransform = bg.transform()
 
     // faint drifting haze for life; kept above the art, below all UI
     this.add
@@ -79,10 +88,12 @@ export class MenuScene extends Phaser.Scene {
 
     // live player identity, seated inside the lower-left career plate
     const rank = career.champion ? 'CHAMPION' : `Rank #${playerRank(career.ladder, career.points)}`
-    text(this, CAREER_X, 742, career.profile.driverName, {
+    const nameAt = artToCanvas(this.bgTransform, CAREER_ART_X, 742)
+    const statsAt = artToCanvas(this.bgTransform, CAREER_ART_X, 800)
+    text(this, nameAt.x, nameAt.y, career.profile.driverName, {
       size: 'subtitle', origin: [0.5, 0], color: career.champion ? C.gold : C.oxide,
     })
-    text(this, CAREER_X, 800, [
+    text(this, statsAt.x, statsAt.y, [
       `${rank} · ${carById(career.carId).name}`,
       `$${career.cash} · ${career.points} pts`,
       `${career.wins} wins / ${career.racesRun} starts`,
@@ -120,14 +131,18 @@ export class MenuScene extends Phaser.Scene {
 
   /** One menu row: a transparent, plate-aligned focus rect plus a live label. */
   private makePlate(i: number, label: string): MenuHandle {
-    const y = PLATE_Y[i]
+    // Map the authored art-space plate onto canvas space through the background's
+    // cover transform, so rect + label sit exactly over the baked plate.
+    const { x, y } = artToCanvas(this.bgTransform, PLATE_ART_X, PLATE_ART_Y[i])
+    const w = PLATE_ART_W * this.bgTransform.scale
+    const h = PLATE_ART_H * this.bgTransform.scale
     // fillAlpha 0 keeps the authored plate visible; the rect is still hit-testable
     const focus = this.add
-      .rectangle(PLATE_X, y, PLATE_W, PLATE_H, C.oxide, 0)
+      .rectangle(x, y, w, h, C.oxide, 0)
       .setInteractive({ useHandCursor: true })
     focus.on('pointerover', () => { this.selected = i; this.refresh() })
     focus.on('pointerup', () => { this.selected = i; this.activate() })
-    const labelText = text(this, PLATE_X, y, label, { size: 'action', origin: [0.5, 0.5], align: 'center' })
+    const labelText = text(this, x, y, label, { size: 'action', origin: [0.5, 0.5], align: 'center' })
     return {
       focus,
       label: labelText,
