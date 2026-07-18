@@ -1,6 +1,7 @@
 import { MAX_PLAYERS, type LobbyPlayer, type LobbySnapshot, type ServerErrorCode } from './protocol'
 import { ROSTER, type RosterDriver } from '../../data/roster'
 import { rivalChassisId } from '../progression/ladder'
+import { mpCarById } from '../../data/mpCars'
 
 export interface RoomState {
   code: string
@@ -14,6 +15,18 @@ export interface NewPlayer {
   id: string
   name: string
   carId: string
+  /** Chosen livery key; optional for backward-compat with older clients —
+   *  missing or invalid-for-this-car sanitizes to 'base'. */
+  variantId?: string
+}
+
+/** Missing/unknown carId, or a variantId that isn't one of that car's
+ *  authored keys, always sanitizes to 'base'. Never throws. */
+export function sanitizeVariantId(carId: string, variantId: string | undefined): string {
+  const car = mpCarById(carId)
+  if (!car) return 'base'
+  const key = variantId ?? 'base'
+  return car.variants.some((v) => v.key === key) ? key : 'base'
 }
 
 export type RoomResult =
@@ -25,7 +38,11 @@ export function createRoom(code: string, host: NewPlayer, trackId: string): Room
     code,
     hostId: host.id,
     trackId,
-    players: [{ id: host.id, name: host.name, carId: host.carId, ready: false, isAi: false }],
+    players: [{
+      id: host.id, name: host.name, carId: host.carId,
+      variantId: sanitizeVariantId(host.carId, host.variantId),
+      ready: false, isAi: false,
+    }],
     phase: 'lobby',
   }
 }
@@ -36,7 +53,11 @@ export function joinRoom(room: RoomState, player: NewPlayer): RoomResult {
     ok: true,
     room: {
       ...room,
-      players: [...room.players, { id: player.id, name: player.name, carId: player.carId, ready: false, isAi: false }],
+      players: [...room.players, {
+        id: player.id, name: player.name, carId: player.carId,
+        variantId: sanitizeVariantId(player.carId, player.variantId),
+        ready: false, isAi: false,
+      }],
     },
   }
 }
@@ -53,11 +74,14 @@ export function leaveRoom(room: RoomState, playerId: string): RoomState | null {
   return { ...room, players, hostId }
 }
 
-/** Changing car clears that player's ready flag (their build changed). */
+/** Changing car clears that player's ready flag (their build changed) and
+ *  resets their livery to 'base' — the same "always back to Factory" rule
+ *  the client-side pickers use, since the old variant key may not exist on
+ *  the new chassis. */
 export function setCar(room: RoomState, playerId: string, carId: string): RoomState {
   return {
     ...room,
-    players: room.players.map((p) => (p.id === playerId ? { ...p, carId, ready: false } : p)),
+    players: room.players.map((p) => (p.id === playerId ? { ...p, carId, variantId: 'base', ready: false } : p)),
   }
 }
 
@@ -120,6 +144,8 @@ export function addAi(
     id: `ai:${driver.id}`,
     name: driver.name,
     carId: rivalChassisId(rank),
+    // placeholder — buildNetworkRace re-assigns AI liveries seed-derived at race start
+    variantId: 'base',
     ready: true,
     isAi: true,
   }

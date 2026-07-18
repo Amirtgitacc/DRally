@@ -6,7 +6,9 @@
 import type { LobbyPlayer, RaceCarInfo } from '../src/core/net/protocol'
 import type { CarSetup } from '../src/core/race/raceState'
 import type { TrackDef } from '../src/data/tracks/testCircuit'
-import { carById } from '../src/data/cars'
+import { carById, pickSeededVariant, STARTER_CAR } from '../src/data/cars'
+import { mpCarById } from '../src/data/mpCars'
+import { sanitizeVariantId } from '../src/core/net/roomState'
 import { ROSTER } from '../src/data/roster'
 import { rivalChassisId, rivalUpgrades, rivalStrength } from '../src/core/progression/ladder'
 import { styleForGrade, talentOf, RUBBER_BAND } from '../src/data/drivers'
@@ -15,6 +17,7 @@ import {
 } from '../src/core/ai/talent'
 import { effectiveCarSpec } from '../src/core/vehicle/carSpec'
 import { GUN, MINES, AI_MINES } from '../src/data/weapons'
+import { createSeededRandom } from '../src/core/race/random'
 
 export const MP_LIVERY_PALETTE = [0xff7a1a, 0x3aa0ff, 0x36d17a, 0xd94fd0]
 
@@ -25,9 +28,13 @@ export function buildNetworkRace(
   players: LobbyPlayer[],
   weaponsEnabled: boolean,
   track: TrackDef,
+  /** Race offer seed — the only source of randomness here (never Math.random).
+   *  Drives AI grid-fill livery assignment; same seed ⇒ same AI variants. */
+  seed: number,
 ): { setups: CarSetup[]; roster: RaceCarInfo[] } {
   const setups: CarSetup[] = []
   const roster: RaceCarInfo[] = []
+  const random = createSeededRandom(seed)
   players.forEach((player, i) => {
     const color = MP_LIVERY_PALETTE[i % MP_LIVERY_PALETTE.length]
     if (player.isAi) {
@@ -37,6 +44,7 @@ export function buildNetworkRace(
       const style = styleForGrade(talent.grade)
       const chassis = carById(rivalChassisId(rank))
       const upgrades = rivalUpgrades(rank)
+      const variantId = pickSeededVariant(chassis.variants, random).key
       setups.push({
         id: player.id,
         isPlayer: false,
@@ -57,9 +65,13 @@ export function buildNetworkRace(
           rubberBandGain: talentRubberBand(RUBBER_BAND.gainPerGate, talent),
         },
       })
-      roster.push({ id: player.id, name: player.name, color, chassisId: chassis.id, isAi: true })
+      roster.push({ id: player.id, name: player.name, color, chassisId: chassis.id, variantId, isAi: true })
     } else {
-      const car = carById(player.carId)
+      // mpCarById covers the MP-only guest cars (e.g. Anahita) that carById
+      // would throw on; fall back to the stock starter chassis defensively —
+      // isValidCarId already gated this at create/join time.
+      const car = mpCarById(player.carId) ?? carById(STARTER_CAR.id)
+      const variantId = sanitizeVariantId(player.carId, player.variantId)
       setups.push({
         id: player.id,
         isPlayer: true,
@@ -70,7 +82,7 @@ export function buildNetworkRace(
         armorTier: 0,
         ai: null,
       })
-      roster.push({ id: player.id, name: player.name, color, chassisId: player.carId, isAi: false })
+      roster.push({ id: player.id, name: player.name, color, chassisId: player.carId, variantId, isAi: false })
     }
   })
   return { setups, roster }

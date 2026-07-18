@@ -27,8 +27,8 @@ function fakeNet() {
 
 const spec = effectiveCarSpec(carById('jackal'), NO_UPGRADES)
 const roster = [
-  { id: 'a', name: 'Ana', color: 1, chassisId: 'jackal', isAi: false },
-  { id: 'b', name: 'Bo', color: 2, chassisId: 'jackal', isAi: false },
+  { id: 'a', name: 'Ana', color: 1, chassisId: 'jackal', variantId: 'base', isAi: false },
+  { id: 'b', name: 'Bo', color: 2, chassisId: 'jackal', variantId: 'base', isAi: false },
 ]
 
 function snapAt(simTimeMs: number, bx: number) {

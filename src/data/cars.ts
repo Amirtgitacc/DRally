@@ -205,3 +205,20 @@ export function carById(id: string): CarSpec {
 
 /** The free chassis every career starts with. */
 export const STARTER_CAR = CAR_CATALOG[0]
+
+/** Resolve the in-race sprite texture key for a chassis + livery variant.
+ *  'base' reuses the plain `car-top-<id>` texture; other keys map to the
+ *  authored `car-top-<id>-<variantId>` texture. Cosmetic only. */
+export function carTopTexture(carId: string, variantId: string): string {
+  return variantId === 'base' ? `car-top-${carId}` : `car-top-${carId}-${variantId}`
+}
+
+/** Deterministically pick one of a chassis's livery variants from a seeded
+ *  random source (never Math.random — callers pass a race-seed-derived RNG).
+ *  A single-variant list (e.g. Anahita, base-only) always returns its only
+ *  entry without consuming a draw. */
+export function pickSeededVariant(variants: CarVariantSpec[], random: () => number): CarVariantSpec {
+  if (variants.length <= 1) return variants[0]
+  const idx = Math.min(variants.length - 1, Math.floor(random() * variants.length))
+  return variants[idx]
+}

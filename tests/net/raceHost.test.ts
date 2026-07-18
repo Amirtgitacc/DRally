@@ -17,7 +17,7 @@ function racingHost() {
   ]
   const state = createRaceState(env, setups, 1234)
   state.phase = 'racing' // skip countdown so mines can drop immediately
-  const roster = [{ id: 'a', name: 'Ana', color: 1, chassisId: 'jackal', isAi: false }]
+  const roster = [{ id: 'a', name: 'Ana', color: 1, chassisId: 'jackal', variantId: 'base', isAi: false }]
   return new RaceHost(env, state, roster, 1234, 'fixture-square', 2)
 }
 

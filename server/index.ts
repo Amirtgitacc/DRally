@@ -130,7 +130,8 @@ wss.on('connection', (ws) => {
         if (!name) return fail(ws, 'BAD_NAME', 'Enter a driver name')
         if (!isValidCarId(msg.carId)) return fail(ws, 'BAD_CAR', 'Unknown car')
         const id = store.newPlayerId()
-        const { code, room } = store.createRoom({ id, name, carId: msg.carId }, msg.trackId)
+        const variantId = typeof msg.variantId === 'string' ? msg.variantId : undefined
+        const { code, room } = store.createRoom({ id, name, carId: msg.carId, variantId }, msg.trackId)
         conn.playerId = id
         conn.code = code
         send(ws, { t: 'joined', youId: id, lobby: toSnapshot(room) })
@@ -145,7 +146,8 @@ wss.on('connection', (ws) => {
         const normalizedCode = normalizeRoomCode(msg.code)
         if (!isValidRoomCode(normalizedCode)) return fail(ws, 'BAD_CODE', 'Invalid room code')
         const id = store.newPlayerId()
-        const result = store.join(normalizedCode, { id, name, carId: msg.carId })
+        const variantId = typeof msg.variantId === 'string' ? msg.variantId : undefined
+        const result = store.join(normalizedCode, { id, name, carId: msg.carId, variantId })
         if (!result.ok) return fail(ws, result.error, result.error === 'ROOM_FULL' ? 'Room is full' : 'Room not found')
         conn.playerId = id
         conn.code = normalizedCode
@@ -204,7 +206,7 @@ wss.on('connection', (ws) => {
         store.apply(conn.code, () => res.room)
         const track = trackById(room.trackId)
         const seed = Math.floor(Math.random() * 2 ** 31)
-        const { setups, roster } = buildNetworkRace(room.players, /* weaponsEnabled */ true, track)
+        const { setups, roster } = buildNetworkRace(room.players, /* weaponsEnabled */ true, track, seed)
         const env = buildRaceEnv(track, { playerSpec: DEFAULT_PLAYER_SPEC, weaponsEnabled: true, hasPlating: false, hasOverTurbo: false, raceEndMode: 'all-humans' })
         const host = createRaceHost(env, roster, setups, seed, room.trackId, track.laps)
         hosts.set(conn.code, host)

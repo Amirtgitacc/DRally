@@ -5,15 +5,17 @@ import {
 } from '../src/core/net/roomState'
 import { generateRoomCode } from '../src/core/net/roomCode'
 import { ALL_TRACKS } from '../src/data/tracks/index'
-import { CAR_CATALOG } from '../src/data/cars'
+import { mpCarById } from '../src/data/mpCars'
 import { ROSTER, type RosterDriver } from '../src/data/roster'
 
-const VALID_CAR_IDS = new Set(CAR_CATALOG.map((c) => c.id))
 const VALID_TRACK_IDS = new Set(ALL_TRACKS.map((t) => t.id))
 const DEFAULT_TRACK_ID = ALL_TRACKS[0].id
 
+/** Any single-player catalog chassis or MP-only guest car (e.g. Anahita).
+ *  The boss/sovereign is deliberately excluded via `mpCarById` — never
+ *  selectable in multiplayer. */
 export function isValidCarId(id: string): boolean {
-  return VALID_CAR_IDS.has(id)
+  return mpCarById(id) !== undefined
 }
 export function isValidTrackId(id: string): boolean {
   return VALID_TRACK_IDS.has(id)

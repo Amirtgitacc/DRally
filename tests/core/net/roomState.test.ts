@@ -81,8 +81,45 @@ describe('roomState', () => {
     const room = createRoom('TIGER-42', host, 'test-circuit')
     expect(toSnapshot(room)).toEqual({
       code: 'TIGER-42', hostId: 'p1', trackId: 'test-circuit',
-      players: [{ id: 'p1', name: 'Nyx', carId: 'jackal', ready: false, isAi: false }],
+      players: [{ id: 'p1', name: 'Nyx', carId: 'jackal', variantId: 'base', ready: false, isAi: false }],
     })
+  })
+})
+
+describe('roomState variantId sanitization', () => {
+  it('defaults a missing variantId to base', () => {
+    const room = createRoom('TIGER-42', host, 'test-circuit')
+    expect(room.players[0].variantId).toBe('base')
+  })
+
+  it('passes through a valid variantId', () => {
+    const room = createRoom('TIGER-42', { ...host, variantId: 'a' }, 'test-circuit')
+    expect(room.players[0].variantId).toBe('a')
+  })
+
+  it('sanitizes an unknown variantId to base', () => {
+    const room = createRoom('TIGER-42', { ...host, variantId: 'chartreuse' }, 'test-circuit')
+    expect(room.players[0].variantId).toBe('base')
+  })
+
+  it('sanitizes a variantId that is valid for another car but not this one', () => {
+    // anahita only ships a 'base' variant — 'a' is invalid for it specifically
+    const room = createRoom('TIGER-42', { id: 'p1', name: 'Nyx', carId: 'anahita', variantId: 'a' }, 'test-circuit')
+    expect(room.players[0].variantId).toBe('base')
+  })
+
+  it('joinRoom sanitizes the joiner variantId the same way', () => {
+    let room = createRoom('TIGER-42', host, 'test-circuit')
+    const r = joinRoom(room, { id: 'p2', name: 'Rook', carId: 'vandal', variantId: 'nope' })
+    expect(r.ok).toBe(true)
+    if (r.ok) room = r.room
+    expect(room.players[1].variantId).toBe('base')
+  })
+
+  it('changing car via setCar resets variantId to base', () => {
+    let room = createRoom('TIGER-42', { ...host, variantId: 'a' }, 'test-circuit')
+    room = setCar(room, 'p1', 'vandal')
+    expect(room.players[0].variantId).toBe('base')
   })
 })
 
@@ -99,6 +136,8 @@ describe('roomState AI fill', () => {
     expect(ai.ready).toBe(true)
     // carId is the chassis the AI will actually drive (rank = ROSTER index + 1)
     expect(ai.carId).toBe(rivalChassisId(1))
+    // placeholder only — buildNetworkRace re-assigns AI variants seed-derived at race start
+    expect(ai.variantId).toBe('base')
   })
 
   it('addAi never picks the same driver twice', () => {

@@ -9,6 +9,9 @@ export interface LobbyPlayer {
   id: string
   name: string
   carId: string
+  /** cosmetic livery variant key ('base' | 'a' | 'b'); always sanitized to a
+   *  key valid for `carId` (or 'base') before it lands here. */
+  variantId: string
   ready: boolean
   /** true for AI grid-fill opponents; false for humans */
   isAi: boolean
@@ -29,6 +32,9 @@ export interface RaceCarInfo {
   color: number
   /** CAR_CATALOG id → texture key `car-top-${chassisId}` */
   chassisId: string
+  /** cosmetic livery variant key; texture is `car-top-${chassisId}` when
+   *  'base', else `car-top-${chassisId}-${variantId}` */
+  variantId: string
   /** true for AI grid-fill opponents */
   isAi: boolean
 }
@@ -44,8 +50,8 @@ export interface RaceStanding {
 
 /** Messages the client sends to the server. */
 export type ClientMsg =
-  | { t: 'create'; name: string; carId: string; trackId: string }
-  | { t: 'join'; code: string; name: string; carId: string }
+  | { t: 'create'; name: string; carId: string; trackId: string; variantId: string }
+  | { t: 'join'; code: string; name: string; carId: string; variantId: string }
   | { t: 'setCar'; carId: string }
   | { t: 'setTrack'; trackId: string }
   | { t: 'ready'; ready: boolean }
