@@ -1,7 +1,6 @@
 import Phaser from 'phaser'
 import { GAME_WIDTH } from '../../config/game'
-import { CAR_CATALOG } from '../../data/cars'
-import { mpCarById } from '../../data/mpCars'
+import { mpCarById, MP_CAR_OPTIONS } from '../../data/mpCars'
 import { ALL_TRACKS, trackById } from '../../data/tracks'
 import { MAX_PLAYERS, type LobbyPlayer, type LobbySnapshot, type ServerMsg } from '../../core/net/protocol'
 import { NetClient } from '../net/netClient'
@@ -178,8 +177,11 @@ export class LobbyScene extends Phaser.Scene {
   }
 
   private changeCar(me: LobbyPlayer, delta: number) {
-    const idx = CAR_CATALOG.findIndex((c) => c.id === me.carId)
-    const next = CAR_CATALOG[(idx + delta + CAR_CATALOG.length) % CAR_CATALOG.length]
+    // Cycle the full MP roster (catalog + guest cars) so a guest car like the
+    // Anahita is a reachable cycle member. findIndex(-1) → 0 on a first press.
+    const idx = MP_CAR_OPTIONS.findIndex((c) => c.id === me.carId)
+    const len = MP_CAR_OPTIONS.length
+    const next = MP_CAR_OPTIONS[(idx + delta + len) % len]
     this.net.send({ t: 'setCar', carId: next.id })
   }
 

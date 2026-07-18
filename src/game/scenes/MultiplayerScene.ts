@@ -1,7 +1,6 @@
 import Phaser from 'phaser'
 import { GAME_HEIGHT, GAME_WIDTH } from '../../config/game'
-import { CAR_CATALOG } from '../../data/cars'
-import { MP_ONLY_CARS } from '../../data/mpCars'
+import { MP_CAR_OPTIONS } from '../../data/mpCars'
 import { ALL_TRACKS } from '../../data/tracks'
 import { isValidRoomCode, normalizeRoomCode } from '../../core/net/roomCode'
 import { NetClient } from '../net/netClient'
@@ -25,9 +24,8 @@ const CODE_ROW = 3
 const CREATE_ROW = 4
 const JOIN_ROW = 5
 
-// Quick-race car choices: the single-player catalog plus MP-only guest cars
-// (currently just the 206 Anahita — see src/data/mpCars.ts).
-const MP_CAR_OPTIONS = [...CAR_CATALOG, ...MP_ONLY_CARS]
+// Quick-race car choices (MP_CAR_OPTIONS) = the single-player catalog plus
+// MP-only guest cars (currently just the 206 Anahita — see src/data/mpCars.ts).
 
 // Selected-car art sits in the right margin the row block never uses.
 const ART_CX = 1660
@@ -54,6 +52,10 @@ export class MultiplayerScene extends Phaser.Scene {
   private disposeNativeInput?: () => void
   /** The in-flight (not-yet-joined) client, if any — ours to close on error/back-out. */
   private pendingNet?: NetClient
+  /** This scene's own listeners on the current client, tracked so shutdown can
+   *  detach them — even after ownership of `net` passes to LobbyScene (our
+   *  closures would otherwise linger on the handed-off client). */
+  private netHandlers?: { net: NetClient; onMsg: (m: ServerMsg) => void; onClose: () => void }
 
   constructor() {
     super('Multiplayer')
@@ -81,6 +83,7 @@ export class MultiplayerScene extends Phaser.Scene {
     this.busy = false
     this.rows = []
     this.pendingNet = undefined
+    this.netHandlers = undefined
     this.disposeNativeInput = undefined
 
     this.name = localStorage.getItem(NAME_KEY)?.slice(0, NAME_MAX) ?? ''
@@ -143,6 +146,13 @@ export class MultiplayerScene extends Phaser.Scene {
       kb.off('keydown', onKey)
       this.disposeNativeInput?.()
       this.disposeNativeInput = undefined
+      // Detach our own client listeners so they never linger on a client handed
+      // off to LobbyScene or discarded on a failed attempt.
+      if (this.netHandlers) {
+        this.netHandlers.net.offMessage(this.netHandlers.onMsg)
+        this.netHandlers.net.offClose(this.netHandlers.onClose)
+        this.netHandlers = undefined
+      }
     })
 
     this.refresh()
@@ -198,6 +208,16 @@ export class MultiplayerScene extends Phaser.Scene {
     this.liveryIndex = (this.liveryIndex + delta + variants.length) % variants.length
   }
 
+  /** Attach this scene's message/close listeners to a fresh client and record
+   *  them so shutdown can detach exactly these closures. */
+  private wireNet(net: NetClient) {
+    const onMsg = (msg: ServerMsg) => this.handleMessage(msg, net)
+    const onClose = () => this.handleUnexpectedClose(net)
+    net.onMessage(onMsg)
+    net.onClose(onClose)
+    this.netHandlers = { net, onMsg, onClose }
+  }
+
   private async attemptCreate() {
     if (this.busy) return
     const name = this.name.trim()
@@ -215,8 +235,7 @@ export class MultiplayerScene extends Phaser.Scene {
       this.finishAttempt(net, 'Could not reach the multiplayer server.')
       return
     }
-    net.onMessage((msg) => this.handleMessage(msg, net))
-    net.onClose(() => this.handleUnexpectedClose(net))
+    this.wireNet(net)
     net.send({ t: 'create', name, carId: this.currentCar().id, trackId: ALL_TRACKS[0].id, variantId: this.livery })
   }
 
@@ -239,8 +258,7 @@ export class MultiplayerScene extends Phaser.Scene {
       this.finishAttempt(net, 'Could not reach the multiplayer server.')
       return
     }
-    net.onMessage((msg) => this.handleMessage(msg, net))
-    net.onClose(() => this.handleUnexpectedClose(net))
+    this.wireNet(net)
     net.send({ t: 'join', code, name, carId: this.currentCar().id, variantId: this.livery })
   }
 
@@ -270,6 +288,7 @@ export class MultiplayerScene extends Phaser.Scene {
   private finishAttempt(net: NetClient, message: string, close = true) {
     if (close) net.close()
     if (this.pendingNet === net) this.pendingNet = undefined
+    if (this.netHandlers?.net === net) this.netHandlers = undefined
     this.busy = false
     this.setStatus(message)
     this.refresh()

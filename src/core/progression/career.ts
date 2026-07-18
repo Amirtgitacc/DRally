@@ -1,7 +1,7 @@
 // Pure career state — the persistent between-race game. Plain serializable
 // object so save/load is a JSON round-trip.
 
-import { CAR_CATALOG } from '../../data/cars'
+import { CAR_CATALOG, STARTER_CAR } from '../../data/cars'
 import { STARTING_CASH } from '../../data/economy'
 import { NO_UPGRADES, type UpgradeLevels } from '../vehicle/carSpec'
 import { initialLadder, type Ladder } from './ladder'
@@ -251,11 +251,15 @@ export function deserializeCareer(raw: string): CareerState | null {
     ) {
       return null
     }
+    // A tampered/foreign carId (e.g. the MP-only 'anahita', or garbage) would
+    // crash every scene that looks it up in CAR_CATALOG. Fall back to the starter
+    // chassis while keeping the rest of the save (mirrors sanitizeLiveries).
+    const carId = CAR_CATALOG.some((c) => c.id === data.carId) ? data.carId : STARTER_CAR.id
     return {
       schemaVersion: CAREER_SCHEMA_VERSION,
       profile: sanitizeProfile(data.profile),
       cash: data.cash,
-      carId: data.carId,
+      carId,
       upgrades: { engine: data.upgrades.engine, tires: data.upgrades.tires, armor: data.upgrades.armor },
       damage: Math.min(99, Math.max(0, data.damage)),
       points: data.points,

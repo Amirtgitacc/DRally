@@ -32,6 +32,11 @@ export const MP_ONLY_CARS: CarSpec[] = [
   },
 ]
 
+/** Full quick-race / lobby car roster: the single-player catalog plus the
+ *  MP-only guest cars. The one list every MP car picker cycles, so the guest
+ *  cars (e.g. 206 Anahita) are reachable in the lobby, not just at create time. */
+export const MP_CAR_OPTIONS: CarSpec[] = [...CAR_CATALOG, ...MP_ONLY_CARS]
+
 /** Resolve a car id across the single-player catalog and the MP-only cars.
  *  The boss/sovereign is deliberately excluded — it is not selectable in MP. */
 export function mpCarById(id: string): CarSpec | undefined {

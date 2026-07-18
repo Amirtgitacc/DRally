@@ -108,6 +108,19 @@ describe('career', () => {
     expect(deserializeCareer('{}')).toBeNull()
   })
 
+  it('falls back to the starter car when carId is unknown, keeping the rest', () => {
+    for (const badId of ['anahita', 'totally-made-up', 'sovereign']) {
+      const raw = JSON.parse(serializeCareer(createCareer()))
+      raw.carId = badId
+      raw.cash = 4242
+      raw.points = 17
+      const loaded = deserializeCareer(JSON.stringify(raw))!
+      expect(loaded.carId).toBe('jackal') // STARTER_CAR.id
+      expect(loaded.cash).toBe(4242) // rest of the save intact
+      expect(loaded.points).toBe(17)
+    }
+  })
+
   it('migrates a v1-shaped career with safe profile and record defaults', () => {
     const old = JSON.parse(serializeCareer(createCareer()))
     delete old.schemaVersion
