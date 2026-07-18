@@ -46,7 +46,7 @@ export function stepCarMovement(
   car.turboDepleted = turboStep.state.depleted
   const turboActive = turboStep.active
   if (turboActive && overcharged) {
-    damageCarSim(state, car, OVERCHARGED_TURBO.selfDamagePerSec * dt, events)
+    damageCarSim(state, env, car, OVERCHARGED_TURBO.selfDamagePerSec * dt, events)
   }
 
   car.lastInput = input
@@ -119,7 +119,7 @@ function resolveBarrierCollisions(state: RaceState, env: RaceEnv, car: CarSim, e
         s.vy *= 0.8
         const impact = Math.abs(vn)
         if (impact > WALL_DAMAGE.threshold && !isAirborne(s)) {
-          damageCarSim(state, car, impactDamage(impact, WALL_DAMAGE), events)
+          damageCarSim(state, env, car, impactDamage(impact, WALL_DAMAGE), events)
         }
         if (impact > 160) {
           events.push({ type: 'wall-hit', carId: car.id, impact })

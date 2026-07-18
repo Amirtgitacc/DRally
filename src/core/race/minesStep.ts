@@ -23,7 +23,7 @@ export function tryDropMine(state: RaceState, car: CarSim, events: SimEvent[]): 
   events.push({ type: 'mine-dropped', carId: car.id, mineId: mine.id, x, y })
 }
 
-export function updateMines(state: RaceState, _env: RaceEnv, events: SimEvent[]): void {
+export function updateMines(state: RaceState, env: RaceEnv, events: SimEvent[]): void {
   if (state.mines.length === 0) return
   const survivors: MineSim[] = []
   for (const mine of state.mines) {
@@ -46,13 +46,13 @@ export function updateMines(state: RaceState, _env: RaceEnv, events: SimEvent[])
       continue
     }
 
-    detonateMine(state, mine, triggered, events)
+    detonateMine(state, env, mine, triggered, events)
   }
   state.mines = survivors
 }
 
 /** Full damage + launch for whoever ran it over, splash for anyone close. */
-function detonateMine(state: RaceState, mine: MineSim, triggered: CarSim, events: SimEvent[]): void {
+function detonateMine(state: RaceState, env: RaceEnv, mine: MineSim, triggered: CarSim, events: SimEvent[]): void {
   const tuning = {
     damage: MINES.damage,
     splashDamage: MINES.splashDamage,
@@ -69,7 +69,7 @@ function detonateMine(state: RaceState, mine: MineSim, triggered: CarSim, events
     )
     if (!impulse) continue
 
-    damageCarSim(state, car, impulse.damage, events)
+    damageCarSim(state, env, car, impulse.damage, events)
     car.state = launchCar(
       {
         ...car.state,

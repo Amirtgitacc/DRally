@@ -2209,7 +2209,7 @@ export class RaceScene extends Phaser.Scene {
       const car = this.sim.cars.find((c) => c.id === id)
       if (car) {
         const events: SimEvent[] = []
-        damageCarSim(this.sim, car, amount, events)
+        damageCarSim(this.sim, this.env, car, amount, events)
         this.handleSimEvents(events)
       }
     }

@@ -193,8 +193,8 @@ function resolveCarCollisions(state: RaceState, env: RaceEnv, events: SimEvent[]
         // hits harder and hurts less for one race
         const plated = env.hasPlating && (carA.isPlayer || carB.isPlayer)
         const scaleFor = (c: CarSim) => (!plated ? 1 : c.isPlayer ? RAM_PLATING.takeScale : RAM_PLATING.dealScale)
-        damageCarSim(state, carA, dmg * scaleFor(carA), events)
-        damageCarSim(state, carB, dmg * scaleFor(carB), events)
+        damageCarSim(state, env, carA, dmg * scaleFor(carA), events)
+        damageCarSim(state, env, carB, dmg * scaleFor(carB), events)
       }
 
       events.push({ type: 'cars-collided', aId: carA.id, bId: carB.id, x: contactX, y: contactY, impact: rel, rammed })

@@ -11,22 +11,27 @@ const TIRE_RADIUS = 24
 
 // ---------------------------------------------------------------- combat
 
-export function damageCarSim(state: RaceState, car: CarSim, amount: number, events: SimEvent[]): void {
+export function damageCarSim(state: RaceState, env: RaceEnv, car: CarSim, amount: number, events: SimEvent[]): void {
   if (car.wrecked || state.phase === 'countdown') return
   // rivals fit armor too, from their ladder rank — an ace is not a soft target
   const resistance = armorResistance(car.armorTier)
   const result = applyDamage(car.damage, amount, resistance)
   car.damage = result.damage
-  if (result.wrecked) wreckCarSim(state, car, events)
+  if (result.wrecked) wreckCarSim(state, env, car, events)
 }
 
-function wreckCarSim(state: RaceState, car: CarSim, events: SimEvent[]): void {
+function wreckCarSim(state: RaceState, env: RaceEnv, car: CarSim, events: SimEvent[]): void {
   if (car.wrecked) return
   car.wrecked = true
 
   events.push({ type: 'car-wrecked', carId: car.id, x: car.state.x, y: car.state.y })
 
-  if (car.isPlayer) {
+  // In single-player the human wrecking ends the race outright. In all-humans
+  // (multiplayer) mode a human wreck must NOT flip the phase: checkAllHumansDone
+  // already counts a wrecked human as "done" and ends the race only once EVERY
+  // human is done. Flipping here would yank all players to results on the first
+  // wreck. The wreck itself + car-wrecked event happen in both modes.
+  if (car.isPlayer && env.raceEndMode === 'single-player') {
     state.phase = 'finished'
     events.push({ type: 'race-over', reason: 'player-wrecked' })
   }
@@ -104,7 +109,7 @@ function onBulletHit(
   const owner = state.cars.find((c) => c.id === b.ownerId)!
   // the rivals' handicap shrinks as the purse grows: full value on a death race
   const damage = GUN.damagePerHit * (owner.isPlayer ? 1 : AI_GUNNER.damageScale[env.tier])
-  damageCarSim(state, car, damage, events)
+  damageCarSim(state, env, car, damage, events)
   events.push({ type: 'bullet-hit', carId: car.id, x: b.x, y: b.y })
 
   // every hit shoves the victim a little along the bullet's path
