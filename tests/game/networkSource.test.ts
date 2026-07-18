@@ -41,16 +41,52 @@ function snapAt(simTimeMs: number, ax: number) {
 }
 
 describe('NetworkSource', () => {
-  it('interpolates car A between two snapshots ~100ms behind', () => {
+  it('renders car A interpolated behind the newest snapshot', () => {
     const net = fakeNet()
     const src = new NetworkSource(net as any, { seed: 1, trackId: 'test-circuit', laps: 3, roster, youId: 'a' }, spec)
     net.emit({ t: 'snapshot', snap: snapAt(0, 0), events: [] })
     net.emit({ t: 'snapshot', snap: snapAt(100, 100), events: [] })
     net.emit({ t: 'snapshot', snap: snapAt(200, 200), events: [] })
-    src.ingest(/* nowMs */ 0, /* delta */ 0) // renderTime = 200 - 100 = 100 → car A at x≈100
+    src.ingest(/* nowMs */ 0, /* delta */ 0) // anchors INTERP_DELAY_MS behind newest (200)
     const a = src.state.cars.find((c) => c.id === 'a')!
-    expect(a.state.x).toBeGreaterThan(50)
-    expect(a.state.x).toBeLessThanOrEqual(100)
+    // snapAt maps x==simTime, so x reflects the render clock: behind live (200), not ahead.
+    expect(a.state.x).toBeGreaterThan(0)
+    expect(a.state.x).toBeLessThan(200)
+  })
+
+  it('advances the render clock by frame delta between snapshots (smooth motion)', () => {
+    const net = fakeNet()
+    const src = new NetworkSource(net as any, { seed: 1, trackId: 'test-circuit', laps: 3, roster, youId: 'a' }, spec)
+    net.emit({ t: 'snapshot', snap: snapAt(0, 0), events: [] })
+    net.emit({ t: 'snapshot', snap: snapAt(100, 100), events: [] })
+    src.ingest(0, 0) // anchor the render clock
+    const x0 = src.state.cars.find((c) => c.id === 'a')!.state.x
+    src.ingest(0, 50) // no new snapshot; clock advances 50ms of frame time
+    const x1 = src.state.cars.find((c) => c.id === 'a')!.state.x
+    // x==simTime, so a 50ms clock advance moves the car ~50px WITHOUT a new
+    // snapshot — that per-frame motion is exactly what makes it smooth.
+    expect(x1 - x0).toBeCloseTo(50)
+  })
+
+  it('holds at the newest snapshot when the buffer starves (no extrapolation)', () => {
+    const net = fakeNet()
+    const src = new NetworkSource(net as any, { seed: 1, trackId: 'test-circuit', laps: 3, roster, youId: 'a' }, spec)
+    net.emit({ t: 'snapshot', snap: snapAt(0, 0), events: [] })
+    net.emit({ t: 'snapshot', snap: snapAt(100, 100), events: [] })
+    src.ingest(0, 0)
+    src.ingest(0, 5000) // huge delta, no new snapshots → clamp at newest (x = 100), never past it
+    expect(src.state.cars.find((c) => c.id === 'a')!.state.x).toBeCloseTo(100)
+  })
+
+  it('skips ahead when the clock falls more than one interp window behind', () => {
+    const net = fakeNet()
+    const src = new NetworkSource(net as any, { seed: 1, trackId: 'test-circuit', laps: 3, roster, youId: 'a' }, spec)
+    net.emit({ t: 'snapshot', snap: snapAt(0, 0), events: [] })
+    net.emit({ t: 'snapshot', snap: snapAt(100, 100), events: [] })
+    src.ingest(0, 0) // renderTime = 0
+    net.emit({ t: 'snapshot', snap: snapAt(1000, 1000), events: [] }) // big jump forward
+    src.ingest(0, 16) // 0 + 16 is ~884ms behind target(900) → snap to 900 → x ≈ 900
+    expect(src.state.cars.find((c) => c.id === 'a')!.state.x).toBeGreaterThan(800)
   })
 
   it('drains each snapshot\'s events once', () => {

@@ -38,6 +38,7 @@ export class NetworkSource implements RaceSource {
   private readonly skeleton: RaceState
   private readonly raceEndCbs: Array<(standings: RaceStanding[]) => void> = []
   private renderTimeMs = 0
+  private clockStarted = false
 
   private readonly onMsg = (msg: ServerMsg): void => {
     if (msg.t === 'snapshot') {
@@ -78,12 +79,28 @@ export class NetworkSource implements RaceSource {
     this.net.onMessage(this.onMsg)
   }
 
-  /** Recomputes renderTimeMs from the newest buffered snapshot (not a local
-   *  accumulated clock) so a zero-delta ingest still reflects new snapshots. */
-  ingest(_nowMs: number, _deltaMs: number): void {
+  /** Advances a local render clock by the real frame delta and interpolates each
+   *  car ~INTERP_DELAY_MS behind the newest snapshot. Driving the clock by frame
+   *  time (rather than snapping it onto each arriving snapshot) is what makes
+   *  motion smooth at the render frame rate instead of stepping at the 30Hz
+   *  snapshot rate — the whole point of interpolation. */
+  ingest(_nowMs: number, deltaMs: number): void {
     if (this.buffer.length === 0) return
     const latest = this.buffer[this.buffer.length - 1]
-    this.renderTimeMs = latest.simTimeMs - INTERP_DELAY_MS
+    const target = latest.simTimeMs - INTERP_DELAY_MS
+
+    if (!this.clockStarted) {
+      this.renderTimeMs = target
+      this.clockStarted = true
+    } else {
+      this.renderTimeMs += deltaMs
+      // Fell more than one interp window behind (tab resume, stall-then-catch-up,
+      // or a large snapshot jump): skip ahead rather than crawl through stale time.
+      if (target - this.renderTimeMs > INTERP_DELAY_MS) this.renderTimeMs = target
+      // Ran past the newest snapshot (buffer starved): hold at the edge; never
+      // extrapolate into time we have no snapshot data for.
+      if (this.renderTimeMs > latest.simTimeMs) this.renderTimeMs = latest.simTimeMs
+    }
 
     const br = bracket(this.buffer, this.renderTimeMs)
     if (!br) return

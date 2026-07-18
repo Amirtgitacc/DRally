@@ -1,7 +1,10 @@
 import type { CarState } from '../../core/vehicle/carPhysics'
 import type { RaceSnapshot } from '../../core/net/snapshot'
 
-export const INTERP_DELAY_MS = 100
+// ~2 snapshots of buffer at the 30Hz server rate. Enough to smooth over normal
+// arrival jitter while keeping the render only ~66ms behind live, so input feels
+// closer to real time. Raise if remote play shows interpolation stutter.
+export const INTERP_DELAY_MS = 66
 
 function lerp(a: number, b: number, t: number): number { return a + (b - a) * t }
 
