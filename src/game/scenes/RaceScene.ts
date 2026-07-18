@@ -85,6 +85,7 @@ import {
   type RaceState,
 } from '../../core/race/raceState'
 import { stepRace, type PlayerCommand } from '../../core/race/stepRace'
+import { computeAiInput } from '../../core/race/aiControl'
 import type { SimEvent } from '../../core/race/simEvents'
 import { damageCarSim } from '../../core/race/combatStep'
 import { tryDropMine as tryDropMineSim } from '../../core/race/minesStep'
@@ -348,6 +349,20 @@ export class RaceScene extends Phaser.Scene {
       if (this.settings.toggleFire && this.inputManager.justDown('fire')) this.fireToggled = !this.fireToggled
       if (this.settings.toggleTurbo && this.inputManager.justDown('turbo')) this.turboToggled = !this.turboToggled
       if (this.inputManager.justDown('mine')) this.mineQueued = true
+      // Debug-only network autopilot (smoke/perf runs): __autoPilot sets
+      // sim.autoPilot + the local car's ai on the client skeleton, but the
+      // server owns the real sim and never sees it. Translate that into an
+      // input command here so the forwarded PlayerCommand drives the car. Gated
+      // on sim.autoPilot, which only the debug hook ever sets — no effect on
+      // real play.
+      const localCar = this.myCar()
+      if (this.sim.autoPilot && localCar.ai) {
+        this.autoInput = {
+          ...computeAiInput(this.sim, this.env, localCar),
+          fire: this.sim.autoPilot.fire,
+          turbo: this.sim.autoPilot.turbo,
+        }
+      }
       this.netSource!.sendLocalInput(this.buildPlayerCommand())
       this.mineQueued = false // consumed the moment it is sent
       this.netSource!.ingest(this.time.now, delta)
