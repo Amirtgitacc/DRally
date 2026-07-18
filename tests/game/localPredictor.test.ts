@@ -53,6 +53,28 @@ describe('LocalPredictor', () => {
     expect(dPartial).toBeLessThan(dFull)
   })
 
+  it('does not predict movement while phase is countdown, but does once racing', () => {
+    const env = buildRaceEnvFixture()
+    const setups: CarSetup[] = [{ id: 'a', isPlayer: true, mass: 1000, damage: 0, ammo: 0, mines: 0, armorTier: 0, ai: null }]
+    const state = createRaceState(env, setups, 1)
+    state.phase = 'countdown'
+    const car = state.cars[0]
+    const pred = new LocalPredictor(state, env, car)
+    const x0 = car.state.x
+    const y0 = car.state.y
+
+    for (let i = 1; i <= 5; i++) pred.predict(i, throttle, 1000 / 60)
+    const renderCountdown = { ...car, state: { ...car.state } }
+    pred.writeInto(renderCountdown as any)
+    expect(Math.hypot(renderCountdown.state.x - x0, renderCountdown.state.y - y0)).toBeCloseTo(0)
+
+    state.phase = 'racing'
+    for (let i = 6; i <= 10; i++) pred.predict(i, throttle, 1000 / 60)
+    const renderRacing = { ...car, state: { ...car.state } }
+    pred.writeInto(renderRacing as any)
+    expect(Math.hypot(renderRacing.state.x - x0, renderRacing.state.y - y0)).toBeGreaterThan(0)
+  })
+
   it('eases a small correction instead of snapping, and decays it to zero', () => {
     const { env, state, car } = setup()
     const pred = new LocalPredictor(state, env, car)

@@ -29,7 +29,7 @@ export interface RaceSource {
   ingest(nowMs: number, deltaMs: number): void
   readonly state: RaceState
   drainEvents(): SimEvent[]
-  sendLocalInput?(cmd: PlayerCommand): void
+  sendLocalInput(cmd: PlayerCommand): void
 }
 
 export class NetworkSource implements RaceSource {
@@ -161,7 +161,6 @@ export class NetworkSource implements RaceSource {
         if (!carA) continue
         car.state = lerpCarState(carA.state, carB.state, t)
         car.turbo = carB.turbo
-        car.mines = carB.mines
         car.lastInput = { ...carB.lastInput }
         car.lastTurboActive = carB.lastTurboActive
       }

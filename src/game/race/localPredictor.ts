@@ -7,6 +7,7 @@ import { stepCarMovement } from '../../core/race/carMovement'
 import type { PlayerCommand } from '../../core/race/stepRace'
 import type { CarSim, RaceEnv, RaceState } from '../../core/race/raceState'
 import type { CarSnapshot } from '../../core/net/snapshot'
+import { IDLE_INPUT } from '../../core/vehicle/carPhysics'
 
 const SMOOTH_DECAY = 0.80   // per-frame render-offset decay toward zero
 const SNAP_DISTANCE = 200   // px; corrections beyond this snap instead of sliding
@@ -92,8 +93,17 @@ export class LocalPredictor {
   }
 
   private step(command: PlayerCommand, dtMs: number): void {
+    // Mirrors stepRace's player-input gate (see stepRace.ts's per-car loop):
+    // a player car only drives with its own command when the race isn't
+    // locked in countdown and the car is neither wrecked nor finished.
+    // Without this, the local car would mispredict movement the server will
+    // never produce — e.g. rolling forward during the 3s countdown while
+    // players hold throttle waiting for the start.
+    const drivable = this.state.phase !== 'countdown' && !this.truth.wrecked && this.truth.finishedAt === null
+    const input = drivable ? command.input : IDLE_INPUT
+    const wantsTurbo = drivable ? command.turbo : false
     // No slow-mo dilation client-side (slowMoUntil isn't in the snapshot); the
     // 30Hz reconcile corrects the small difference. dt in seconds.
-    stepCarMovement(this.state, this.env, this.truth, command.input, command.turbo, dtMs / 1000, [])
+    stepCarMovement(this.state, this.env, this.truth, input, wantsTurbo, dtMs / 1000, [])
   }
 }

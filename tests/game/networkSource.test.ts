@@ -43,6 +43,19 @@ function snapAt(simTimeMs: number, bx: number) {
   return toRaceSnapshot(s)
 }
 
+// Same as snapAt but in the 'racing' phase — prediction only drives the local
+// car outside of countdown (see LocalPredictor's player-input gate), so tests
+// that actually exercise prediction need a racing-phase snapshot.
+function racingSnapAt(simTimeMs: number, bx: number) {
+  const env = buildRaceEnv(TEST_CIRCUIT, { playerSpec: spec, weaponsEnabled: false, hasPlating: false, hasOverTurbo: false, raceEndMode: 'all-humans' })
+  const setups: CarSetup[] = roster.map((r) => ({ id: r.id, isPlayer: true, mass: 1000, damage: 0, ammo: 0, mines: 0, armorTier: 0, ai: null }))
+  const s = createRaceState(env, setups, 1)
+  s.simTimeMs = simTimeMs
+  s.phase = 'racing'
+  s.cars[1].state.x = bx
+  return toRaceSnapshot(s)
+}
+
 describe('NetworkSource', () => {
   it('renders car B interpolated behind the newest snapshot', () => {
     const net = fakeNet()
@@ -114,19 +127,40 @@ describe('NetworkSource', () => {
   it('drives the local car from prediction, not interpolation', () => {
     const net = fakeNet()
     const src = new NetworkSource(net as any, { seed: 1, trackId: 'test-circuit', laps: 3, roster, youId: 'a' }, spec)
-    net.emit({ t: 'snapshot', snap: snapAt(0, 0), events: [], acks: { a: 0 } })
+    // racing phase: with the countdown gate (Fix 1), only a racing-phase
+    // snapshot lets prediction actually drive the local car.
+    net.emit({ t: 'snapshot', snap: racingSnapAt(0, 0), events: [], acks: { a: 0 } })
+    src.ingest(0, 0) // anchor render clock + skeleton phase before capturing the start position
+
+    const start = { ...src.state.cars.find((c) => c.id === 'a')!.state }
 
     // send several throttle inputs (predicted locally) with no newer snapshot
     const throttle = { input: { throttle: 1, brake: 0, steer: 0, handbrake: false }, fire: false, turbo: false, dropMine: false }
     for (let i = 0; i < 6; i++) { src.sendLocalInput(throttle); src.ingest(0, 1000 / 60) }
 
-    // local car 'a' has moved from prediction even though the only snapshot had it at rest
+    // local car 'a' has genuinely moved from its start position under throttle
     const a = src.state.cars.find((c) => c.id === 'a')!
-    expect(Math.hypot(a.state.x - 0, a.state.y)).toBeGreaterThan(0)
+    expect(Math.hypot(a.state.x - start.x, a.state.y - start.y)).toBeGreaterThan(0)
     // an 'input' message was sent with a seq
     const inputs = net.sent.filter((m: any) => m.t === 'input')
     expect(inputs.length).toBeGreaterThan(0)
     expect(typeof inputs[0].seq).toBe('number')
+  })
+
+  it('does not predict movement during countdown (matches server input gate)', () => {
+    const net = fakeNet()
+    const src = new NetworkSource(net as any, { seed: 1, trackId: 'test-circuit', laps: 3, roster, youId: 'a' }, spec)
+    // default snapAt snapshot is in 'countdown' phase
+    net.emit({ t: 'snapshot', snap: snapAt(0, 0), events: [], acks: { a: 0 } })
+    src.ingest(0, 0)
+
+    const start = { ...src.state.cars.find((c) => c.id === 'a')!.state }
+
+    const throttle = { input: { throttle: 1, brake: 0, steer: 0, handbrake: false }, fire: false, turbo: false, dropMine: false }
+    for (let i = 0; i < 6; i++) { src.sendLocalInput(throttle); src.ingest(0, 1000 / 60) }
+
+    const a = src.state.cars.find((c) => c.id === 'a')!
+    expect(Math.hypot(a.state.x - start.x, a.state.y - start.y)).toBeCloseTo(0)
   })
 
   it('dispose() detaches the message handler so later snapshots have no effect', () => {
