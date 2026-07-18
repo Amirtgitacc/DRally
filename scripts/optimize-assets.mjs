@@ -66,6 +66,39 @@ const JOBS = [
   { src: 'car_top_sovereign.png', out: 'cars/top/sovereign.webp', w: 220, fit: 'inside', q: 88, trim: true },
   // Boss 3/4 hero for the pre-duel reveal (matches the hero pipeline)
   { src: 'car_hero_sovereign.png', out: 'cars/hero/boss.webp',    w: 460, fit: 'inside', q: 88, trim: true },
+  // --- Livery-variant top-down sprites (roof view, nose +x, transparent) ---
+  { src: 'variants/car_top_jackal-a.png',    out: 'cars/top/variants/jackal-a.webp',    w: 220, fit: 'inside', q: 85, trim: true },
+  { src: 'variants/car_top_jackal-b.png',    out: 'cars/top/variants/jackal-b.webp',    w: 220, fit: 'inside', q: 85, trim: true },
+  { src: 'variants/car_top_vandal-a.png',    out: 'cars/top/variants/vandal-a.webp',    w: 220, fit: 'inside', q: 85, trim: true },
+  { src: 'variants/car_top_vandal-b.png',    out: 'cars/top/variants/vandal-b.webp',    w: 220, fit: 'inside', q: 85, trim: true },
+  { src: 'variants/car_top_marauder-a.png',  out: 'cars/top/variants/marauder-a.webp',  w: 220, fit: 'inside', q: 85, trim: true },
+  { src: 'variants/car_top_marauder-b.png',  out: 'cars/top/variants/marauder-b.webp',  w: 220, fit: 'inside', q: 85, trim: true },
+  { src: 'variants/car_top_harrier-a.png',   out: 'cars/top/variants/harrier-a.webp',   w: 220, fit: 'inside', q: 85, trim: true },
+  { src: 'variants/car_top_harrier-b.png',   out: 'cars/top/variants/harrier-b.webp',   w: 220, fit: 'inside', q: 85, trim: true },
+  { src: 'variants/car_top_basilisk-a.png',  out: 'cars/top/variants/basilisk-a.webp',  w: 220, fit: 'inside', q: 85, trim: true },
+  { src: 'variants/car_top_basilisk-b.png',  out: 'cars/top/variants/basilisk-b.webp',  w: 220, fit: 'inside', q: 85, trim: true },
+  { src: 'variants/car_top_leviathan-a.png', out: 'cars/top/variants/leviathan-a.webp', w: 220, fit: 'inside', q: 85, trim: true },
+  { src: 'variants/car_top_leviathan-b.png', out: 'cars/top/variants/leviathan-b.webp', w: 220, fit: 'inside', q: 85, trim: true },
+  { src: 'variants/car_top_sovereign-a.png', out: 'cars/top/variants/sovereign-a.webp', w: 220, fit: 'inside', q: 85, trim: true },
+  { src: 'variants/car_top_sovereign-b.png', out: 'cars/top/variants/sovereign-b.webp', w: 220, fit: 'inside', q: 85, trim: true },
+  // --- MP-only car: anahita (top-down + 3/4 hero) ---
+  // BLOCKED: source renders (cars/green/variants/206-Anahita Version.png,
+  // 206-anahita-hero.png) bake in a real Peugeot grille badge/wordmark and
+  // reference the real "206" model in their filenames -- this violates the
+  // no-real-branding constraint in AGENTS.md and cannot be fixed by
+  // cropping/despill. Re-generate the source art without real automaker
+  // branding, then uncomment these two jobs.
+  // { src: 'variants/car_top_anahita.png',  out: 'cars/top/anahita.webp',  w: 220, fit: 'inside', q: 85, trim: true },
+  // { src: 'variants/car_hero_anahita.png', out: 'cars/hero/anahita.webp', w: 460, fit: 'inside', q: 85, trim: true },
+  // --- Poster art (full-bleed, not green-screen: straight encode, no trim) ---
+  { src: 'posters/jackal-poster.png',    out: 'cars/posters/jackal.webp',    w: 768, fit: 'inside', q: 82 },
+  { src: 'posters/vandal-poster.png',    out: 'cars/posters/vandal.webp',    w: 768, fit: 'inside', q: 82 },
+  { src: 'posters/marauder-poster.png',  out: 'cars/posters/marauder.webp',  w: 768, fit: 'inside', q: 82 },
+  { src: 'posters/harrier-poster.png',   out: 'cars/posters/harrier.webp',   w: 768, fit: 'inside', q: 82 },
+  { src: 'posters/basilisk-poster.png',  out: 'cars/posters/basilisk.webp',  w: 768, fit: 'inside', q: 82 },
+  { src: 'posters/leviathan-poster.png', out: 'cars/posters/leviathan.webp', w: 768, fit: 'inside', q: 82 },
+  { src: 'posters/sovereign-poster.png', out: 'cars/posters/sovereign.webp', w: 768, fit: 'inside', q: 82 },
+  { src: 'posters/boss-poster.png',      out: 'cars/posters/boss.webp',      w: 768, fit: 'inside', q: 82 },
 ]
 
 for (const j of JOBS) {
