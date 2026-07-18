@@ -53,7 +53,7 @@ export type ClientMsg =
   | { t: 'start' }
   | { t: 'addAi' }
   | { t: 'removeAi'; id: string }
-  | { t: 'input'; command: PlayerCommand }
+  | { t: 'input'; command: PlayerCommand; seq: number }
   | { t: 'rematch' }
 
 export type ServerErrorCode =
@@ -72,7 +72,7 @@ export type ServerMsg =
   | { t: 'lobby'; lobby: LobbySnapshot }
   | { t: 'error'; code: ServerErrorCode; message: string }
   | { t: 'raceStart'; seed: number; trackId: string; laps: number; roster: RaceCarInfo[]; youId: string }
-  | { t: 'snapshot'; snap: RaceSnapshot; events: SimEvent[] }
+  | { t: 'snapshot'; snap: RaceSnapshot; events: SimEvent[]; acks: Record<string, number> }
   | { t: 'raceEnd'; standings: RaceStanding[] }
 
 /** Scene-handoff shape consumed by Tasks 9 & 11. */

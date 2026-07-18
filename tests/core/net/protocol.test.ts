@@ -21,4 +21,15 @@ describe('protocol', () => {
     }
     expect(JSON.parse(JSON.stringify(msg))).toEqual(msg)
   })
+
+  it('input carries a seq and snapshot carries per-player acks', () => {
+    const input: ClientMsg = {
+      t: 'input', seq: 7,
+      command: { input: { throttle: 1, brake: 0, steer: 0, handbrake: false }, fire: false, turbo: false, dropMine: false },
+    }
+    expect(input.t === 'input' && input.seq).toBe(7)
+
+    const snap: ServerMsg = { t: 'snapshot', snap: {} as any, events: [], acks: { a: 3, b: 5 } }
+    expect(snap.t === 'snapshot' && snap.acks.a).toBe(3)
+  })
 })
