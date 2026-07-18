@@ -18,6 +18,11 @@ export function computeStandings(state: RaceState, roster: RaceCarInfo[]): RaceS
 
 export class RaceHost {
   private commands: CommandSet = {}
+  // One-shot mine presses arrive in a single 60fps client message but the sim
+  // samples at 30Hz — a later message would overwrite the press before a tick
+  // reads it, dropping ~half of them. OR-accumulate the press here; each tick
+  // consumes and clears it, so a press is never lost and never double-fires.
+  private mineLatched: Record<string, boolean> = {}
   private timer: ReturnType<typeof setInterval> | null = null
   constructor(
     readonly env: RaceEnv,
@@ -29,7 +34,18 @@ export class RaceHost {
   ) {}
 
   setInput(playerId: string, command: PlayerCommand): void {
+    if (command.dropMine) this.mineLatched[playerId] = true
     this.commands[playerId] = command
+  }
+
+  /** Effective commands for one tick: continuous state as last sent, but each
+   *  car's `dropMine` reflects the latch so no press is lost between ticks. */
+  private tickCommands(): CommandSet {
+    const out: CommandSet = {}
+    for (const id in this.commands) {
+      out[id] = { ...this.commands[id], dropMine: this.mineLatched[id] === true }
+    }
+    return out
   }
 
   start(onTick: (msg: Extract<ServerMsg, { t: 'snapshot' }>) => void, onEnd: (standings: RaceStanding[]) => void): void {
@@ -39,7 +55,8 @@ export class RaceHost {
       // alive but does NOT clear this interval, so without this try/catch
       // a bad frame re-throws at TICK_MS cadence indefinitely.
       try {
-        const events = stepRace(this.state, this.env, this.commands, TICK_MS)
+        const events = stepRace(this.state, this.env, this.tickCommands(), TICK_MS)
+        this.mineLatched = {} // presses consumed by this tick; next tick starts clean
         onTick({ t: 'snapshot', snap: toRaceSnapshot(this.state), events })
         if (this.state.phase === 'finished') {
           this.stop()
