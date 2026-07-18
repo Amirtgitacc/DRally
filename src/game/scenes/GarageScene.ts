@@ -60,12 +60,13 @@ const TILE_Y = 880
 const TILE_H = 96
 const TILE_W = 180
 const RACE_W = 240
+const LIVERY_W = 260
 const TILE_GAP = 12
 const GROUP_GAP = 40
 
 /** `group` drives the gaps in the tile row: buying, then navigating, then racing. */
 interface Tile {
-  id: 'repair' | 'engine' | 'tires' | 'armor' | 'market' | 'buycar' | 'race'
+  id: 'repair' | 'engine' | 'tires' | 'armor' | 'market' | 'buycar' | 'livery' | 'race'
   label: string
   group: 'buy' | 'nav' | 'go'
 }
@@ -77,12 +78,13 @@ const TILES: Tile[] = [
   { id: 'armor', label: 'ARMOR', group: 'buy' },
   { id: 'market', label: 'MARKET', group: 'nav' },
   { id: 'buycar', label: 'BUY CAR', group: 'nav' },
+  { id: 'livery', label: 'LIVERY', group: 'nav' },
   { id: 'race', label: 'RACE', group: 'go' },
 ]
 
 /** Lay the row out once: widths differ, and groups are separated by a wider gap. */
 function tileLayout(): Array<{ x: number; w: number }> {
-  const widths: number[] = TILES.map((t) => (t.id === 'race' ? RACE_W : TILE_W))
+  const widths: number[] = TILES.map((t) => (t.id === 'race' ? RACE_W : t.id === 'livery' ? LIVERY_W : TILE_W))
   const gaps: number[] = TILES.map((t, i) =>
     i === TILES.length - 1 ? 0 : TILES[i + 1].group !== t.group ? GROUP_GAP : TILE_GAP,
   )
@@ -218,15 +220,16 @@ export class GarageScene extends Phaser.Scene {
     TILES.forEach((def, i) => {
       const { x, w } = slots[i]
       const primary = def.group === 'go'
-      this.tiles.push(
-        tile(this, x, TILE_Y, w, TILE_H, def.label, {
-          accent: primary ? C.oxideDim : undefined,
-          face: primary ? 'display' : 'mono',
-          weight: primary ? 600 : undefined,
-          letterSpacing: primary ? 4 : undefined,
-          size: primary ? 'subtitle' : 'action',
-        }),
-      )
+      const handle = tile(this, x, TILE_Y, w, TILE_H, def.label, {
+        accent: primary ? C.oxideDim : undefined,
+        face: primary ? 'display' : 'mono',
+        weight: primary ? 600 : undefined,
+        letterSpacing: primary ? 4 : undefined,
+        size: primary ? 'subtitle' : def.id === 'livery' ? 'bodySm' : 'action',
+      })
+      // livery labels ("Obsidian Crimson Fortress") run long — wrap inside the wider tile
+      if (def.id === 'livery') handle.label.setWordWrapWidth(w - 30, true)
+      this.tiles.push(handle)
     })
 
     wireTiles(
@@ -281,6 +284,15 @@ export class GarageScene extends Phaser.Scene {
       case 'buycar':
         this.scene.start('CarDealer')
         return
+      case 'livery': {
+        const car = carById(this.career.carId)
+        if (car.variants.length <= 1) return
+        const currentKey = this.career.liveries[this.career.carId] ?? 'base'
+        const curIdx = Math.max(0, car.variants.findIndex((v) => v.key === currentKey))
+        const nextKey = car.variants[(curIdx + 1) % car.variants.length].key
+        next = { ...this.career, liveries: { ...this.career.liveries, [this.career.carId]: nextKey } }
+        break
+      }
       case 'race':
         this.scene.start('SignUp')
         return
@@ -377,6 +389,17 @@ export class GarageScene extends Phaser.Scene {
           info: 'The dealer: browse all six chassis side by side against the one you drive.',
           enabled: true,
         }
+      case 'livery': {
+        const car = carById(c.carId)
+        const cyclable = car.variants.length > 1
+        return {
+          cost: '',
+          info: cyclable
+            ? 'Cosmetic paint job — no effect on stats. Enter cycles the livery.'
+            : 'Only one livery available for this chassis.',
+          enabled: cyclable,
+        }
+      }
       case 'race':
         return { cost: '', info: 'Head to race sign-up: three races on offer, pick your risk tier.', enabled: true }
     }
@@ -390,6 +413,14 @@ export class GarageScene extends Phaser.Scene {
     this.carNameText.setText(`${showing.name}  (yours)`)
 
     TILES.forEach((def, i) => {
+      if (def.id === 'livery') {
+        const variants = showing.variants
+        const currentKey = c.liveries[c.carId] ?? 'base'
+        const label = variants.find((v) => v.key === currentKey)?.label ?? variants[0]?.label ?? 'Factory'
+        this.tiles[i].label.setText(`LIVERY\n${label}`)
+        this.tiles[i].setState(i === this.selected, variants.length > 1)
+        return
+      }
       const { cost, enabled } = this.tileCaption(def)
       this.tiles[i].label.setText(cost ? `${def.label}\n${cost}` : def.label)
       this.tiles[i].setState(i === this.selected, enabled)
