@@ -25,7 +25,16 @@ const POSTER_CX = 420
 const POSTER_CY = 510
 const POSTER_MAX_W = 460
 const POSTER_MAX_H = 680
-const ARROW_X_OFFSET = 340
+// Poster art is a fixed 768×1152 source; derive the rendered half-width from
+// fitImage's own scale math so the arrows always hug the actual poster edge
+// (a fixed offset drifted out of sync with the box above and clipped into the
+// stat labels on the right — see task-7ab-report.md).
+const POSTER_SRC_W = 768
+const POSTER_SRC_H = 1152
+const POSTER_SCALE = Math.min(POSTER_MAX_W / POSTER_SRC_W, POSTER_MAX_H / POSTER_SRC_H)
+const POSTER_HALF_W = (POSTER_SRC_W * POSTER_SCALE) / 2
+const ARROW_MARGIN = 70
+const ARROW_X_OFFSET = POSTER_HALF_W + ARROW_MARGIN
 
 const RIGHT_CX = 1300
 
