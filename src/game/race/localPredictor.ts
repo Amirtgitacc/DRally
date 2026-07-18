@@ -59,6 +59,10 @@ export class LocalPredictor {
     this.truth.wrecked = server.wrecked
     this.truth.finishedAt = server.finishedAt
     this.truth.progress = { ...server.progress }
+    // Re-sync damage too: the predictor runs stepCarMovement on the shared
+    // skeleton, so client-side wall damage must not diverge from the server and
+    // drive an independent (phantom) wreck. Server damage is authoritative.
+    this.truth.damage = server.damage
     this.truth.stuckMs = 0
 
     this.pending = this.pending.filter((p) => p.seq > ackSeq)
