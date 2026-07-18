@@ -64,8 +64,8 @@ export class MultiplayerScene extends Phaser.Scene {
     return MP_CAR_OPTIONS[this.carIndex]
   }
 
-  /** The chosen livery variant key ('base' | 'a' | 'b'). Task 8 threads this
-   *  into the create/join network messages once the protocol carries it. */
+  /** The chosen livery variant key ('base' | 'a' | 'b'), sent as `variantId`
+   *  on the create/join network messages. */
   get livery(): string {
     const car = this.currentCar()
     return car.variants[this.liveryIndex]?.key ?? car.variants[0]?.key ?? 'base'
@@ -217,7 +217,7 @@ export class MultiplayerScene extends Phaser.Scene {
     }
     net.onMessage((msg) => this.handleMessage(msg, net))
     net.onClose(() => this.handleUnexpectedClose(net))
-    net.send({ t: 'create', name, carId: this.currentCar().id, trackId: ALL_TRACKS[0].id })
+    net.send({ t: 'create', name, carId: this.currentCar().id, trackId: ALL_TRACKS[0].id, variantId: this.livery })
   }
 
   private async attemptJoin() {
@@ -241,7 +241,7 @@ export class MultiplayerScene extends Phaser.Scene {
     }
     net.onMessage((msg) => this.handleMessage(msg, net))
     net.onClose(() => this.handleUnexpectedClose(net))
-    net.send({ t: 'join', code, name, carId: this.currentCar().id })
+    net.send({ t: 'join', code, name, carId: this.currentCar().id, variantId: this.livery })
   }
 
   private handleMessage(msg: ServerMsg, net: NetClient) {

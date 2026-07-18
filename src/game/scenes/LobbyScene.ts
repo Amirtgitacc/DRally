@@ -1,6 +1,7 @@
 import Phaser from 'phaser'
 import { GAME_WIDTH } from '../../config/game'
-import { CAR_CATALOG, carById } from '../../data/cars'
+import { CAR_CATALOG } from '../../data/cars'
+import { mpCarById } from '../../data/mpCars'
 import { ALL_TRACKS, trackById } from '../../data/tracks'
 import { MAX_PLAYERS, type LobbyPlayer, type LobbySnapshot, type ServerMsg } from '../../core/net/protocol'
 import { NetClient } from '../net/netClient'
@@ -266,13 +267,15 @@ export class LobbyScene extends Phaser.Scene {
         }
         continue
       }
-      const car = carById(p.carId)
+      // mpCarById resolves catalog chassis + MP-only guest cars (e.g. Anahita);
+      // carById alone would throw on the latter (see task-7de-report.md).
+      const carName = mpCarById(p.carId)?.name ?? p.carId
       const isRowHost = p.id === this.lobby.hostId
       const isYou = p.id === this.youId
       const star = isRowHost ? '★ ' : '   '
       const tag = p.isAi ? ' [AI]' : ''
       const readyMark = p.ready ? '✓ READY' : '✗ NOT READY'
-      row.setText(`${star}${p.name}${isYou ? ' (you)' : ''}${tag}  —  ${car.name}  —  ${readyMark}`)
+      row.setText(`${star}${p.name}${isYou ? ' (you)' : ''}${tag}  —  ${carName}  —  ${readyMark}`)
       row.setColor(hex(isYou ? C.oxide : p.ready ? C.ok : C.textPrimary))
       if (isHost && p.isAi) {
         row.setInteractive({ useHandCursor: true })

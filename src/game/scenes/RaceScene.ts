@@ -54,7 +54,7 @@ import { rosterById } from '../../data/roster'
 import { BOSS } from '../../data/boss'
 import { SABOTAGE } from '../../data/blackMarket'
 import { ALL_TRACKS, TRACKS_BY_TIER, trackById } from '../../data/tracks'
-import { STARTER_CAR, carById } from '../../data/cars'
+import { STARTER_CAR, carById, carTopTexture, pickSeededVariant } from '../../data/cars'
 import { DRIVING_STYLES, RUBBER_BAND, TALENT_PROFILES, styleForGrade, talentOf } from '../../data/drivers'
 import {
   AI_MINES,
@@ -332,7 +332,7 @@ export class RaceScene extends Phaser.Scene {
       this.carInfo.set(r.id, {
         name: r.name,
         color: r.color,
-        textureKey: `car-top-${r.chassisId}`,
+        textureKey: carTopTexture(r.chassisId, r.variantId),
         chassisId: r.chassisId,
       })
     }
@@ -1014,10 +1014,11 @@ export class RaceScene extends Phaser.Scene {
     const weapons = this.career.profile.weaponsEnabled
 
     const playerCar = carById(this.career.carId)
+    const playerLivery = this.career.liveries[playerCar.id] ?? 'base'
     this.carInfo.set('player', {
       name: this.career.profile.driverName,
       color: this.career.profile.liveryColor,
-      textureKey: `car-top-${playerCar.id}`,
+      textureKey: carTopTexture(playerCar.id, playerLivery),
       chassisId: playerCar.id,
     })
     setups.push({
@@ -1075,10 +1076,12 @@ export class RaceScene extends Phaser.Scene {
         // rivals build their cars too — a stock chassis has stock tires, and the
         // player's tier-3 rubber out-corners any amount of pace tuning
         const upgrades = rivalUpgrades(rank)
+        // seed-derived, not Math.random — deterministic per race offer seed
+        const rivalVariant = pickSeededVariant(chassis.variants, this.random).key
         this.carInfo.set(id, {
           name: driver.name,
           color: driver.bodyColor,
-          textureKey: `car-top-${chassis.id}`,
+          textureKey: carTopTexture(chassis.id, rivalVariant),
           chassisId: chassis.id,
         })
         setups.push({
