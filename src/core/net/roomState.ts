@@ -111,8 +111,11 @@ export function endRace(room: RoomState): RoomState {
   return { ...room, phase: 'results' }
 }
 
-/** Return to the lobby: humans un-ready, AI stay ready (they have no toggle). */
+/** Return to the lobby: humans un-ready, AI stay ready (they have no toggle).
+ *  Only a finished race ('results') may rematch — a mid-race rematch is a no-op
+ *  so it can never yank in-race clients back to a lobby they'll ignore. */
 export function rematch(room: RoomState): RoomState {
+  if (room.phase !== 'results') return room
   return { ...room, phase: 'lobby', players: room.players.map((p) => ({ ...p, ready: p.isAi })) }
 }
 

@@ -24,6 +24,7 @@ export class RaceHost {
   // consumes and clears it, so a press is never lost and never double-fires.
   private mineLatched: Record<string, boolean> = {}
   private lastSeq: Record<string, number> = {}
+  private pendingRetire: string[] = []
   private timer: ReturnType<typeof setInterval> | null = null
   constructor(
     readonly env: RaceEnv,
@@ -38,6 +39,29 @@ export class RaceHost {
     if (command.dropMine) this.mineLatched[playerId] = true
     this.commands[playerId] = command
     this.lastSeq[playerId] = seq
+  }
+
+  /** A human left the room mid-race. Queue their car to be retired (marked
+   *  wrecked) at the start of the next tick — deterministically, inside the tick
+   *  loop, never mid-flight — so checkAllHumansDone stops waiting on the orphan
+   *  car instead of stalling the whole room until the 10-minute backstop. */
+  retirePlayer(playerId: string): void {
+    this.pendingRetire.push(playerId)
+  }
+
+  /** Apply queued retirements at a deterministic point (tick start, before
+   *  stepRace). Marks each leaver's car wrecked and clears its stale command,
+   *  seq, and mine latch so nothing it sent lingers. */
+  private applyRetirements(): void {
+    if (this.pendingRetire.length === 0) return
+    for (const id of this.pendingRetire) {
+      const car = this.state.cars.find((c) => c.id === id)
+      if (car && !car.wrecked) car.wrecked = true
+      delete this.commands[id]
+      delete this.lastSeq[id]
+      delete this.mineLatched[id]
+    }
+    this.pendingRetire = []
   }
 
   /** Effective commands for one tick: continuous state as last sent, but each
@@ -57,6 +81,7 @@ export class RaceHost {
       // alive but does NOT clear this interval, so without this try/catch
       // a bad frame re-throws at TICK_MS cadence indefinitely.
       try {
+        this.applyRetirements()
         const events = stepRace(this.state, this.env, this.tickCommands(), TICK_MS)
         this.mineLatched = {} // presses consumed by this tick; next tick starts clean
         onTick({ t: 'snapshot', snap: toRaceSnapshot(this.state), events, acks: { ...this.lastSeq } })

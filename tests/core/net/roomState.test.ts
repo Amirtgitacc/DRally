@@ -189,11 +189,13 @@ describe('roomState AI fill', () => {
     expect(leaveRoom(room, 'p1')).toBeNull()
   })
 
-  it('rematch clears human ready but keeps AI ready', () => {
+  it('rematch (from results) clears human ready but keeps AI ready', () => {
     let room = createRoom('TIGER-42', host, 'test-circuit')
     room = setReady(room, 'p1', true)
     room = addAi(room, 'p1', firstUnused)
+    room = { ...room, phase: 'results' } // rematch is only valid from a finished race
     const next = rematch(room)
+    expect(next.phase).toBe('lobby')
     expect(next.players.find((p) => p.id === 'p1')!.ready).toBe(false)
     expect(next.players.find((p) => p.isAi)!.ready).toBe(true)
   })

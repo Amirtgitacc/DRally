@@ -36,6 +36,20 @@ describe('room lifecycle', () => {
     expect(back.phase).toBe('lobby')
     expect(back.players.every((p) => !p.ready)).toBe(true)
   })
+  it('rematch mid-race is a no-op — phase stays racing', () => {
+    let r = room2()
+    r = setReady(setReady(r, 'h', true), 'g', true)
+    r = (startRace(r, 'h') as any).room
+    expect(r.phase).toBe('racing')
+    const same = rematch(r) // a client sends rematch while the race is running
+    expect(same.phase).toBe('racing') // ignored, not returned to lobby
+    expect(same).toEqual(r)
+  })
+  it('rematch from lobby is a no-op', () => {
+    const r = room2() // fresh lobby
+    expect(rematch(r).phase).toBe('lobby')
+    expect(rematch(r)).toEqual(r)
+  })
   it('a solo host can start once an AI fills a slot', () => {
     let room = createRoom('SOLO-01', { id: 'h', name: 'Host', carId: 'jackal' }, 'test-circuit')
     room = addAi(room, 'h', firstUnused)      // 1 human + 1 AI

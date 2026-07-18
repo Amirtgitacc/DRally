@@ -58,6 +58,43 @@ describe('RaceHost mine latch', () => {
   })
 })
 
+describe('RaceHost retirePlayer (mid-race leave)', () => {
+  afterEach(() => vi.useRealTimers())
+
+  it('retires a leaver so the race ends when the remaining human finishes', () => {
+    vi.useFakeTimers()
+    const env = buildRaceEnvFixture({ weaponsEnabled: true, raceEndMode: 'all-humans' })
+    const setups: CarSetup[] = [
+      { id: 'a', isPlayer: true, mass: 1000, damage: 0, ammo: 30, mines: 0, armorTier: 0, ai: null },
+      { id: 'b', isPlayer: true, mass: 1000, damage: 0, ammo: 30, mines: 0, armorTier: 0, ai: null },
+    ]
+    const state = createRaceState(env, setups, 4321)
+    state.phase = 'racing'
+    state.raceStartAt = state.simTimeMs
+    const roster = [
+      { id: 'a', name: 'A', color: 1, chassisId: 'jackal', variantId: 'base', isAi: false },
+      { id: 'b', name: 'B', color: 2, chassisId: 'jackal', variantId: 'base', isAi: false },
+    ]
+    const host = new RaceHost(env, state, roster, 4321, 'fixture-square', 2)
+
+    let ended = false
+    host.start(() => {}, () => { ended = true })
+
+    // 'a' disconnects mid-race; without retirement its parked car never
+    // finishes/wrecks and the room would stall until MAX_RACE_MS.
+    host.retirePlayer('a')
+    // 'b' crosses the line
+    state.cars.find((c) => c.id === 'b')!.finishedAt = state.simTimeMs
+
+    // one tick applies the retirement + marks all humans done, then the
+    // 3s all-humans grace elapses and the race ends.
+    vi.advanceTimersByTime(34 * 3 + 3100)
+    expect(state.cars.find((c) => c.id === 'a')!.wrecked).toBe(true)
+    expect(ended).toBe(true)
+    host.stop()
+  })
+})
+
 describe('RaceHost input acks', () => {
   afterEach(() => vi.useRealTimers())
 

@@ -7,10 +7,11 @@ import { RoomStore, isValidCarId, isValidTrackId, pickUnusedDriver } from './roo
 import { buildRaceEnv } from '../src/core/race/raceEnvBuilder'
 import { buildNetworkRace } from './raceSetup'
 import { createRaceHost, RaceHost } from './raceHost'
+import { sanitizeCommand } from './inputCommand'
+// (PlayerCommand shape validation lives in ./inputCommand now)
 import { trackById } from '../src/data/tracks'
 import { STARTER_CAR, carById } from '../src/data/cars'
 import { effectiveCarSpec, NO_UPGRADES } from '../src/core/vehicle/carSpec'
-import type { PlayerCommand } from '../src/core/race/stepRace'
 
 const PORT = Number(process.env.PORT ?? 8080)
 const store = new RoomStore()
@@ -73,24 +74,6 @@ function sanitizeName(raw: unknown): string | null {
   return name.length > 0 ? name : null
 }
 
-/** Shape-checks an inbound `input` command before it reaches the sim: a
- * malformed frame (e.g. `{}`) must never be stored, since `stepRace` reads
- * `cmd.input.*` unconditionally and would throw on the next tick. */
-function isValidCommand(x: unknown): x is PlayerCommand {
-  if (x === null || typeof x !== 'object') return false
-  const c = x as Record<string, unknown>
-  if (typeof c.fire !== 'boolean' || typeof c.turbo !== 'boolean' || typeof c.dropMine !== 'boolean') return false
-  const input = c.input
-  if (input === null || typeof input !== 'object') return false
-  const i = input as Record<string, unknown>
-  return (
-    typeof i.throttle === 'number' &&
-    typeof i.brake === 'number' &&
-    typeof i.steer === 'number' &&
-    typeof i.handbrake === 'boolean'
-  )
-}
-
 function handleLeave(conn: Conn): void {
   if (!conn.code || !conn.playerId) return
   const code = conn.code
@@ -101,6 +84,13 @@ function handleLeave(conn: Conn): void {
   if (!next) {
     hosts.get(code)?.stop()
     hosts.delete(code)
+  } else {
+    // A human left while a race is running: retire their orphan car so the
+    // sim stops waiting on it. Without this, in all-humans mode the parked car
+    // never finishes/wrecks and checkAllHumansDone stalls the room until the
+    // 10-minute backstop. retirePlayer marks the car wrecked deterministically
+    // at the next tick and clears its stale command/seq/latch.
+    hosts.get(code)?.retirePlayer(pid)
   }
   broadcast(code)
 }
@@ -229,15 +219,23 @@ wss.on('connection', (ws) => {
       case 'input': {
         if (!conn.code || !conn.playerId) return
         const host = hosts.get(conn.code)
-        if (host && isValidCommand(msg.command) && typeof msg.seq === 'number' && Number.isFinite(msg.seq)) {
-          host.setInput(conn.playerId, msg.command, msg.seq)
+        const command = sanitizeCommand(msg.command)
+        if (host && command && typeof msg.seq === 'number' && Number.isFinite(msg.seq)) {
+          host.setInput(conn.playerId, command, msg.seq)
         }
         return
       }
       case 'rematch': {
         if (!conn.code || !conn.playerId) return
-        const host = hosts.get(conn.code)
-        if (host) { host.stop(); hosts.delete(conn.code) }
+        // Only a room already in 'results' may rematch. A rematch mid-race would
+        // stop the running host and broadcast a 'lobby' snapshot that in-race
+        // clients ignore, stranding everyone in a frozen RaceScene. Ignore it
+        // outside results (rematch() is also guarded defensively, but the host
+        // must not be stopped either, so gate here first).
+        const room = store.get(conn.code)
+        if (!room || room.phase !== 'results') return
+        hosts.get(conn.code)?.stop()
+        hosts.delete(conn.code)
         const next = store.apply(conn.code, (r) => rematch(r))
         if (next) broadcast(conn.code) // sends the lobby snapshot; clients return to LobbyScene
         return
