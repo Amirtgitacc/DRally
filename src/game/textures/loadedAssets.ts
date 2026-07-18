@@ -93,3 +93,44 @@ export const LOADED_TOP_TEXTURES: LoadedTexture[] = [
   { key: 'car-top-leviathan', url: 'assets/cars/top/leviathan.webp' },
   { key: 'car-top-sovereign', url: 'assets/cars/top/sovereign.webp' },
 ]
+
+// Livery-colour top-down variants (two per chassis) for multiplayer car
+// selection. Additive to LOADED_TOP_TEXTURES; the base car-top-<id> keys are
+// unaffected and still used by single-player race code.
+export const LOADED_TOP_VARIANT_TEXTURES: LoadedTexture[] = [
+  { key: 'car-top-jackal-a', url: 'assets/cars/top/variants/jackal-a.webp' },
+  { key: 'car-top-jackal-b', url: 'assets/cars/top/variants/jackal-b.webp' },
+  { key: 'car-top-vandal-a', url: 'assets/cars/top/variants/vandal-a.webp' },
+  { key: 'car-top-vandal-b', url: 'assets/cars/top/variants/vandal-b.webp' },
+  { key: 'car-top-marauder-a', url: 'assets/cars/top/variants/marauder-a.webp' },
+  { key: 'car-top-marauder-b', url: 'assets/cars/top/variants/marauder-b.webp' },
+  { key: 'car-top-harrier-a', url: 'assets/cars/top/variants/harrier-a.webp' },
+  { key: 'car-top-harrier-b', url: 'assets/cars/top/variants/harrier-b.webp' },
+  { key: 'car-top-basilisk-a', url: 'assets/cars/top/variants/basilisk-a.webp' },
+  { key: 'car-top-basilisk-b', url: 'assets/cars/top/variants/basilisk-b.webp' },
+  { key: 'car-top-leviathan-a', url: 'assets/cars/top/variants/leviathan-a.webp' },
+  { key: 'car-top-leviathan-b', url: 'assets/cars/top/variants/leviathan-b.webp' },
+  { key: 'car-top-sovereign-a', url: 'assets/cars/top/variants/sovereign-a.webp' },
+  { key: 'car-top-sovereign-b', url: 'assets/cars/top/variants/sovereign-b.webp' },
+]
+
+// MP-only car "anahita": not in CAR_CATALOG or BOSS, so kept out of
+// LOADED_TOP_TEXTURES / LOADED_HERO_TEXTURES to avoid tripping their
+// catalog-coverage tests.
+export const LOADED_MP_ONLY_TEXTURES: LoadedTexture[] = [
+  { key: 'car-top-anahita', url: 'assets/cars/top/anahita.webp' },
+  { key: 'car-hero-anahita', url: 'assets/cars/hero/anahita.webp' },
+]
+
+// Garage/dealer poster art: one authored portrait per chassis, plus the boss
+// car under both its boss and sovereign identities.
+export const LOADED_POSTER_TEXTURES: LoadedTexture[] = [
+  { key: 'car-poster-jackal', url: 'assets/cars/posters/jackal.webp' },
+  { key: 'car-poster-vandal', url: 'assets/cars/posters/vandal.webp' },
+  { key: 'car-poster-marauder', url: 'assets/cars/posters/marauder.webp' },
+  { key: 'car-poster-harrier', url: 'assets/cars/posters/harrier.webp' },
+  { key: 'car-poster-basilisk', url: 'assets/cars/posters/basilisk.webp' },
+  { key: 'car-poster-leviathan', url: 'assets/cars/posters/leviathan.webp' },
+  { key: 'car-poster-boss', url: 'assets/cars/posters/boss.webp' },
+  { key: 'car-poster-sovereign', url: 'assets/cars/posters/sovereign.webp' },
+]

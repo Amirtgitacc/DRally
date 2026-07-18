@@ -12,7 +12,16 @@ import {
   paintDebrisTexture,
   paintGlowTexture,
 } from '../textures/lightTextures'
-import { LOADED_TEXTURES, LOADED_FX_TEXTURES, LOADED_HERO_TEXTURES, LOADED_TOP_TEXTURES, LOADED_SCREEN_TEXTURES } from '../textures/loadedAssets'
+import {
+  LOADED_TEXTURES,
+  LOADED_FX_TEXTURES,
+  LOADED_HERO_TEXTURES,
+  LOADED_TOP_TEXTURES,
+  LOADED_SCREEN_TEXTURES,
+  LOADED_TOP_VARIANT_TEXTURES,
+  LOADED_MP_ONLY_TEXTURES,
+  LOADED_POSTER_TEXTURES,
+} from '../textures/loadedAssets'
 
 // Authored WebP art (BootScene.preload) covers cars, surfaces, and FX;
 // remaining procedural textures (skid stamps, combat FX, light FX) are
@@ -23,7 +32,17 @@ export class BootScene extends Phaser.Scene {
   }
 
   preload() {
-    for (const t of [...LOADED_TEXTURES, ...LOADED_FX_TEXTURES, ...LOADED_HERO_TEXTURES, ...LOADED_TOP_TEXTURES, ...LOADED_SCREEN_TEXTURES]) this.load.image(t.key, t.url)
+    for (const t of [
+      ...LOADED_TEXTURES,
+      ...LOADED_FX_TEXTURES,
+      ...LOADED_HERO_TEXTURES,
+      ...LOADED_TOP_TEXTURES,
+      ...LOADED_SCREEN_TEXTURES,
+      ...LOADED_TOP_VARIANT_TEXTURES,
+      ...LOADED_MP_ONLY_TEXTURES,
+      ...LOADED_POSTER_TEXTURES,
+    ])
+      this.load.image(t.key, t.url)
   }
 
   create() {
