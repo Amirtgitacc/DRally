@@ -23,6 +23,7 @@ export class RaceHost {
   // reads it, dropping ~half of them. OR-accumulate the press here; each tick
   // consumes and clears it, so a press is never lost and never double-fires.
   private mineLatched: Record<string, boolean> = {}
+  private lastSeq: Record<string, number> = {}
   private timer: ReturnType<typeof setInterval> | null = null
   constructor(
     readonly env: RaceEnv,
@@ -33,9 +34,10 @@ export class RaceHost {
     readonly laps: number,
   ) {}
 
-  setInput(playerId: string, command: PlayerCommand): void {
+  setInput(playerId: string, command: PlayerCommand, seq: number): void {
     if (command.dropMine) this.mineLatched[playerId] = true
     this.commands[playerId] = command
+    this.lastSeq[playerId] = seq
   }
 
   /** Effective commands for one tick: continuous state as last sent, but each
@@ -57,7 +59,7 @@ export class RaceHost {
       try {
         const events = stepRace(this.state, this.env, this.tickCommands(), TICK_MS)
         this.mineLatched = {} // presses consumed by this tick; next tick starts clean
-        onTick({ t: 'snapshot', snap: toRaceSnapshot(this.state), events })
+        onTick({ t: 'snapshot', snap: toRaceSnapshot(this.state), events, acks: { ...this.lastSeq } })
         if (this.state.phase === 'finished') {
           this.stop()
           onEnd(computeStandings(this.state, this.roster))

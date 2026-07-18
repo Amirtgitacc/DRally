@@ -227,7 +227,9 @@ wss.on('connection', (ws) => {
       case 'input': {
         if (!conn.code || !conn.playerId) return
         const host = hosts.get(conn.code)
-        if (host && isValidCommand(msg.command)) host.setInput(conn.playerId, msg.command)
+        if (host && isValidCommand(msg.command) && typeof msg.seq === 'number' && Number.isFinite(msg.seq)) {
+          host.setInput(conn.playerId, msg.command, msg.seq)
+        }
         return
       }
       case 'rematch': {

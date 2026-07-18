@@ -32,8 +32,8 @@ describe('RaceHost mine latch', () => {
 
     // The 60fps client sends the press, then a non-press frame, both before the
     // next 30Hz tick. Last-write-wins would lose the press; the latch keeps it.
-    host.setInput('a', cmd(true))
-    host.setInput('a', cmd(false))
+    host.setInput('a', cmd(true), 1)
+    host.setInput('a', cmd(false), 2)
     vi.advanceTimersByTime(34) // one tick
 
     expect(snaps.at(-1)!.cars[0].mines).toBe(1) // one mine dropped, not lost
@@ -46,14 +46,32 @@ describe('RaceHost mine latch', () => {
     const snaps: RaceSnapshot[] = []
     host.start((m) => snaps.push(m.snap), () => {})
 
-    host.setInput('a', cmd(true))
-    host.setInput('a', cmd(false))
+    host.setInput('a', cmd(true), 1)
+    host.setInput('a', cmd(false), 2)
     vi.advanceTimersByTime(34) // tick 1: drops one
     expect(snaps.at(-1)!.cars[0].mines).toBe(1)
 
-    host.setInput('a', cmd(false)) // no new press
+    host.setInput('a', cmd(false), 3) // no new press
     vi.advanceTimersByTime(340) // enough ticks to clear the 300ms cooldown
     expect(snaps.at(-1)!.cars[0].mines).toBe(1) // still 1 — latch was cleared
+    host.stop()
+  })
+})
+
+describe('RaceHost input acks', () => {
+  afterEach(() => vi.useRealTimers())
+
+  it('emits acks equal to the newest seq applied before the tick', () => {
+    vi.useFakeTimers()
+    const host = racingHost()
+    const msgs: Array<{ acks: Record<string, number> }> = []
+    host.start((m) => msgs.push(m as any), () => {})
+
+    host.setInput('a', cmd(false), 4)
+    host.setInput('a', cmd(false), 9) // newest before the tick
+    vi.advanceTimersByTime(34)
+
+    expect(msgs.at(-1)!.acks.a).toBe(9)
     host.stop()
   })
 })
