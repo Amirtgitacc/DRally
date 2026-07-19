@@ -44,7 +44,7 @@ function collectPickup(state: RaceState, p: PickupSim, index: number, car: CarSi
       car.cash += PICKUPS.cashAmount
       break
     case 'trap':
-      if (car.isPlayer) state.trapUntil = state.simTimeMs + PICKUPS.trapDurationMs
+      if (car.isPlayer) car.trapUntil = state.simTimeMs + PICKUPS.trapDurationMs
       break
   }
   events.push({ type: 'pickup-collected', carId: car.id, index, pickup: p.type, x: p.x, y: p.y })

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createRaceState } from '../../../src/core/race/raceState'
+import { createRaceState, type CarSetup } from '../../../src/core/race/raceState'
 import { updatePickups } from '../../../src/core/race/pickupsStep'
 import type { SimEvent } from '../../../src/core/race/simEvents'
 import { PICKUPS } from '../../../src/data/weapons'
@@ -49,7 +49,7 @@ describe('pickupsStep', () => {
     expect(events.some((e) => e.type === 'pickup-respawned' && e.index === 0)).toBe(true)
   })
 
-  it('trap only traps the player', () => {
+  it('trap does not trap an AI collector', () => {
     const { env, state } = racing()
     const p = state.pickups[0]
     p.type = 'trap'
@@ -57,6 +57,23 @@ describe('pickupsStep', () => {
     rival.state.x = p.x
     rival.state.y = p.y
     updatePickups(state, env, [])
-    expect(state.trapUntil).toBe(0)
+    expect(rival.trapUntil).toBe(0)
+  })
+
+  it('trap only traps the collecting player, not other human cars', () => {
+    const env = buildTestEnv()
+    const humans: CarSetup[] = ['p1', 'p2'].map((id) => ({
+      id, isPlayer: true, ai: null, damage: 0, ammo: 20, mines: 0, armorTier: 0, mass: 1000,
+    }))
+    const state = createRaceState(env, humans, 9)
+    state.phase = 'racing'
+    const p = state.pickups[0]
+    p.type = 'trap'
+    const collector = state.cars[1]
+    collector.state.x = p.x
+    collector.state.y = p.y
+    updatePickups(state, env, [])
+    expect(collector.trapUntil).toBe(state.simTimeMs + PICKUPS.trapDurationMs)
+    expect(state.cars[0].trapUntil).toBe(0)
   })
 })

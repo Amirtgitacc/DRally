@@ -1843,7 +1843,7 @@ export class RaceScene extends Phaser.Scene {
     audioBus.setEngine(speedRatio, player.lastTurboActive)
 
     // booby-trap disorientation: the camera swims for a couple of seconds
-    if (now < this.sim.trapUntil) {
+    if (now < player.trapUntil) {
       this.camRotation = Math.sin(now * 0.008) * 0.07
     } else if (this.camRotation !== 0) {
       this.camRotation = Phaser.Math.Linear(this.camRotation, 0, 0.12)

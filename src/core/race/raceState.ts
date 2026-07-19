@@ -46,6 +46,8 @@ export interface CarSim {
   mass: number
   stuckMs: number
   armorTier: number
+  /** when this car's booby-trap disorientation ends (0 = not trapped) — only meaningful for human cars */
+  trapUntil: number
   ai: CarAiSim | null
   /** what the car did on the last step — renderer reads this for brake lights, exhaust, skids */
   lastInput: CarInput
@@ -80,7 +82,6 @@ export interface RaceState {
   phase: RacePhase
   countdownAnnounced: number
   raceStartAt: number
-  trapUntil: number
   slowMoUntil: number
   allRivalsDoneAt: number | null
   rngState: number
@@ -108,7 +109,7 @@ export interface CarSetup {
 export function createRaceState(env: RaceEnv, setups: CarSetup[], seed: number): RaceState {
   const state: RaceState = {
     simTimeMs: 0, phase: 'countdown', countdownAnnounced: 0, raceStartAt: 0,
-    trapUntil: 0, slowMoUntil: 0, allRivalsDoneAt: null,
+    slowMoUntil: 0, allRivalsDoneAt: null,
     rngState: initialRngState(seed), nextBulletId: 1, nextMineId: 1, autoPilot: null,
     cars: [], bullets: [], mines: [], pickups: [], placementOrder: [],
   }
@@ -151,7 +152,7 @@ export function createRaceState(env: RaceEnv, setups: CarSetup[], seed: number):
       damage: setup.damage, wrecked: false, ammo: setup.ammo,
       turbo: 1, turboDepleted: false, gunCooldown: 0, burstEndsAt: 0, restEndsAt: 0,
       cash: 0, mines: setup.mines, lastMineAt: -1e9, mass: setup.mass, stuckMs: 0,
-      armorTier: setup.armorTier, ai: setup.ai,
+      armorTier: setup.armorTier, trapUntil: 0, ai: setup.ai,
       lastInput: { ...IDLE_INPUT }, lastTurboActive: false,
     }
   })

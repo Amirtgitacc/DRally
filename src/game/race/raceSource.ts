@@ -163,7 +163,6 @@ export class NetworkSource implements RaceSource {
       this.skeleton.simTimeMs = b.simTimeMs
       this.skeleton.countdownAnnounced = b.countdownAnnounced
       this.skeleton.raceStartAt = b.raceStartAt
-      this.skeleton.trapUntil = b.trapUntil
       this.skeleton.placementOrder = [...b.placementOrder]
       // Interpolate bullets between the bracketing snapshots like cars — copying
       // only `b` makes them step at the 30Hz snapshot rate, which reads as
@@ -188,6 +187,7 @@ export class NetworkSource implements RaceSource {
         car.progress = { ...carB.progress }
         car.lapTimes = [...carB.lapTimes]
         car.isPlayer = carB.isPlayer
+        car.trapUntil = carB.trapUntil
         if (car.id === this.youId) continue // movement comes from the predictor
         const carA = a.cars.find((c) => c.id === car.id)
         if (!carA) continue

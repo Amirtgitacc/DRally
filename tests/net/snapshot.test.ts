@@ -23,13 +23,14 @@ describe('toRaceSnapshot', () => {
     expect(snap.placementOrder).toEqual(state.placementOrder)
   })
 
-  it('carries trapUntil so the trap camera effect fires online', () => {
+  it('carries trapUntil per car so only the collector fires the trap effect online', () => {
     const { state } = twoCarState()
-    state.trapUntil = state.simTimeMs + 1500
+    state.cars[1].trapUntil = state.simTimeMs + 1500
     const snap = toRaceSnapshot(state)
-    expect(snap.trapUntil).toBe(state.trapUntil)
+    expect(snap.cars[1].trapUntil).toBe(state.cars[1].trapUntil)
+    expect(snap.cars[0].trapUntil).toBe(0)
     const round = JSON.parse(JSON.stringify(snap))
-    expect(round.trapUntil).toBe(state.trapUntil)
+    expect(round.cars[1].trapUntil).toBe(state.cars[1].trapUntil)
   })
 
   it('survives a JSON round-trip unchanged', () => {

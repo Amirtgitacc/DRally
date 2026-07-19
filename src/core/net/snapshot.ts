@@ -14,6 +14,9 @@ export interface CarSnapshot {
   mines: number
   progress: RaceProgress
   lapTimes: number[]
+  /** When this car's trap-pickup camera disorientation ends. Carried per car so
+   *  only the collector's client fires the effect online. */
+  trapUntil: number
   lastInput: CarInput
   lastTurboActive: boolean
 }
@@ -23,9 +26,6 @@ export interface RaceSnapshot {
   phase: RacePhase
   countdownAnnounced: number
   raceStartAt: number
-  /** When the local player's trap-pickup camera disorientation ends. Carried so
-   *  the effect fires online; without it the client's trapUntil stays 0. */
-  trapUntil: number
   cars: CarSnapshot[]
   bullets: BulletSim[]
   mines: MineSim[]
@@ -40,7 +40,6 @@ export function toRaceSnapshot(state: RaceState): RaceSnapshot {
     phase: state.phase,
     countdownAnnounced: state.countdownAnnounced,
     raceStartAt: state.raceStartAt,
-    trapUntil: state.trapUntil,
     cars: state.cars.map((c) => ({
       id: c.id,
       isPlayer: c.isPlayer,
@@ -53,6 +52,7 @@ export function toRaceSnapshot(state: RaceState): RaceSnapshot {
       mines: c.mines,
       progress: { ...c.progress },
       lapTimes: [...c.lapTimes],
+      trapUntil: c.trapUntil,
       lastInput: { ...c.lastInput },
       lastTurboActive: c.lastTurboActive,
     })),
