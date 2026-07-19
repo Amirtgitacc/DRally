@@ -5,18 +5,24 @@ import { text } from '../ui/widgets'
 import {
   computeTouchLayout,
   driveAxisFromTouch,
+  heldButtonActions,
   isSchemeActive,
+  pointInCircle,
+  pointInPad,
   resolveThrottle,
   steerFromPad,
   type CircleControl,
   type TouchLayout,
 } from './touchScheme'
 import type { InputManager } from './inputManager'
+import type { GameAction } from './inputTypes'
 
 const DEPTH = 1000
 // interactive zone padding around the visual pad so a finger landing just
 // outside the drawn rect still registers (matches the "~40px slop" spec)
 const STEER_ZONE_SLOP = 40
+// forgiveness around a button before a drifting finger counts as released
+const TOUCH_SLOP = 24
 
 export interface TouchControlsOptions {
   onPause: () => void
@@ -53,7 +59,13 @@ export class TouchControls {
   private hiddenOnFinish = false
   private engaged = false
   /** held controls, polled each frame so a missed pointerup cannot stick */
-  private readonly held: Array<{ pointerId: number | null; release: () => void }> = []
+  private readonly held: Array<{
+    action: GameAction | null
+    pos: CircleControl
+    pointerId: number | null
+    press: (pointerId: number) => void
+    release: () => void
+  }> = []
 
   private readonly muteCircle: Phaser.GameObjects.Arc
   private readonly muteLabel: Phaser.GameObjects.Text
@@ -102,24 +114,24 @@ export class TouchControls {
     this.container.add(steerZone)
 
     // -- hold buttons -------------------------------------------------------
-    this.addHoldButton(this.layout.brake, 'BRK', C.concrete, 'action',
+    this.addHoldButton(this.layout.brake, 'BRK', C.concrete, 'action', null,
       () => { this.braking = true },
       () => { this.braking = false },
     )
-    this.addHoldButton(this.layout.handbrake, 'HB', C.oxideDim, 'action',
+    this.addHoldButton(this.layout.handbrake, 'HB', C.oxideDim, 'action', 'handbrake',
       () => this.input.setTouchButton('handbrake', true),
       () => this.input.setTouchButton('handbrake', false),
     )
-    this.addHoldButton(this.layout.turbo, 'TURBO', C.turbo, 'caption',
+    this.addHoldButton(this.layout.turbo, 'TURBO', C.turbo, 'action', 'turbo',
       () => this.input.setTouchButton('turbo', true),
       () => this.input.setTouchButton('turbo', false),
     )
     if (options.weaponsEnabled) {
-      this.addHoldButton(this.layout.fire, 'FIRE', C.danger, 'subtitle',
+      this.addHoldButton(this.layout.fire, 'FIRE', C.danger, 'subtitle', 'fire',
         () => this.input.setTouchButton('fire', true),
         () => this.input.setTouchButton('fire', false),
       )
-      this.addHoldButton(this.layout.mine, 'MINE', C.warn, 'micro',
+      this.addHoldButton(this.layout.mine, 'MINE', C.warn, 'caption', 'mine',
         () => this.input.setTouchButton('mine', true),
         () => this.input.setTouchButton('mine', false),
       )
@@ -134,6 +146,7 @@ export class TouchControls {
     const pauseLabel = text(scene, pausePos.x, pausePos.y, 'II', {
       face: 'display', size: 'subtitle', color: C.textPrimary, origin: [0.5, 0.5],
     })
+    this.addPressFeedback(pauseCircle, C.surfaceHud)
     pauseCircle.on('pointerup', () => this.options.onPause())
     this.container.add([pauseCircle, pauseLabel])
 
@@ -146,10 +159,14 @@ export class TouchControls {
     this.muteLabel = text(scene, mutePos.x, mutePos.y, 'MUTE', {
       face: 'display', size: 'micro', color: C.textPrimary, origin: [0.5, 0.5],
     })
+    this.muteCircle.on('pointerdown', () => {
+      this.muteCircle.setFillStyle(C.oxide, Math.min(1, this.hitAlpha + 0.45))
+    })
     this.muteCircle.on('pointerup', () => {
       this.options.onMuteToggle()
       this.refreshMute()
     })
+    this.muteCircle.on('pointerout', () => this.refreshMute())
     this.container.add([this.muteCircle, this.muteLabel])
     this.refreshMute()
   }
@@ -162,11 +179,13 @@ export class TouchControls {
    * until the next touch event.
    */
   update(finished: boolean) {
-    this.releaseStalePointers()
+    this.syncHeldButtons()
     const schemeActive = isSchemeActive(this.engaged, finished)
     const throttle = resolveThrottle({ schemeActive, braking: this.braking })
     const axis = driveAxisFromTouch(this.steer, throttle)
     this.input.setTouchAxis(axis.x, axis.y)
+    // a finger held through a pause gets no repeat event, so re-assert it
+    for (const action of heldButtonActions(this.held)) this.input.setTouchButton(action, true)
 
     if (finished && !this.hiddenOnFinish) {
       this.hiddenOnFinish = true
@@ -181,23 +200,40 @@ export class TouchControls {
   }
 
   /**
-   * A pointerup can be missed when the scene pauses under a held finger, or
-   * when a touch ends outside its control. Polling pointer liveness stops a
-   * held action from sticking on after the finger is gone.
+   * Derive held state from where fingers actually are, every frame. Events
+   * alone are not enough: opening the pause overlay fires pointerout under a
+   * still-pressed finger, and a touch that ends off-control may deliver no
+   * pointerup at all. Re-acquiring from live pointers keeps the two in sync.
    */
-  private releaseStalePointers() {
+  private syncHeldButtons() {
+    const down = this.scene.input.manager.pointers.filter((p) => p.isDown)
+    const owned = new Set(this.held.map((e) => e.pointerId).filter((id): id is number => id !== null))
+
     for (const entry of this.held) {
-      if (entry.pointerId === null) continue
-      const pointer = this.scene.input.manager.pointers.find((p) => p.id === entry.pointerId)
-      if (!pointer || !pointer.isDown) entry.release()
+      const owner = entry.pointerId === null ? undefined : down.find((p) => p.id === entry.pointerId)
+      if (owner && pointInCircle(owner.x, owner.y, entry.pos, TOUCH_SLOP)) continue
+      entry.release()
+      owned.delete(entry.pointerId ?? -1)
+
+      const candidate = down.find((p) => !owned.has(p.id) && pointInCircle(p.x, p.y, entry.pos))
+      if (candidate) {
+        entry.press(candidate.id)
+        owned.add(candidate.id)
+      }
     }
+
     if (this.steerPointerId !== null) {
-      const pointer = this.scene.input.manager.pointers.find((p) => p.id === this.steerPointerId)
-      if (!pointer || !pointer.isDown) {
+      const pointer = down.find((p) => p.id === this.steerPointerId)
+      if (!pointer) {
         this.steerPointerId = null
         this.steer = 0
         this.drawPad()
       }
+    } else {
+      const candidate = down.find(
+        (p) => !owned.has(p.id) && pointInPad(p.x, p.y, this.layout.steerPad, STEER_ZONE_SLOP),
+      )
+      if (candidate) this.onSteerMove(candidate)
     }
   }
 
@@ -206,6 +242,7 @@ export class TouchControls {
     label: string,
     color: number,
     size: TypeToken,
+    action: GameAction | null,
     onDown: () => void,
     onUp: () => void,
   ) {
@@ -213,13 +250,28 @@ export class TouchControls {
       .circle(pos.x, pos.y, pos.r, color, this.hitAlpha)
       .setStrokeStyle(3, color, Math.min(1, this.hitAlpha + 0.3))
       .setInteractive()
+    // light fills need dark type: near-white on turbo cyan or mine yellow
+    // sits around 1.6:1 contrast, well under the 4.5:1 minimum
+    const LIGHT_FILLS: number[] = [C.turbo, C.warn]
     const t = text(this.scene, pos.x, pos.y, label, {
-      face: 'display', size, color: C.textPrimary, origin: [0.5, 0.5],
+      face: 'display',
+      size,
+      color: LIGHT_FILLS.includes(color) ? C.surfaceHud : C.textPrimary,
+      origin: [0.5, 0.5],
     })
 
-    const entry: { pointerId: number | null; release: () => void } = {
-      pointerId: null,
+    const entry = {
+      action,
+      pos,
+      pointerId: null as number | null,
+      press: (pointerId: number) => {
+        if (entry.pointerId !== null) return
+        entry.pointerId = pointerId
+        circle.setFillStyle(color, Math.min(1, this.hitAlpha + 0.45))
+        onDown()
+      },
       release: () => {
+        if (entry.pointerId === null) return
         entry.pointerId = null
         circle.setFillStyle(color, this.hitAlpha)
         onUp()
@@ -227,18 +279,13 @@ export class TouchControls {
     }
     this.held.push(entry)
 
+    // pointerdown gives an immediate response; syncHeldButtons() then owns the
+    // held state from live pointer positions, so a finger resting on a control
+    // through a pause is re-acquired rather than left dead.
     circle.on('pointerdown', (p: Phaser.Input.Pointer) => {
       this.engaged = true
-      entry.pointerId = p.id
-      circle.setFillStyle(color, Math.min(1, this.hitAlpha + 0.45))
-      onDown()
+      entry.press(p.id)
     })
-    const onPointerRelease = (p: Phaser.Input.Pointer) => {
-      if (entry.pointerId !== null && p.id !== entry.pointerId) return
-      entry.release()
-    }
-    circle.on('pointerup', onPointerRelease)
-    circle.on('pointerout', onPointerRelease)
 
     this.container.add([circle, t])
   }
@@ -285,7 +332,16 @@ export class TouchControls {
     this.padGfx.strokeRoundedRect(left, top, w, h, radius)
   }
 
-  private refreshMute() {
+  /** Tap feedback for the momentary system buttons, which have no held state. */
+  private addPressFeedback(circle: Phaser.GameObjects.Arc, base: number) {
+    circle.on('pointerdown', () => circle.setFillStyle(C.oxide, Math.min(1, this.hitAlpha + 0.45)))
+    const restore = () => circle.setFillStyle(base, this.hitAlpha)
+    circle.on('pointerup', restore)
+    circle.on('pointerout', restore)
+  }
+
+  /** Repaint the mute button — also called when mute is toggled by keyboard. */
+  refreshMute() {
     const muted = loadSettings().muted
     this.muteLabel.setText(muted ? 'UNMUTE' : 'MUTE')
     this.muteCircle.setFillStyle(muted ? C.danger : C.surfaceHud, this.hitAlpha)

@@ -1933,6 +1933,7 @@ export class RaceScene extends Phaser.Scene {
     this.settings.muted = !this.settings.muted
     saveSettings(this.settings)
     audioBus.applySettings(this.settings)
+    this.touchControls?.refreshMute()
   }
 
   private openPause() {

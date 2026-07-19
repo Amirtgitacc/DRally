@@ -8,6 +8,7 @@ import {
   driveAxisFromTouch,
   isSchemeActive,
   HUD_RESERVED,
+  heldButtonActions,
 } from '../../../src/game/input/touchScheme'
 
 describe('computeTouchLayout', () => {
@@ -382,6 +383,28 @@ describe('pointInPad', () => {
     const pad = { x: 260, y: 920, halfWidth: 170, halfHeight: 110 }
     expect(pointInPad(450, 920, pad)).toBe(false)
     expect(pointInPad(450, 920, pad, 25)).toBe(true)
+  })
+})
+
+describe('heldButtonActions', () => {
+  // regression: a finger held through a pause gets no repeat event, so
+  // InputManager.reset() left the button dead until it was lifted and pressed
+  // again. Held actions must be re-asserted every frame.
+  it('returns every action still under a finger', () => {
+    const held = [
+      { action: 'fire', pointerId: 2 },
+      { action: 'turbo', pointerId: 3 },
+      { action: 'mine', pointerId: null },
+    ]
+    expect(heldButtonActions(held)).toEqual(['fire', 'turbo'])
+  })
+
+  it('ignores controls with no action, such as the brake button', () => {
+    expect(heldButtonActions([{ action: null, pointerId: 1 }])).toEqual([])
+  })
+
+  it('returns nothing when no button is held', () => {
+    expect(heldButtonActions([{ action: 'fire', pointerId: null }])).toEqual([])
   })
 })
 

@@ -71,13 +71,15 @@ const MINE_X = 1790
 const MINE_Y = 600
 const MINE_R = 45
 
-// System controls sit in the free top-centre gap between the HUD readouts and
-// do not mirror — they stay put whichever hand leads.
-const PAUSE_X = 1000
+// Infrequent system actions belong in the upper row (per the touch-layout
+// guide). They sit at the right end of the free gap between the HUD readouts
+// to shorten the thumb stretch, and do not mirror — a pause button that moves
+// between races would be worse than one that is always in the same place.
+const PAUSE_X = 1580
 const PAUSE_Y = 70
 const PAUSE_R = 48
 
-const MUTE_X = 1130
+const MUTE_X = 1450
 const MUTE_Y = 70
 const MUTE_R = 48
 
@@ -205,6 +207,18 @@ export function pointInPad(
   const dx = Math.abs(px - pad.x)
   const dy = Math.abs(py - pad.y)
   return dx <= pad.halfWidth + slop && dy <= pad.halfHeight + slop
+}
+
+/**
+ * Actions whose button is still under a finger. A held touch produces no
+ * repeat event (unlike keyboard auto-repeat), so InputManager.reset() during a
+ * pause would otherwise leave a still-pressed button dead for the rest of the
+ * race. The caller re-asserts these every frame.
+ */
+export function heldButtonActions<T>(
+  entries: ReadonlyArray<{ action: T | null; pointerId: number | null }>,
+): T[] {
+  return entries.filter((e) => e.pointerId !== null && e.action !== null).map((e) => e.action as T)
 }
 
 /**

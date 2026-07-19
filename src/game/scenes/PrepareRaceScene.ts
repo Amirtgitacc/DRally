@@ -10,6 +10,19 @@ import { loadCareer } from '../state/saveGame'
 import { C, TIER_COLOR, TIER_LABEL } from '../ui/theme'
 import { backButton, flavor, heading, panel, text } from '../ui/widgets'
 import { sceneBackground } from '../ui/sceneBackground'
+import { isTouchDevice } from '../input/device'
+
+/** Briefing text must describe the input the player actually has to hand. */
+function controlLines(): string[] {
+  if (isTouchDevice()) {
+    return [
+      'Pad steers · the car accelerates itself',
+      'BRK slows · HB handbrake · FIRE / MINE / TURBO',
+      'Pause and mute sit along the top edge',
+    ]
+  }
+  return ['Arrows/WASD drive · X fire · C mine', 'Shift turbo · Space handbrake · Esc pause']
+}
 
 export class PrepareRaceScene extends Phaser.Scene {
   constructor() { super('PrepareRace') }
@@ -25,7 +38,7 @@ export class PrepareRaceScene extends Phaser.Scene {
     panel(this, 1430, 500, 680, 760, { stroke: C.border, strokeAlpha: 1 })
     const rivals = offer.duel ? ['THE CHAMPION · ★★★★'] : offer.rivalIds.map((id) => `${rosterById(id).name.padEnd(18)} ${starsFor(talentOf(id).grade)}`)
     const gear = [career.mines ? `${career.mines} mines` : '', career.ramPlating ? 'ram plating' : '', career.overTurbo ? 'overcharge' : '', career.sabotage ? 'sabotage' : ''].filter(Boolean)
-    text(this, 1140, 180, ['DRIVER', `${career.profile.driverName} · ${carById(career.carId).name}`, `Condition ${career.damage}% damage`, '', 'LOADOUT', gear.length ? gear.join(' · ') : 'Stock configuration', `Weapons ${career.profile.weaponsEnabled ? 'enabled' : 'disabled'}`, '', 'RIVALS', ...rivals, '', 'CONTROLS', 'Arrows/WASD drive · X fire · C mine', 'Shift turbo · Space handbrake · Esc pause'].join('\n'), { size: 'body', color: C.textBody, lineSpacing: 9 })
+    text(this, 1140, 180, ['DRIVER', `${career.profile.driverName} · ${carById(career.carId).name}`, `Condition ${career.damage}% damage`, '', 'LOADOUT', gear.length ? gear.join(' · ') : 'Stock configuration', `Weapons ${career.profile.weaponsEnabled ? 'enabled' : 'disabled'}`, '', 'RIVALS', ...rivals, '', 'CONTROLS', ...controlLines()].join('\n'), { size: 'body', color: C.textBody, lineSpacing: 9 })
     flavor(this, GAME_WIDTH / 2, GAME_HEIGHT - 55, 'Enter: begin countdown · Esc: return to sign-up')
     const kb = this.input.keyboard!
     const start = () => this.scene.start('Race')
