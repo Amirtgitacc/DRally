@@ -10,4 +10,44 @@ describe('settings migration', () => {
     expect(settings.muted).toBe(true)
     expect(settings.reducedFlash).toBe(false)
   })
+
+  it('supplies touch setting defaults for old saves', () => {
+    const settings = normalizeSettings({ masterVolume: 0.7, muted: false })
+    expect(settings.touchOpacity).toBe(0.5)
+    expect(settings.touchMirrored).toBe(false)
+  })
+
+  it('clamps touchOpacity to [0.2, 1]', () => {
+    expect(normalizeSettings({ touchOpacity: 4 }).touchOpacity).toBe(1)
+    expect(normalizeSettings({ touchOpacity: -1 }).touchOpacity).toBe(0.2)
+    expect(normalizeSettings({ touchOpacity: 0.7 }).touchOpacity).toBe(0.7)
+  })
+
+  it('coerces invalid touchOpacity to default', () => {
+    expect(normalizeSettings({ touchOpacity: 'high' as any }).touchOpacity).toBe(0.5)
+    expect(normalizeSettings({ touchOpacity: null as any }).touchOpacity).toBe(0.5)
+    expect(normalizeSettings({ touchOpacity: NaN as any }).touchOpacity).toBe(0.5)
+  })
+
+  it('coerces touchMirrored to boolean with === true', () => {
+    expect(normalizeSettings({ touchMirrored: true }).touchMirrored).toBe(true)
+    expect(normalizeSettings({ touchMirrored: false }).touchMirrored).toBe(false)
+    expect(normalizeSettings({ touchMirrored: 'yes' as any }).touchMirrored).toBe(false)
+    expect(normalizeSettings({ touchMirrored: 1 as any }).touchMirrored).toBe(false)
+  })
+
+  it('round-trip save/load preserves touch settings', () => {
+    const original = {
+      ...DEFAULT_SETTINGS,
+      touchOpacity: 0.75,
+      touchMirrored: true,
+    }
+    const normalized = normalizeSettings(original)
+    expect(normalized.touchOpacity).toBe(0.75)
+    expect(normalized.touchMirrored).toBe(true)
+
+    const roundTrip = normalizeSettings(JSON.parse(JSON.stringify(normalized)))
+    expect(roundTrip.touchOpacity).toBe(0.75)
+    expect(roundTrip.touchMirrored).toBe(true)
+  })
 })

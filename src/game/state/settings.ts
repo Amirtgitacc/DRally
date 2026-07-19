@@ -13,6 +13,8 @@ export interface SettingsState {
   reducedFlash: boolean
   toggleTurbo: boolean
   toggleFire: boolean
+  touchOpacity: number
+  touchMirrored: boolean
 }
 
 export const DEFAULT_SETTINGS: SettingsState = {
@@ -25,10 +27,15 @@ export const DEFAULT_SETTINGS: SettingsState = {
   reducedFlash: false,
   toggleTurbo: false,
   toggleFire: false,
+  touchOpacity: 0.5,
+  touchMirrored: false,
 }
 
 const volume = (value: unknown, fallback: number): number =>
   typeof value === 'number' && Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : fallback
+
+const clamped = (value: unknown, min: number, max: number, fallback: number): number =>
+  typeof value === 'number' && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback
 
 export function normalizeSettings(value: unknown): SettingsState {
   const data = typeof value === 'object' && value !== null ? (value as Partial<SettingsState>) : {}
@@ -42,6 +49,8 @@ export function normalizeSettings(value: unknown): SettingsState {
     reducedFlash: data.reducedFlash === true,
     toggleTurbo: data.toggleTurbo === true,
     toggleFire: data.toggleFire === true,
+    touchOpacity: clamped(data.touchOpacity, 0.2, 1, DEFAULT_SETTINGS.touchOpacity),
+    touchMirrored: data.touchMirrored === true,
   }
 }
 
