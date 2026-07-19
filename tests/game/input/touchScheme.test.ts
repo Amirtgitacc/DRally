@@ -5,6 +5,8 @@ import {
   resolveThrottle,
   pointInCircle,
   pointInPad,
+  driveAxisFromTouch,
+  isSchemeActive,
 } from '../../../src/game/input/touchScheme'
 
 describe('computeTouchLayout', () => {
@@ -342,5 +344,63 @@ describe('pointInPad', () => {
     const pad = { x: 260, y: 920, halfWidth: 170, halfHeight: 110 }
     expect(pointInPad(450, 920, pad)).toBe(false)
     expect(pointInPad(450, 920, pad, 25)).toBe(true)
+  })
+})
+
+describe('isSchemeActive', () => {
+  // regression: isTouchDevice() is true on hybrid/touchscreen laptops, so a
+  // keyboard player there must never get forced auto-acceleration.
+  it('stays inactive until the player engages the on-screen controls', () => {
+    expect(isSchemeActive(false, false)).toBe(false)
+    expect(isSchemeActive(false, true)).toBe(false)
+  })
+
+  it('is active only while engaged and the race is unfinished', () => {
+    expect(isSchemeActive(true, false)).toBe(true)
+    expect(isSchemeActive(true, true)).toBe(false)
+  })
+
+  it('produces no throttle at all when not engaged', () => {
+    const throttle = resolveThrottle({ schemeActive: isSchemeActive(false, false), braking: false })
+    expect(throttle).toEqual({ accelerate: false, brake: false })
+    expect(driveAxisFromTouch(0, throttle)).toEqual({ x: 0, y: 0 })
+  })
+})
+
+describe('driveAxisFromTouch', () => {
+  it('steer -1, accelerate', () => {
+    expect(driveAxisFromTouch(-1, { accelerate: true, brake: false })).toEqual({ x: -1, y: -1 })
+  })
+
+  it('steer -1, brake', () => {
+    expect(driveAxisFromTouch(-1, { accelerate: false, brake: true })).toEqual({ x: -1, y: 1 })
+  })
+
+  it('steer -1, neither', () => {
+    expect(driveAxisFromTouch(-1, { accelerate: false, brake: false })).toEqual({ x: -1, y: 0 })
+  })
+
+  it('steer 0, accelerate', () => {
+    expect(driveAxisFromTouch(0, { accelerate: true, brake: false })).toEqual({ x: 0, y: -1 })
+  })
+
+  it('steer 0, brake', () => {
+    expect(driveAxisFromTouch(0, { accelerate: false, brake: true })).toEqual({ x: 0, y: 1 })
+  })
+
+  it('steer 0, neither', () => {
+    expect(driveAxisFromTouch(0, { accelerate: false, brake: false })).toEqual({ x: 0, y: 0 })
+  })
+
+  it('steer 1, accelerate', () => {
+    expect(driveAxisFromTouch(1, { accelerate: true, brake: false })).toEqual({ x: 1, y: -1 })
+  })
+
+  it('steer 1, brake', () => {
+    expect(driveAxisFromTouch(1, { accelerate: false, brake: true })).toEqual({ x: 1, y: 1 })
+  })
+
+  it('steer 1, neither', () => {
+    expect(driveAxisFromTouch(1, { accelerate: false, brake: false })).toEqual({ x: 1, y: 0 })
   })
 })

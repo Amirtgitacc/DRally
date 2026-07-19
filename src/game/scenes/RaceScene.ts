@@ -345,6 +345,7 @@ export class RaceScene extends Phaser.Scene {
   update(_time: number, delta: number) {
     if (this.mode === 'network') {
       // still poll local input and forward it; the server simulates it
+      this.touchControls?.update(this.sim.phase === 'finished')
       this.inputManager.update()
       if (this.settings.toggleFire && this.inputManager.justDown('fire')) this.fireToggled = !this.fireToggled
       if (this.settings.toggleTurbo && this.inputManager.justDown('turbo')) this.turboToggled = !this.turboToggled
@@ -386,6 +387,7 @@ export class RaceScene extends Phaser.Scene {
   }
 
   private careerUpdate(delta: number) {
+    this.touchControls?.update(this.sim.phase === 'finished')
     this.inputManager.update()
     if (this.settings.toggleFire && this.inputManager.justDown('fire')) this.fireToggled = !this.fireToggled
     if (this.settings.toggleTurbo && this.inputManager.justDown('turbo')) this.turboToggled = !this.turboToggled
@@ -1897,17 +1899,19 @@ export class RaceScene extends Phaser.Scene {
         if (this.mode === 'network') this.leaveNetworkRace()
         else if (this.sim.phase !== 'finished' && !this.scene.isPaused()) this.openPause()
       } else if (this.inputManager.matches('mute', event.code)) {
-        this.settings.muted = !this.settings.muted
-        saveSettings(this.settings)
-        audioBus.applySettings(this.settings)
+        this.toggleMute()
       }
     }
     this.input.keyboard?.on('keydown', onKey)
 
     if (isTouchDevice()) {
-      this.touchControls = new TouchControls(this, this.hudContainer, this.inputManager, () => {
-        if (this.mode === 'network') this.leaveNetworkRace()
-        else if (this.sim.phase !== 'finished' && !this.scene.isPaused()) this.openPause()
+      this.touchControls = new TouchControls(this, this.hudContainer, this.inputManager, {
+        onPause: () => {
+          if (this.mode === 'network') this.leaveNetworkRace()
+          else if (this.sim.phase !== 'finished' && !this.scene.isPaused()) this.openPause()
+        },
+        onMuteToggle: () => this.toggleMute(),
+        weaponsEnabled: this.env.weaponsEnabled,
       })
     }
 
@@ -1923,6 +1927,12 @@ export class RaceScene extends Phaser.Scene {
       this.touchControls = undefined
       this.inputManager.destroy()
     })
+  }
+
+  private toggleMute() {
+    this.settings.muted = !this.settings.muted
+    saveSettings(this.settings)
+    audioBus.applySettings(this.settings)
   }
 
   private openPause() {

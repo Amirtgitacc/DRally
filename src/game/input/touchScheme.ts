@@ -191,3 +191,27 @@ export function pointInPad(
   const dy = Math.abs(py - pad.y)
   return dx <= pad.halfWidth + slop && dy <= pad.halfHeight + slop
 }
+
+/**
+ * The auto-accelerate scheme may only drive the car once the player has
+ * actually used the on-screen controls. `isTouchDevice()` is true for any
+ * touch-capable machine including hybrid laptops, so a keyboard player on such
+ * a device must never receive forced throttle they cannot release.
+ */
+export function isSchemeActive(engaged: boolean, finished: boolean): boolean {
+  return engaged && !finished
+}
+
+/**
+ * Combine the steer pad's discrete state and the auto-accelerate throttle
+ * state into the (x, y) axis InputManager.setTouchAxis expects. accelerate
+ * and brake are mutually exclusive by construction (resolveThrottle never
+ * returns both true), so y is unambiguous.
+ */
+export function driveAxisFromTouch(
+  steer: -1 | 0 | 1,
+  throttle: { accelerate: boolean; brake: boolean }
+): { x: number; y: number } {
+  const y = throttle.accelerate ? -1 : throttle.brake ? 1 : 0
+  return { x: steer, y }
+}
