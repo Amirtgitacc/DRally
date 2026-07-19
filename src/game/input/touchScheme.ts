@@ -31,38 +31,53 @@ export interface TouchLayout {
   mute: CircleControl
 }
 
-// Layout constants for the unmirrored (left-handed) scheme
-const STEER_PAD_X = 260
-const STEER_PAD_Y = 920
-const STEER_PAD_HALF_WIDTH = 170
-const STEER_PAD_HALF_HEIGHT = 110
+/**
+ * Screen regions the race HUD already owns, measured from the running scene:
+ * driver/cash readouts (top left), lap + timer + standings (top right), the
+ * hull/ammo/turbo/mines panel and speed (bottom left), and the position
+ * readout (bottom right). Touch controls must not cover any of them.
+ */
+export const HUD_RESERVED: ReadonlyArray<{ x: number; y: number; w: number; h: number }> = [
+  { x: 0, y: 0, w: 620, h: 160 },
+  { x: 1650, y: 0, w: 270, h: 300 },
+  { x: 0, y: 850, w: 420, h: 230 },
+  { x: 1740, y: 950, w: 180, h: 130 },
+]
 
-const HANDBRAKE_X = 160
-const HANDBRAKE_Y = 600
+// Layout constants for the unmirrored (right-handed) scheme. Positions sit in
+// the thumb arcs near the bottom corners while clearing every HUD_RESERVED box.
+const STEER_PAD_X = 290
+const STEER_PAD_Y = 740
+const STEER_PAD_HALF_WIDTH = 190
+const STEER_PAD_HALF_HEIGHT = 105
+
+const HANDBRAKE_X = 620
+const HANDBRAKE_Y = 620
 const HANDBRAKE_R = 60
 
-const BRAKE_X = 480
-const BRAKE_Y = 700
+const BRAKE_X = 620
+const BRAKE_Y = 800
 const BRAKE_R = 80
 
-const FIRE_X = 1660
-const FIRE_Y = 920
+const FIRE_X = 1640
+const FIRE_Y = 730
 const FIRE_R = 110
 
-const TURBO_X = 1540
-const TURBO_Y = 750
+const TURBO_X = 1440
+const TURBO_Y = 640
 const TURBO_R = 70
 
-const MINE_X = 1830
-const MINE_Y = 980
+const MINE_X = 1790
+const MINE_Y = 600
 const MINE_R = 45
 
-// System controls stay in top-right in both mirror modes (non-mirroring)
-const PAUSE_X = 1850
+// System controls sit in the free top-centre gap between the HUD readouts and
+// do not mirror — they stay put whichever hand leads.
+const PAUSE_X = 1000
 const PAUSE_Y = 70
 const PAUSE_R = 48
 
-const MUTE_X = 1716
+const MUTE_X = 1130
 const MUTE_Y = 70
 const MUTE_R = 48
 

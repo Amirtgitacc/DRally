@@ -7,6 +7,7 @@ import {
   pointInPad,
   driveAxisFromTouch,
   isSchemeActive,
+  HUD_RESERVED,
 } from '../../../src/game/input/touchScheme'
 
 describe('computeTouchLayout', () => {
@@ -120,6 +121,43 @@ describe('computeTouchLayout', () => {
           expect(ctrl.y + r).toBeLessThanOrEqual(1080 - MIN_MARGIN)
         }
       })
+    })
+  })
+
+  describe('HUD clearance', () => {
+    // regression: the first layout buried the steer pad under the hull/ammo
+    // panel and put pause/mute on top of the lap counter and timer.
+    it('keeps every control clear of the race HUD regions in both mirror modes', () => {
+      for (const mirrored of [false, true]) {
+        const layout = computeTouchLayout(mirrored)
+        const boxes: Array<{ name: string; x: number; y: number; w: number; h: number }> = [
+          {
+            name: 'steerPad',
+            x: layout.steerPad.x - layout.steerPad.halfWidth,
+            y: layout.steerPad.y - layout.steerPad.halfHeight,
+            w: layout.steerPad.halfWidth * 2,
+            h: layout.steerPad.halfHeight * 2,
+          },
+        ]
+        for (const name of ['handbrake', 'brake', 'fire', 'turbo', 'mine', 'pause', 'mute'] as const) {
+          const c = layout[name]
+          boxes.push({ name, x: c.x - c.r, y: c.y - c.r, w: c.r * 2, h: c.r * 2 })
+        }
+
+        for (const box of boxes) {
+          for (const zone of HUD_RESERVED) {
+            const overlaps =
+              box.x < zone.x + zone.w &&
+              box.x + box.w > zone.x &&
+              box.y < zone.y + zone.h &&
+              box.y + box.h > zone.y
+            expect(
+              overlaps,
+              `${box.name} overlaps HUD zone ${JSON.stringify(zone)} (mirrored=${mirrored})`,
+            ).toBe(false)
+          }
+        }
+      }
     })
   })
 
