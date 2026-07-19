@@ -27,7 +27,7 @@ import { CreditsScene } from './game/scenes/CreditsScene'
 import { PreviewScene } from './game/scenes/PreviewScene'
 import { PrepareRaceScene } from './game/scenes/PrepareRaceScene'
 import { RacePauseScene } from './game/scenes/RacePauseScene'
-import { initOrientation } from './game/systems/orientation'
+import { initOrientation, initFullscreenOnGesture } from './game/systems/orientation'
 
 /**
  * Phaser bakes glyph metrics into every Text object the moment it is created.
@@ -97,6 +97,7 @@ async function boot() {
   if (DEBUG) (window as unknown as Record<string, unknown>).__game = game
 
   initOrientation()
+  initFullscreenOnGesture()
 }
 
 void boot()
