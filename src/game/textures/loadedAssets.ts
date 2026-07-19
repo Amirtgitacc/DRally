@@ -80,6 +80,8 @@ export const LOADED_SCREEN_TEXTURES: LoadedTexture[] = [
   { key: 'bg-venue-cinder-yards', url: 'assets/screens/venue-cinder-yards.webp' },
   { key: 'bg-venue-serpents-throat', url: 'assets/screens/venue-serpents-throat.webp' },
   { key: 'bg-venue-widows-coil', url: 'assets/screens/venue-widows-coil.webp' },
+  { key: 'bg-mp', url: 'assets/screens/mp-quick-race.webp' },
+  { key: 'bg-lobby', url: 'assets/screens/mp-lobby.webp' },
 ]
 
 // Project B: real top-down roof-view race sprites, one per chassis + the boss.
@@ -120,7 +122,34 @@ export const LOADED_TOP_VARIANT_TEXTURES: LoadedTexture[] = [
 export const LOADED_MP_ONLY_TEXTURES: LoadedTexture[] = [
   { key: 'car-top-anahita', url: 'assets/cars/top/anahita.webp' },
   { key: 'car-hero-anahita', url: 'assets/cars/hero/anahita.webp' },
+  { key: 'car-poster-anahita', url: 'assets/cars/posters/anahita.webp' },
 ]
+
+// Livery-colour poster variants (two per chassis), shown by the multiplayer
+// screens where a player's chosen livery — not just the chassis — is on
+// display. Additive to LOADED_POSTER_TEXTURES; the base car-poster-<id> keys
+// are unaffected and still used by the garage/dealer.
+export const LOADED_POSTER_VARIANT_TEXTURES: LoadedTexture[] = [
+  { key: 'car-poster-jackal-a', url: 'assets/cars/posters/variants/jackal-a.webp' },
+  { key: 'car-poster-jackal-b', url: 'assets/cars/posters/variants/jackal-b.webp' },
+  { key: 'car-poster-vandal-a', url: 'assets/cars/posters/variants/vandal-a.webp' },
+  { key: 'car-poster-vandal-b', url: 'assets/cars/posters/variants/vandal-b.webp' },
+  { key: 'car-poster-marauder-a', url: 'assets/cars/posters/variants/marauder-a.webp' },
+  { key: 'car-poster-marauder-b', url: 'assets/cars/posters/variants/marauder-b.webp' },
+  { key: 'car-poster-harrier-a', url: 'assets/cars/posters/variants/harrier-a.webp' },
+  { key: 'car-poster-harrier-b', url: 'assets/cars/posters/variants/harrier-b.webp' },
+  { key: 'car-poster-basilisk-a', url: 'assets/cars/posters/variants/basilisk-a.webp' },
+  { key: 'car-poster-basilisk-b', url: 'assets/cars/posters/variants/basilisk-b.webp' },
+  { key: 'car-poster-leviathan-a', url: 'assets/cars/posters/variants/leviathan-a.webp' },
+  { key: 'car-poster-leviathan-b', url: 'assets/cars/posters/variants/leviathan-b.webp' },
+]
+
+/** Poster texture for a chassis + livery: 'base' (or missing) → the factory
+ *  poster, else the livery-variant poster. The Anahita only has a factory
+ *  poster, but it also only has the 'base' livery, so the mapping holds. */
+export function posterTextureFor(carId: string, variantId: string): string {
+  return variantId && variantId !== 'base' ? `car-poster-${carId}-${variantId}` : `car-poster-${carId}`
+}
 
 // Garage/dealer poster art: one authored portrait per chassis, plus the boss
 // car under both its boss and sovereign identities.

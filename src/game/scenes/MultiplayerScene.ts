@@ -1,5 +1,5 @@
 import Phaser from 'phaser'
-import { GAME_HEIGHT, GAME_WIDTH } from '../../config/game'
+import { GAME_HEIGHT } from '../../config/game'
 import { MP_CAR_OPTIONS } from '../../data/mpCars'
 import { ALL_TRACKS } from '../../data/tracks'
 import { isValidRoomCode, normalizeRoomCode } from '../../core/net/roomCode'
@@ -8,6 +8,8 @@ import type { ServerMsg } from '../../core/net/protocol'
 import { C, hex } from '../ui/theme'
 import { backButton, fitImage, flavor, heading, tile, text, type TileHandle, wireTiles } from '../ui/widgets'
 import { sceneBackground } from '../ui/sceneBackground'
+import { artToCanvas } from '../ui/backgroundTransform'
+import { posterTextureFor } from '../textures/loadedAssets'
 import { openNativeText } from '../ui/nativeInput'
 import { isTouchDevice } from '../input/device'
 
@@ -27,11 +29,15 @@ const JOIN_ROW = 5
 // Quick-race car choices (MP_CAR_OPTIONS) = the single-player catalog plus
 // MP-only guest cars (currently just the 206 Anahita — see src/data/mpCars.ts).
 
-// Selected-car art sits in the right margin the row block never uses.
-const ART_CX = 1660
-const ART_CY = 560
-const ART_MAX_W = 440
-const ART_MAX_H = 600
+// The bg-mp template bakes an empty steel poster frame into its right third;
+// the selected livery's poster is drawn inside it. Art-space rect of the
+// frame's inner matte area (bg-mp is authored at 1536×1024), mapped to canvas
+// space through the background's cover transform at create time.
+const POSTER_FRAME = { cx: 1224, cy: 486, w: 300, h: 505 }
+
+// The template's clean menu zone is centre-left; the form column sits there so
+// it never runs under the poster frame.
+const FORM_CX = 820
 
 /**
  * Career-independent entry point for online quick-race: pick a driver name and
@@ -49,6 +55,8 @@ export class MultiplayerScene extends Phaser.Scene {
   private statusText!: Phaser.GameObjects.Text
   private helperText!: Phaser.GameObjects.Text
   private carArt!: Phaser.GameObjects.Image
+  private posterMaxW = 0
+  private posterMaxH = 0
   private disposeNativeInput?: () => void
   /** The in-flight (not-yet-joined) client, if any — ours to close on error/back-out. */
   private pendingNet?: NetClient
@@ -73,11 +81,6 @@ export class MultiplayerScene extends Phaser.Scene {
     return car.variants[this.liveryIndex]?.key ?? car.variants[0]?.key ?? 'base'
   }
 
-  /** Anahita has no dealer poster (it is never sold) — fall back to its hero cutout. */
-  private artTextureFor(carId: string): string {
-    return carId === 'anahita' ? 'car-hero-anahita' : `car-poster-${carId}`
-  }
-
   create() {
     this.selected = 0
     this.busy = false
@@ -97,8 +100,8 @@ export class MultiplayerScene extends Phaser.Scene {
     this.liveryIndex = savedLiveryIndex >= 0 ? savedLiveryIndex : 0
     this.code = ''
 
-    const cx = GAME_WIDTH / 2
-    sceneBackground(this, 'bg-menu', { veil: 0.6 })
+    const cx = FORM_CX
+    const bg = sceneBackground(this, 'bg-mp', { veil: 0.3 })
 
     heading(this, cx, 100, 'MULTIPLAYER · QUICK RACE')
     text(this, cx, 155, 'Career progress is untouched — this is a standalone quick race.', {
@@ -114,11 +117,15 @@ export class MultiplayerScene extends Phaser.Scene {
 
     this.helperText = text(this, cx, 775, '', { size: 'caption', color: C.textSecondary, origin: [0.5, 0.5] })
 
-    // selected car's art, beside the form in the margin the rows never reach
-    this.carArt = this.add.image(ART_CX, ART_CY, this.artTextureFor(this.currentCar().id))
-    fitImage(this.carArt, ART_MAX_W, ART_MAX_H)
+    // the selected livery's poster, inside the frame baked into the template art
+    const t = bg.transform()
+    const frameCenter = artToCanvas(t, POSTER_FRAME.cx, POSTER_FRAME.cy)
+    this.posterMaxW = POSTER_FRAME.w * t.scale
+    this.posterMaxH = POSTER_FRAME.h * t.scale
+    this.carArt = this.add.image(frameCenter.x, frameCenter.y, posterTextureFor(this.currentCar().id, this.livery))
+    fitImage(this.carArt, this.posterMaxW, this.posterMaxH)
 
-    this.statusText = text(this, cx, 920, '', { size: 'body', color: C.danger, origin: [0.5, 0.5], wordWrapWidth: 1200, align: 'center' })
+    this.statusText = text(this, cx, 920, '', { size: 'body', color: C.danger, origin: [0.5, 0.5], wordWrapWidth: 900, align: 'center' })
 
     // deep link: prefill + focus JOIN when the URL carries a valid ?room= code
     const roomParam = new URLSearchParams(window.location.search).get('room')
@@ -330,8 +337,8 @@ export class MultiplayerScene extends Phaser.Scene {
     if (this.selected === CREATE_ROW) this.rows[CODE_ROW].label.setColor(hex(C.textMuted))
     this.helperText.setText(this.selected === CREATE_ROW ? 'a fresh code will be generated for you' : '')
 
-    this.carArt.setTexture(this.artTextureFor(car.id))
-    fitImage(this.carArt, ART_MAX_W, ART_MAX_H)
+    this.carArt.setTexture(posterTextureFor(car.id, this.livery))
+    fitImage(this.carArt, this.posterMaxW, this.posterMaxH)
 
     this.statusText.setColor(hex(C.danger))
   }

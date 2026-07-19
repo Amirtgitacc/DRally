@@ -1,12 +1,38 @@
 import Phaser from 'phaser'
-import { GAME_WIDTH } from '../../config/game'
+import { GAME_HEIGHT, GAME_WIDTH } from '../../config/game'
 import { mpCarById, MP_CAR_OPTIONS } from '../../data/mpCars'
 import { ALL_TRACKS, trackById } from '../../data/tracks'
 import { MAX_PLAYERS, type LobbyPlayer, type LobbySnapshot, type ServerMsg } from '../../core/net/protocol'
 import { NetClient } from '../net/netClient'
 import { C, hex } from '../ui/theme'
-import { backButton, heading, hintBar, panel, sectionLabel, text, tile, type TileHandle } from '../ui/widgets'
+import { backButton, fitImage, flavor, heading, keyGuideBar, text, tile, type KeyGuideHandle, type KeyGuideItem, type TileHandle } from '../ui/widgets'
 import { sceneBackground } from '../ui/sceneBackground'
+import { artToCanvas } from '../ui/backgroundTransform'
+import { posterTextureFor } from '../textures/loadedAssets'
+
+// The bg-lobby template bakes an empty steel notice board into its centre; the
+// player-card grid is drawn on it. Art-space rect of the board's inner surface
+// (bg-lobby is authored at 1536×1024), mapped through the cover transform.
+const BOARD = { cx: 767, cy: 480, w: 835, h: 500 }
+
+const CARD_W = 240
+const CARD_H = 470
+const CARD_GAP = 22
+const POSTER_MAX_W = 205
+const POSTER_MAX_H = 290
+
+/** One roster slot: a fixed frame whose contents are repainted from the
+ *  current LobbySnapshot on every render — objects are reused, never leaked. */
+interface PlayerCard {
+  frame: Phaser.GameObjects.Rectangle
+  poster: Phaser.GameObjects.Image
+  name: Phaser.GameObjects.Text
+  car: Phaser.GameObjects.Text
+  ready: Phaser.GameObjects.Text
+  note: Phaser.GameObjects.Text
+  /** big centred label for empty slots ('+ ADD AI' / '— OPEN SLOT —') */
+  slot: Phaser.GameObjects.Text
+}
 
 /**
  * Career-independent lobby: shows the live room roster while players pick a
@@ -20,13 +46,12 @@ export class LobbyScene extends Phaser.Scene {
   private lobby!: LobbySnapshot
 
   private transitioning = false
-  private playerRows: Phaser.GameObjects.Text[] = []
+  private cards: PlayerCard[] = []
   private trackText!: Phaser.GameObjects.Text
   private statusText!: Phaser.GameObjects.Text
-  private hint!: Phaser.GameObjects.Text
+  private keyGuide!: KeyGuideHandle
   private startTile!: TileHandle
   private copiedLabel!: Phaser.GameObjects.Text
-  private shareUrl = ''
   private disconnectTimer?: Phaser.Time.TimerEvent
   private onNetMessage!: (msg: ServerMsg) => void
   private onNetClose!: () => void
@@ -43,47 +68,62 @@ export class LobbyScene extends Phaser.Scene {
 
   create() {
     this.transitioning = false
-    this.playerRows = []
+    this.cards = []
     this.disconnectTimer = undefined
 
     const cx = GAME_WIDTH / 2
-    sceneBackground(this, 'bg-menu', { veil: 0.6 })
+    const bg = sceneBackground(this, 'bg-lobby', { veil: 0.25 })
 
     heading(this, cx, 110, `ROOM ${this.lobby.code}`)
-    const shareUrl = `${window.location.origin}${window.location.pathname}?room=${this.lobby.code}`
-    this.shareUrl = shareUrl
 
-    const copyTile = tile(this, cx + 430, 110, 150, 56, 'COPY', { size: 'bodySm' })
+    const copyTile = tile(this, cx + 430, 110, 190, 56, 'COPY CODE', { size: 'bodySm' })
     copyTile.rect.setInteractive({ useHandCursor: true })
-    copyTile.rect.on('pointerup', () => this.copyShareLink(shareUrl))
+    copyTile.rect.on('pointerup', () => this.copyRoomCode())
     this.copiedLabel = text(this, cx + 430, 150, '', {
       size: 'caption', color: C.ok, origin: [0.5, 0.5],
     })
 
-    text(this, cx, 168, `Share this link to invite: ${shareUrl}`, {
-      size: 'body', color: C.textSecondary, origin: [0.5, 0.5],
-    })
-    text(this, cx, 204, 'Career progress is untouched — this is a standalone quick race.', {
-      size: 'caption', color: C.textMuted, origin: [0.5, 0.5],
+    // the board baked into the template art, in canvas space
+    const t = bg.transform()
+    const board = artToCanvas(t, BOARD.cx, BOARD.cy)
+    const boardH = BOARD.h * t.scale
+
+    this.trackText = text(this, board.x, board.y - boardH / 2 + 45, '', {
+      size: 'bodySm', color: C.textSecondary, origin: [0.5, 0.5],
     })
 
-    panel(this, cx, 560, 1100, 560)
-    sectionLabel(this, cx - 500, 300, 'PLAYERS')
-    this.trackText = text(this, cx, 340, '', { size: 'bodySm', color: C.textSecondary, origin: [0.5, 0.5] })
-
+    const cardCy = board.y + 40
     for (let i = 0; i < MAX_PLAYERS; i++) {
-      this.playerRows.push(text(this, cx, 420 + i * 90, '', { size: 'action', origin: [0.5, 0.5] }))
+      const cardCx = board.x + (i - (MAX_PLAYERS - 1) / 2) * (CARD_W + CARD_GAP)
+      const frame = this.add
+        .rectangle(cardCx, cardCy, CARD_W, CARD_H, C.surfaceTile, 0.55)
+        .setStrokeStyle(2, C.border, 1)
+      const poster = this.add.image(cardCx, cardCy - 75, 'car-poster-jackal').setVisible(false)
+      const name = text(this, cardCx, cardCy + 90, '', {
+        size: 'bodySm', origin: [0.5, 0.5], align: 'center', wordWrapWidth: CARD_W - 20,
+      })
+      const car = text(this, cardCx, cardCy + 124, '', {
+        size: 'caption', color: C.textSecondary, origin: [0.5, 0.5], align: 'center', wordWrapWidth: CARD_W - 20,
+      })
+      const ready = text(this, cardCx, cardCy + 162, '', { size: 'bodySm', origin: [0.5, 0.5] })
+      const note = text(this, cardCx, cardCy + 192, '', {
+        size: 'caption', color: C.textMuted, origin: [0.5, 0.5],
+      })
+      const slot = text(this, cardCx, cardCy, '', { size: 'action', origin: [0.5, 0.5] })
+      this.cards.push({ frame, poster, name, car, ready, note, slot })
     }
 
-    this.statusText = text(this, cx, 790, '', {
+    this.statusText = text(this, cx, 850, '', {
       size: 'body', color: C.danger, origin: [0.5, 0.5], wordWrapWidth: 1200, align: 'center',
     })
 
-    this.startTile = tile(this, cx, 960, 700, 80, '', { size: 'action' })
+    this.startTile = tile(this, cx, 950, 700, 80, '', { size: 'action' })
     this.startTile.rect.setInteractive({ useHandCursor: true })
     this.startTile.rect.on('pointerup', () => this.tryStart())
 
-    this.hint = hintBar(this, '')
+    flavor(this, cx, GAME_HEIGHT - 28, 'Career progress is untouched — this is a standalone quick race.')
+
+    this.keyGuide = keyGuideBar(this)
     backButton(this, () => this.leave())
 
     const kb = this.input.keyboard!
@@ -127,7 +167,7 @@ export class LobbyScene extends Phaser.Scene {
     } else if (event.code === 'Space') {
       this.tryStart()
     } else if (event.code === 'KeyC') {
-      this.copyShareLink(this.shareUrl)
+      this.copyRoomCode()
     } else if (event.code === 'KeyA' && this.lobby.hostId === this.youId) {
       if (this.lobby.players.length < MAX_PLAYERS) this.net.send({ t: 'addAi' })
     } else if (event.code === 'KeyX' && this.lobby.hostId === this.youId) {
@@ -136,23 +176,25 @@ export class LobbyScene extends Phaser.Scene {
     }
   }
 
-  /** Copy the invite link; async clipboard first, hidden-textarea fallback. */
-  private copyShareLink(url: string) {
+  /** Copy the room code (friends type it into JOIN, or use ?room= links);
+   *  async clipboard first, hidden-textarea fallback. */
+  private copyRoomCode() {
+    const code = this.lobby.code
     const done = () => {
       this.copiedLabel.setText('Copied!')
       this.time.delayedCall(1200, () => this.copiedLabel.setText(''))
     }
     const nav = navigator as Navigator & { clipboard?: { writeText(t: string): Promise<void> } }
     if (nav.clipboard?.writeText) {
-      nav.clipboard.writeText(url).then(done).catch(() => this.copyFallback(url, done))
+      nav.clipboard.writeText(code).then(done).catch(() => this.copyFallback(code, done))
     } else {
-      this.copyFallback(url, done)
+      this.copyFallback(code, done)
     }
   }
 
-  private copyFallback(url: string, done: () => void) {
+  private copyFallback(value: string, done: () => void) {
     const ta = document.createElement('textarea')
-    ta.value = url
+    ta.value = value
     ta.style.position = 'fixed'
     ta.style.opacity = '0'
     document.body.appendChild(ta)
@@ -244,45 +286,72 @@ export class LobbyScene extends Phaser.Scene {
     this.statusText.setText(message)
   }
 
-  /** Rebuild the dynamic panel content from `this.lobby`. Reuses row objects — no leaks. */
+  /** Repaint one roster card for a joined player. */
+  private renderPlayerCard(card: PlayerCard, p: LobbyPlayer, isHostViewer: boolean) {
+    const isYou = p.id === this.youId
+    const spec = mpCarById(p.carId)
+    // mpCarById resolves catalog chassis + MP-only guest cars (e.g. Anahita);
+    // carById alone would throw on the latter (see task-7de-report.md).
+    const carName = spec?.name ?? p.carId
+    const liveryLabel = spec?.variants.find((v) => v.key === p.variantId)?.label
+
+    card.poster.setTexture(posterTextureFor(p.carId, p.variantId)).setVisible(true)
+    fitImage(card.poster, POSTER_MAX_W, POSTER_MAX_H)
+
+    const star = p.id === this.lobby.hostId ? '★ ' : ''
+    const tag = p.isAi ? ' [AI]' : ''
+    card.name.setText(`${star}${p.name}${isYou ? ' (you)' : ''}${tag}`)
+    card.name.setColor(hex(isYou ? C.oxide : C.textPrimary))
+    card.car.setText(liveryLabel ? `${carName}\n${liveryLabel}` : carName)
+    card.ready.setText(p.ready ? '✓ READY' : '✗ NOT READY')
+    card.ready.setColor(hex(p.ready ? C.ok : C.textMuted))
+    card.frame.setStrokeStyle(2, isYou ? C.oxide : C.border, 1)
+
+    if (isHostViewer && p.isAi) {
+      card.note.setText('tap to remove (X)')
+      card.frame.setInteractive({ useHandCursor: true })
+      card.frame.on('pointerup', () => this.net.send({ t: 'removeAi', id: p.id }))
+    } else {
+      card.note.setText('')
+    }
+  }
+
+  /** Repaint one roster card for an empty slot. */
+  private renderEmptyCard(card: PlayerCard, isHostViewer: boolean, isFirstOpen: boolean) {
+    card.frame.setStrokeStyle(2, C.border, 0.5)
+    if (isHostViewer && isFirstOpen) {
+      card.slot.setText('+ ADD AI  (A)')
+      card.slot.setColor(hex(C.oxide))
+      card.frame.setInteractive({ useHandCursor: true })
+      card.frame.on('pointerup', () => {
+        if (this.lobby.players.length < MAX_PLAYERS) this.net.send({ t: 'addAi' })
+      })
+    } else {
+      card.slot.setText('— open slot —')
+      card.slot.setColor(hex(C.textMuted))
+    }
+  }
+
+  /** Rebuild the dynamic board content from `this.lobby`. Reuses card objects — no leaks. */
   private render() {
     const isHost = this.lobby.hostId === this.youId
     const track = trackById(this.lobby.trackId)
     this.trackText.setText(`TRACK: ${track.name}${isHost ? '   ( [ / ]  or T to change )' : ''}`)
 
     for (let i = 0; i < MAX_PLAYERS; i++) {
-      const row = this.playerRows[i]
-      row.removeAllListeners('pointerup')
-      row.disableInteractive()
+      const card = this.cards[i]
+      card.frame.removeAllListeners('pointerup')
+      card.frame.disableInteractive()
+      card.poster.setVisible(false)
+      card.name.setText('')
+      card.car.setText('')
+      card.ready.setText('')
+      card.note.setText('')
+      card.slot.setText('')
+
       const p = this.lobby.players[i]
-      const isHost = this.lobby.hostId === this.youId
-      if (!p) {
-        // first open slot shows the host's Add-AI affordance
-        const firstOpen = this.lobby.players.length === i
-        row.setText(isHost && firstOpen ? '+ Add AI  (A)' : '— open slot —')
-        row.setColor(hex(isHost && firstOpen ? C.oxide : C.textMuted))
-        if (isHost && firstOpen) {
-          row.setInteractive({ useHandCursor: true })
-          row.on('pointerup', () => {
-            if (this.lobby.players.length < MAX_PLAYERS) this.net.send({ t: 'addAi' })
-          })
-        }
-        continue
-      }
-      // mpCarById resolves catalog chassis + MP-only guest cars (e.g. Anahita);
-      // carById alone would throw on the latter (see task-7de-report.md).
-      const carName = mpCarById(p.carId)?.name ?? p.carId
-      const isRowHost = p.id === this.lobby.hostId
-      const isYou = p.id === this.youId
-      const star = isRowHost ? '★ ' : '   '
-      const tag = p.isAi ? ' [AI]' : ''
-      const readyMark = p.ready ? '✓ READY' : '✗ NOT READY'
-      row.setText(`${star}${p.name}${isYou ? ' (you)' : ''}${tag}  —  ${carName}  —  ${readyMark}`)
-      row.setColor(hex(isYou ? C.oxide : p.ready ? C.ok : C.textPrimary))
-      if (isHost && p.isAi) {
-        row.setInteractive({ useHandCursor: true })
-        row.on('pointerup', () => this.net.send({ t: 'removeAi', id: p.id }))
-      }
+      if (p) this.renderPlayerCard(card, p, isHost)
+      else this.renderEmptyCard(card, isHost, this.lobby.players.length === i)
     }
 
     const canStart = this.canStart()
@@ -293,9 +362,20 @@ export class LobbyScene extends Phaser.Scene {
       this.startTile.label.setText('Waiting for host…')
     }
 
-    this.hint.setText(
-      `←/→ change car · Enter/R ready${isHost ? ' · [ / ] or T change track · A add AI · X remove AI' : ''}` +
-        ` · C copy link${isHost && canStart ? ' · Space to start' : ''} · Esc leave`,
-    )
+    const guide: KeyGuideItem[] = [
+      { key: '←/→', label: 'change car' },
+      { key: 'Enter/R', label: 'ready' },
+    ]
+    if (isHost) {
+      guide.push(
+        { key: '[ / ] · T', label: 'track' },
+        { key: 'A', label: 'add AI' },
+        { key: 'X', label: 'remove AI' },
+      )
+    }
+    guide.push({ key: 'C', label: 'copy code' })
+    if (isHost && canStart) guide.push({ key: 'Space', label: 'start' })
+    guide.push({ key: 'Esc', label: 'leave' })
+    this.keyGuide.setItems(guide)
   }
 }
