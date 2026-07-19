@@ -39,17 +39,24 @@ export interface TouchLayout {
  */
 export const HUD_RESERVED: ReadonlyArray<{ x: number; y: number; w: number; h: number }> = [
   { x: 0, y: 0, w: 620, h: 160 },
-  { x: 1650, y: 0, w: 270, h: 300 },
-  { x: 0, y: 850, w: 420, h: 230 },
+  // standings plate starts at x=1600, not 1650
+  { x: 1600, y: 0, w: 320, h: 300 },
+  // status plate sits at y=854; the gear tag row above it starts at y=820
+  { x: 0, y: 820, w: 420, h: 260 },
   { x: 1740, y: 950, w: 180, h: 130 },
 ]
 
+/** Extra hit-area padding around the steer pad, in the same 1920x1080 space. */
+export const STEER_ZONE_SLOP = 40
+
 // Layout constants for the unmirrored (right-handed) scheme. Positions sit in
 // the thumb arcs near the bottom corners while clearing every HUD_RESERVED box.
+// pad y accounts for STEER_ZONE_SLOP: the hit zone, not just the drawn rect,
+// has to clear the status plate below it
 const STEER_PAD_X = 290
-const STEER_PAD_Y = 740
+const STEER_PAD_Y = 680
 const STEER_PAD_HALF_WIDTH = 190
-const STEER_PAD_HALF_HEIGHT = 105
+const STEER_PAD_HALF_HEIGHT = 95
 
 const HANDBRAKE_X = 620
 const HANDBRAKE_Y = 620
@@ -60,26 +67,26 @@ const BRAKE_Y = 800
 const BRAKE_R = 80
 
 const FIRE_X = 1640
-const FIRE_Y = 730
+const FIRE_Y = 700
 const FIRE_R = 110
 
 const TURBO_X = 1440
-const TURBO_Y = 640
+const TURBO_Y = 620
 const TURBO_R = 70
 
-const MINE_X = 1790
-const MINE_Y = 600
+const MINE_X = 1800
+const MINE_Y = 570
 const MINE_R = 45
 
 // Infrequent system actions belong in the upper row (per the touch-layout
 // guide). They sit at the right end of the free gap between the HUD readouts
 // to shorten the thumb stretch, and do not mirror — a pause button that moves
 // between races would be worse than one that is always in the same place.
-const PAUSE_X = 1580
+const PAUSE_X = 1530
 const PAUSE_Y = 70
 const PAUSE_R = 48
 
-const MUTE_X = 1450
+const MUTE_X = 1400
 const MUTE_Y = 70
 const MUTE_R = 48
 

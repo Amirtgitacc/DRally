@@ -11,6 +11,7 @@ import {
   pointInPad,
   resolveThrottle,
   steerFromPad,
+  STEER_ZONE_SLOP,
   type CircleControl,
   type TouchLayout,
 } from './touchScheme'
@@ -18,9 +19,6 @@ import type { InputManager } from './inputManager'
 import type { GameAction } from './inputTypes'
 
 const DEPTH = 1000
-// interactive zone padding around the visual pad so a finger landing just
-// outside the drawn rect still registers (matches the "~40px slop" spec)
-const STEER_ZONE_SLOP = 40
 // forgiveness around a button before a drifting finger counts as released
 const TOUCH_SLOP = 24
 
@@ -162,10 +160,7 @@ export class TouchControls {
     this.muteCircle.on('pointerdown', () => {
       this.muteCircle.setFillStyle(C.oxide, Math.min(1, this.hitAlpha + 0.45))
     })
-    this.muteCircle.on('pointerup', () => {
-      this.options.onMuteToggle()
-      this.refreshMute()
-    })
+    this.muteCircle.on('pointerup', () => this.options.onMuteToggle())
     this.muteCircle.on('pointerout', () => this.refreshMute())
     this.container.add([this.muteCircle, this.muteLabel])
     this.refreshMute()
@@ -208,12 +203,14 @@ export class TouchControls {
   private syncHeldButtons() {
     const down = this.scene.input.manager.pointers.filter((p) => p.isDown)
     const owned = new Set(this.held.map((e) => e.pointerId).filter((id): id is number => id !== null))
+    if (this.steerPointerId !== null) owned.add(this.steerPointerId)
 
     for (const entry of this.held) {
       const owner = entry.pointerId === null ? undefined : down.find((p) => p.id === entry.pointerId)
       if (owner && pointInCircle(owner.x, owner.y, entry.pos, TOUCH_SLOP)) continue
+      const previous = entry.pointerId
       entry.release()
-      owned.delete(entry.pointerId ?? -1)
+      if (previous !== null) owned.delete(previous)
 
       const candidate = down.find((p) => !owned.has(p.id) && pointInCircle(p.x, p.y, entry.pos))
       if (candidate) {
@@ -222,14 +219,17 @@ export class TouchControls {
       }
     }
 
-    if (this.steerPointerId !== null) {
-      const pointer = down.find((p) => p.id === this.steerPointerId)
-      if (!pointer) {
-        this.steerPointerId = null
-        this.steer = 0
-        this.drawPad()
-      }
+    // the steer pad re-validates position too, not just pointer liveness: a
+    // missed pointerout would otherwise freeze steering at its last value
+    const steerOwner =
+      this.steerPointerId === null ? undefined : down.find((p) => p.id === this.steerPointerId)
+    if (steerOwner && pointInPad(steerOwner.x, steerOwner.y, this.layout.steerPad, STEER_ZONE_SLOP)) {
+      this.onSteerMove(steerOwner)
     } else {
+      if (this.steerPointerId !== null) {
+        owned.delete(this.steerPointerId)
+        this.onSteerRelease({ id: this.steerPointerId } as Phaser.Input.Pointer)
+      }
       const candidate = down.find(
         (p) => !owned.has(p.id) && pointInPad(p.x, p.y, this.layout.steerPad, STEER_ZONE_SLOP),
       )
@@ -283,7 +283,7 @@ export class TouchControls {
     // held state from live pointer positions, so a finger resting on a control
     // through a pause is re-acquired rather than left dead.
     circle.on('pointerdown', (p: Phaser.Input.Pointer) => {
-      this.engaged = true
+      this.markEngaged(p)
       entry.press(p.id)
     })
 
@@ -291,7 +291,7 @@ export class TouchControls {
   }
 
   private onSteerMove(p: Phaser.Input.Pointer) {
-    this.engaged = true
+    this.markEngaged(p)
     this.steerPointerId = p.id
     const { steerLeft, steerRight } = steerFromPad(p.x, this.layout.steerPad)
     this.steer = steerLeft ? -1 : steerRight ? 1 : 0
@@ -330,6 +330,15 @@ export class TouchControls {
 
     this.padGfx.lineStyle(3, C.oxide, Math.min(1, this.hitAlpha + 0.3))
     this.padGfx.strokeRoundedRect(left, top, w, h, radius)
+  }
+
+  /**
+   * Only a real touch arms auto-accelerate. isTouchDevice() is true on hybrid
+   * laptops, where a mouse user must never be given throttle they cannot let go
+   * of. Phaser reports the source on the pointer itself.
+   */
+  private markEngaged(p: Phaser.Input.Pointer) {
+    if (p.wasTouch) this.engaged = true
   }
 
   /** Tap feedback for the momentary system buttons, which have no held state. */

@@ -8,6 +8,7 @@ import {
   driveAxisFromTouch,
   isSchemeActive,
   HUD_RESERVED,
+  STEER_ZONE_SLOP,
   heldButtonActions,
 } from '../../../src/game/input/touchScheme'
 
@@ -131,13 +132,15 @@ describe('computeTouchLayout', () => {
     it('keeps every control clear of the race HUD regions in both mirror modes', () => {
       for (const mirrored of [false, true]) {
         const layout = computeTouchLayout(mirrored)
+        // the pad's INTERACTIVE zone is larger than its drawn rect — a touch
+        // landing in the slop must not be stolen from a HUD region either
         const boxes: Array<{ name: string; x: number; y: number; w: number; h: number }> = [
           {
-            name: 'steerPad',
-            x: layout.steerPad.x - layout.steerPad.halfWidth,
-            y: layout.steerPad.y - layout.steerPad.halfHeight,
-            w: layout.steerPad.halfWidth * 2,
-            h: layout.steerPad.halfHeight * 2,
+            name: 'steerPad(zone)',
+            x: layout.steerPad.x - layout.steerPad.halfWidth - STEER_ZONE_SLOP,
+            y: layout.steerPad.y - layout.steerPad.halfHeight - STEER_ZONE_SLOP,
+            w: (layout.steerPad.halfWidth + STEER_ZONE_SLOP) * 2,
+            h: (layout.steerPad.halfHeight + STEER_ZONE_SLOP) * 2,
           },
         ]
         for (const name of ['handbrake', 'brake', 'fire', 'turbo', 'mine', 'pause', 'mute'] as const) {
@@ -157,6 +160,32 @@ describe('computeTouchLayout', () => {
               `${box.name} overlaps HUD zone ${JSON.stringify(zone)} (mirrored=${mirrored})`,
             ).toBe(false)
           }
+        }
+      }
+    })
+  })
+
+  describe('steer zone isolation', () => {
+    // the pad re-acquires any live pointer inside its zone, so a button that
+    // overlapped that zone could have its finger stolen
+    it('keeps the steer hit zone clear of every button hit area', () => {
+      for (const mirrored of [false, true]) {
+        const layout = computeTouchLayout(mirrored)
+        const pad = layout.steerPad
+        const zone = {
+          left: pad.x - pad.halfWidth - STEER_ZONE_SLOP,
+          right: pad.x + pad.halfWidth + STEER_ZONE_SLOP,
+          top: pad.y - pad.halfHeight - STEER_ZONE_SLOP,
+          bottom: pad.y + pad.halfHeight + STEER_ZONE_SLOP,
+        }
+        for (const name of ['handbrake', 'brake', 'fire', 'turbo', 'mine', 'pause', 'mute'] as const) {
+          const c = layout[name]
+          const overlaps =
+            c.x - c.r < zone.right &&
+            c.x + c.r > zone.left &&
+            c.y - c.r < zone.bottom &&
+            c.y + c.r > zone.top
+          expect(overlaps, `${name} overlaps the steer zone (mirrored=${mirrored})`).toBe(false)
         }
       }
     })
