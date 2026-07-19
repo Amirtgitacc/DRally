@@ -108,9 +108,11 @@ describe('NetworkSource', () => {
   it('drains each snapshot\'s events once', () => {
     const net = fakeNet()
     const src = new NetworkSource(net as any, { seed: 1, trackId: 'test-circuit', laps: 3, roster, youId: 'a' }, spec)
-    net.emit({ t: 'snapshot', snap: snapAt(0, 0), events: [{ type: 'race-started' }], acks: { a: 0 } })
+    // countdown/race-started are filtered (synthesized from state instead), so
+    // use a cosmetic event to check pass-through drains exactly once
+    net.emit({ t: 'snapshot', snap: snapAt(0, 0), events: [{ type: 'bullet-wall', x: 1, y: 2 }], acks: { a: 0 } })
     src.ingest(0, 0)
-    expect(src.drainEvents().some((e) => e.type === 'race-started')).toBe(true)
+    expect(src.drainEvents().some((e) => e.type === 'bullet-wall')).toBe(true)
     expect(src.drainEvents()).toHaveLength(0)
   })
 
@@ -128,6 +130,43 @@ describe('NetworkSource', () => {
     const last = drained[drained.length - 1] as any
     expect(last.impact).toBe(1999)
     expect((drained[0] as any).impact).toBeGreaterThan(0) // early events were dropped
+  })
+
+  it('synthesizes countdown beats from snapshot state when event snapshots were missed', () => {
+    const net = fakeNet()
+    const src = new NetworkSource(net as any, { seed: 1, trackId: 'test-circuit', laps: 3, roster, youId: 'a' }, spec)
+    // Client attached late: the snapshots carrying the count=3 and count=2
+    // events never arrived. First seen snapshot already has announced=2.
+    const snap = snapAt(1100, 0)
+    snap.countdownAnnounced = 2
+    net.emit({ t: 'snapshot', snap, events: [], acks: { a: 0 } })
+    src.ingest(0, 0)
+    const beats = src.drainEvents().filter((e) => e.type === 'countdown')
+    expect(beats).toEqual([{ type: 'countdown', count: 2 }])
+  })
+
+  it('synthesizes race-started from the phase flip when the event snapshot was missed', () => {
+    const net = fakeNet()
+    const src = new NetworkSource(net as any, { seed: 1, trackId: 'test-circuit', laps: 3, roster, youId: 'a' }, spec)
+    net.emit({ t: 'snapshot', snap: racingSnapAt(3100, 0), events: [], acks: { a: 0 } })
+    src.ingest(0, 0)
+    expect(src.drainEvents().some((e) => e.type === 'race-started')).toBe(true)
+  })
+
+  it('does not double-fire beats when the server events did arrive', () => {
+    const net = fakeNet()
+    const src = new NetworkSource(net as any, { seed: 1, trackId: 'test-circuit', laps: 3, roster, youId: 'a' }, spec)
+    const snap = snapAt(1100, 0)
+    snap.countdownAnnounced = 2
+    net.emit({ t: 'snapshot', snap, events: [{ type: 'countdown', count: 2 }], acks: { a: 0 } })
+    src.ingest(0, 0)
+    expect(src.drainEvents().filter((e) => e.type === 'countdown')).toHaveLength(1)
+    // a later snapshot with the same announced count fires nothing new
+    const snap2 = snapAt(1150, 0)
+    snap2.countdownAnnounced = 2
+    net.emit({ t: 'snapshot', snap: snap2, events: [], acks: { a: 0 } })
+    src.ingest(0, 33)
+    expect(src.drainEvents().filter((e) => e.type === 'countdown')).toHaveLength(0)
   })
 
   it('sendLocalInput forwards an input message with a seq', () => {

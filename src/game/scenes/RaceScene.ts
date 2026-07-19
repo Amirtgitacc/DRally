@@ -629,7 +629,7 @@ export class RaceScene extends Phaser.Scene {
       }
     }
     if (target) {
-      const sprite = this.add.image(target.x, target.y, 'bullet').setRotation(e.dir).setDepth(6).setBlendMode(Phaser.BlendModes.ADD)
+      const sprite = this.add.image(target.x, target.y, 'bullet').setRotation(e.dir).setScale(0.7).setDepth(6).setBlendMode(Phaser.BlendModes.ADD)
       this.cameras.cameras[1]?.ignore(sprite)
       this.bulletViews.set(target.id, sprite)
     }
@@ -845,13 +845,16 @@ export class RaceScene extends Phaser.Scene {
         sprite = this.add
           .image(b.x, b.y, 'bullet')
           .setRotation(Math.atan2(b.vy, b.vx))
+          .setScale(0.7)
           .setDepth(6)
           .setBlendMode(Phaser.BlendModes.ADD)
         this.cameras.cameras[1]?.ignore(sprite)
         this.bulletViews.set(b.id, sprite)
       }
       sprite.setPosition(b.x, b.y)
-      if (this.random() < 0.5) this.bulletTrail.emitParticleAt(b.x, b.y)
+      // every frame, not coin-flipped: at the higher bullet speed a 50% gate
+      // reads as a dotted line instead of a streak
+      this.bulletTrail.emitParticleAt(b.x, b.y)
     }
     for (const [id, sprite] of this.bulletViews) {
       if (!live.has(id)) {
@@ -1678,9 +1681,9 @@ export class RaceScene extends Phaser.Scene {
     // faint hot trail behind every tracer
     this.bulletTrail = this.add.particles(0, 0, 'spark', {
       speed: 0,
-      scale: { start: 0.22, end: 0 },
-      alpha: { start: 0.45, end: 0 },
-      lifespan: 150,
+      scale: { start: 0.14, end: 0 },
+      alpha: { start: 0.35, end: 0 },
+      lifespan: 100,
       blendMode: Phaser.BlendModes.ADD,
       frequency: -1,
     })

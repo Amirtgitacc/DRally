@@ -75,6 +75,20 @@ describe('combatStep', () => {
     expect(state.bullets).toHaveLength(1)
   })
 
+  it('a fast bullet cannot tunnel through a car in one 30Hz tick', () => {
+    const { env, state } = racing()
+    const victim = state.cars[1]
+    // one server tick (33ms) at high speed carries the bullet from well before
+    // the car to well past it — a point check at the end position would miss
+    const dt = 1 / 30
+    state.bullets.push({ id: 99, x: victim.state.x - 60, y: victim.state.y, vx: 3000, vy: 0, ttl: 1, ownerId: 'player' })
+    const events: SimEvent[] = []
+    updateBullets(state, env, dt, events)
+    expect(victim.damage).toBeGreaterThan(0)
+    expect(state.bullets).toHaveLength(0)
+    expect(events.some((e) => e.type === 'bullet-hit' && e.carId === 'rival-1')).toBe(true)
+  })
+
   it('a bullet crossing a car damages and shoves it', () => {
     const { env, state } = racing()
     const victim = state.cars[1]

@@ -3,14 +3,14 @@
 export const GUN = {
   /** shots per second */
   fireRate: 10,
-  bulletSpeed: 950,
+  bulletSpeed: 1450,
   damagePerHit: 2.4,
   ammoMax: 100,
   /** radians of random spread per shot */
   playerSpread: 0.012,
   aiSpread: 0.035,
-  /** bullet lifetime, seconds */
-  ttl: 0.85,
+  /** bullet lifetime, seconds — speed·ttl keeps the ~820px range of the old 950/0.85 tune */
+  ttl: 0.57,
   /** px from car center to muzzle */
   muzzleOffset: 48,
   /** velocity a hit pushes into the victim (px/s, damped by mass) — hits shove */

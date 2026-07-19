@@ -61,9 +61,24 @@ export function tryFire(state: RaceState, car: CarSim, events: SimEvent[]): void
   events.push({ type: 'gun-fired', carId: car.id, x: mx, y: my, dir })
 }
 
+/** Closest approach of the segment (x0,y0)→(x1,y1) to circle center (cx,cy) within radius r.
+ *  Bullets cover more than a hit-window per 30Hz tick, so collision must test the
+ *  whole swept path — a point check at the end position lets fast rounds tunnel. */
+function sweptHit(x0: number, y0: number, x1: number, y1: number, cx: number, cy: number, r: number): boolean {
+  const dx = x1 - x0
+  const dy = y1 - y0
+  const len2 = dx * dx + dy * dy
+  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((cx - x0) * dx + (cy - y0) * dy) / len2))
+  const px = x0 + t * dx
+  const py = y0 + t * dy
+  return Math.hypot(cx - px, cy - py) < r
+}
+
 export function updateBullets(state: RaceState, env: RaceEnv, dt: number, events: SimEvent[]): void {
   const survivors: RaceState['bullets'] = []
   for (const b of state.bullets) {
+    const prevX = b.x
+    const prevY = b.y
     b.ttl -= dt
     b.x += b.vx * dt
     b.y += b.vy * dt
@@ -75,7 +90,7 @@ export function updateBullets(state: RaceState, env: RaceEnv, dt: number, events
         if (car.isPlayer && state.phase === 'finished') continue
         // bullets pass under a launched car
         if (isAirborne(car.state)) continue
-        if (Math.hypot(car.state.x - b.x, car.state.y - b.y) < CAR_BODY_RADIUS + 4) {
+        if (sweptHit(prevX, prevY, b.x, b.y, car.state.x, car.state.y, CAR_BODY_RADIUS + 4)) {
           onBulletHit(state, env, car, b, events)
           dead = true
           break
@@ -83,9 +98,14 @@ export function updateBullets(state: RaceState, env: RaceEnv, dt: number, events
       }
     }
     if (!dead) {
+      const pad = TIRE_RADIUS + 6
+      const minX = Math.min(prevX, b.x) - pad
+      const maxX = Math.max(prevX, b.x) + pad
+      const minY = Math.min(prevY, b.y) - pad
+      const maxY = Math.max(prevY, b.y) + pad
       for (const wall of env.barriers) {
-        if (Math.abs(wall.x - b.x) > TIRE_RADIUS + 6 || Math.abs(wall.y - b.y) > TIRE_RADIUS + 6) continue
-        if (Math.hypot(wall.x - b.x, wall.y - b.y) < TIRE_RADIUS + 4) {
+        if (wall.x < minX || wall.x > maxX || wall.y < minY || wall.y > maxY) continue
+        if (sweptHit(prevX, prevY, b.x, b.y, wall.x, wall.y, TIRE_RADIUS + 4)) {
           events.push({ type: 'bullet-wall', x: b.x, y: b.y })
           dead = true
           break

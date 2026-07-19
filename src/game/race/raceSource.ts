@@ -58,7 +58,12 @@ export class NetworkSource implements RaceSource {
     if (msg.t === 'snapshot') {
       this.buffer.push({ snap: msg.snap, acks: msg.acks })
       if (this.buffer.length > SNAPSHOT_BUFFER_CAP) this.buffer.shift()
-      this.pendingEvents.push(...msg.events)
+      // Countdown beats and race-started are dropped here and re-synthesized in
+      // ingest() from countdownAnnounced/phase deltas, which every snapshot
+      // carries. As one-shot events they die with a single missed snapshot —
+      // e.g. a client whose RaceScene attaches after the server started ticking
+      // would stay stuck on "3" forever.
+      this.pendingEvents.push(...msg.events.filter((e) => e.type !== 'countdown' && e.type !== 'race-started'))
       // keep only the newest events on overflow (drop oldest); cosmetic-only
       if (this.pendingEvents.length > PENDING_EVENTS_CAP) {
         this.pendingEvents.splice(0, this.pendingEvents.length - PENDING_EVENTS_CAP)
@@ -144,13 +149,30 @@ export class NetworkSource implements RaceSource {
     if (br) {
       const { a, b, t } = br // b is the newer (or equal) snapshot of the pair
 
+      // Re-synthesize countdown/GO from state deltas (see onMsg). Only the
+      // newest missed beat is emitted so a late join shows the current count
+      // rather than replaying the whole sequence in one frame.
+      if (b.countdownAnnounced > this.skeleton.countdownAnnounced && b.phase === 'countdown') {
+        this.pendingEvents.push({ type: 'countdown', count: (4 - b.countdownAnnounced) as 3 | 2 | 1 })
+      }
+      if (this.skeleton.phase === 'countdown' && b.phase !== 'countdown') {
+        this.pendingEvents.push({ type: 'race-started' })
+      }
+
       this.skeleton.phase = b.phase
       this.skeleton.simTimeMs = b.simTimeMs
       this.skeleton.countdownAnnounced = b.countdownAnnounced
       this.skeleton.raceStartAt = b.raceStartAt
       this.skeleton.trapUntil = b.trapUntil
       this.skeleton.placementOrder = [...b.placementOrder]
-      this.skeleton.bullets = b.bullets.map((x) => ({ ...x }))
+      // Interpolate bullets between the bracketing snapshots like cars — copying
+      // only `b` makes them step at the 30Hz snapshot rate, which reads as
+      // stutter on fast rounds. A bullet only in `b` (just fired) keeps b's pos.
+      this.skeleton.bullets = b.bullets.map((x) => {
+        const xa = a.bullets.find((p) => p.id === x.id)
+        if (!xa) return { ...x }
+        return { ...x, x: xa.x + (x.x - xa.x) * t, y: xa.y + (x.y - xa.y) * t }
+      })
       this.skeleton.mines = b.mines.map((x) => ({ ...x }))
       this.skeleton.pickups = b.pickups.map((x) => ({ ...x }))
 
