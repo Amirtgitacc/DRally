@@ -6,8 +6,9 @@ import { buyCar, carNetPrice, tradeInValue } from '../../core/economy/garage'
 import type { CareerState } from '../../core/progression/career'
 import { loadCareer, saveCareer } from '../state/saveGame'
 import { C, hex } from '../ui/theme'
-import { backButton, fitImage, heading, hintBar, subheading, text } from '../ui/widgets'
+import { backButton, heading, hintBar, subheading, text } from '../ui/widgets'
 import { sceneBackground } from '../ui/sceneBackground'
+import { deferredImage, type DeferredImageHandle } from '../ui/deferredImage'
 
 const MPH_PER_PX = 0.14
 
@@ -54,6 +55,7 @@ export class CarDealerScene extends Phaser.Scene {
   private idx = 0
 
   private carImage!: Phaser.GameObjects.Image
+  private carImageHandle!: DeferredImageHandle
   private nameText!: Phaser.GameObjects.Text
   private blurbText!: Phaser.GameObjects.Text
   private priceText!: Phaser.GameObjects.Text
@@ -82,8 +84,8 @@ export class CarDealerScene extends Phaser.Scene {
 
     // dealer poster — portrait, fit into the left panel; a subtle idle pulse
     // reads better on a large poster than the old hero's bounce.
-    this.carImage = this.add.image(POSTER_CX, POSTER_CY, `car-poster-${CAR_CATALOG[this.idx].id}`)
-    fitImage(this.carImage, POSTER_MAX_W, POSTER_MAX_H)
+    this.carImageHandle = deferredImage(this, POSTER_CX, POSTER_CY, `car-poster-${CAR_CATALOG[this.idx].id}`, POSTER_MAX_W, POSTER_MAX_H)
+    this.carImage = this.carImageHandle.image
     this.tweens.add({ targets: this.carImage, alpha: 0.92, duration: 1600, yoyo: true, repeat: -1, ease: 'sine.inout' })
 
     this.arrows = [-1, 1].map((dir) => {
@@ -203,8 +205,7 @@ export class CarDealerScene extends Phaser.Scene {
     const net = carNetPrice(this.career, showing.id)
     const affordable = this.career.cash >= net
 
-    this.carImage.setTexture(`car-poster-${showing.id}`)
-    fitImage(this.carImage, POSTER_MAX_W, POSTER_MAX_H)
+    this.carImageHandle.setKey(`car-poster-${showing.id}`, POSTER_MAX_W, POSTER_MAX_H)
     this.nameText.setText(`${showing.name}${isOwned ? '  (yours)' : ''}`)
     this.blurbText.setText(showing.blurb)
 

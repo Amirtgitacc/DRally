@@ -4,8 +4,9 @@ import { BOSS } from '../../data/boss'
 import { carById } from '../../data/cars'
 import { loadCareer } from '../state/saveGame'
 import { C } from '../ui/theme'
-import { fitImage, flavor, heading, prompt, text } from '../ui/widgets'
+import { flavor, heading, prompt, text } from '../ui/widgets'
 import { sceneBackground } from '../ui/sceneBackground'
+import { deferredImage } from '../ui/deferredImage'
 
 /** The career's ending — shown once, after beating the champion 1-v-1. */
 export class ChampionScene extends Phaser.Scene {
@@ -46,8 +47,7 @@ export class ChampionScene extends Phaser.Scene {
     })
 
     // the winning car, front and center
-    const car = this.add.image(cx, GAME_HEIGHT * 0.47, `car-hero-${career.carId}`)
-    fitImage(car, 480, 260)
+    const car = deferredImage(this, cx, GAME_HEIGHT * 0.47, `car-hero-${career.carId}`, 480, 260).image
     this.tweens.add({ targets: car, y: '-=12', duration: 1500, yoyo: true, repeat: -1, ease: 'sine.inout' })
 
     const record = [

@@ -5,8 +5,9 @@ import { STARTING_CASH } from '../../data/economy'
 import { STARTER_CAR } from '../../data/cars'
 import { hasSavedCareer, resetCareer } from '../state/saveGame'
 import { C, hex } from '../ui/theme'
-import { backButton, flavor, fitImage, heading, panel, text, tile, type TileHandle, wireTiles } from '../ui/widgets'
+import { backButton, flavor, heading, panel, text, tile, type TileHandle, wireTiles } from '../ui/widgets'
 import { sceneBackground } from '../ui/sceneBackground'
+import { deferredImage } from '../ui/deferredImage'
 import { openNativeText } from '../ui/nativeInput'
 import { isTouchDevice } from '../input/device'
 
@@ -26,7 +27,6 @@ export class NewCareerScene extends Phaser.Scene {
   private rows: TileHandle[] = []
   private info!: Phaser.GameObjects.Text
   private nameText!: Phaser.GameObjects.Text
-  private car!: Phaser.GameObjects.Image
   private portraitGfx!: Phaser.GameObjects.Graphics
   private disposeNativeInput?: () => void
 
@@ -50,8 +50,7 @@ export class NewCareerScene extends Phaser.Scene {
 
     panel(this, 520, 500, 650, 690, { stroke: C.border, strokeAlpha: 1 })
     this.portraitGfx = this.add.graphics()
-    this.car = this.add.image(520, 440, `car-hero-${STARTER_CAR.id}`)
-    fitImage(this.car, 300, 220)
+    deferredImage(this, 520, 440, `car-hero-${STARTER_CAR.id}`, 300, 220)
     this.nameText = text(this, 520, 590, '', { size: 'heading', origin: [0.5, 0.5] })
     this.info = text(this, 520, 670, '', { size: 'body', color: C.textBody, align: 'center', lineSpacing: 9, origin: [0.5, 0] })
 

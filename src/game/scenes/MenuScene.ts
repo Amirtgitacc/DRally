@@ -9,6 +9,7 @@ import { C, hex } from '../ui/theme'
 import { flavor, text } from '../ui/widgets'
 import { sceneBackground } from '../ui/sceneBackground'
 import { BackgroundTransform, artToCanvas } from '../ui/backgroundTransform'
+import { ensureDeferredLoadStarted } from '../textures/deferredLoadScene'
 
 interface MenuItem {
   label: string
@@ -58,6 +59,14 @@ export class MenuScene extends Phaser.Scene {
   }
 
   create() {
+    // Kick off the one background load of every DEFERRED texture the moment
+    // Menu is reachable — including the first-launch redirect to Profile
+    // just below, which itself needs deferred hero/background art. Runs on a
+    // persistent worker scene (never on this one): MenuScene's own loader
+    // would be aborted by Phaser the instant scene.start() shuts Menu down.
+    // Never blocks input; no-ops on every later visit to Menu.
+    ensureDeferredLoadStarted(this)
+
     audioBus.applySettings(loadSettings())
     const career = readCareer()
     this.saved = hasSavedCareer() && career !== null

@@ -12,19 +12,7 @@ import {
   paintDebrisTexture,
   paintGlowTexture,
 } from '../textures/lightTextures'
-import {
-  LOADED_TEXTURES,
-  LOADED_FX_TEXTURES,
-  LOADED_HERO_TEXTURES,
-  LOADED_TOP_TEXTURES,
-  LOADED_SCREEN_TEXTURES,
-  LOADED_TOP_VARIANT_TEXTURES,
-  LOADED_MP_ONLY_TEXTURES,
-  LOADED_POSTER_TEXTURES,
-  LOADED_POSTER_VARIANT_TEXTURES,
-  LOADED_TRACK_POSTER_TEXTURES,
-  LOADED_ENVIRONMENT_TEXTURES,
-} from '../textures/loadedAssets'
+import { CORE_TEXTURES } from '../textures/deferredLoad'
 import { GAME_HEIGHT, GAME_WIDTH } from '../../config/game'
 import { C } from '../ui/theme'
 import { panel, text } from '../ui/widgets'
@@ -47,20 +35,12 @@ export class BootScene extends Phaser.Scene {
   preload() {
     this.buildLoadingUi()
 
-    for (const t of [
-      ...LOADED_TEXTURES,
-      ...LOADED_FX_TEXTURES,
-      ...LOADED_HERO_TEXTURES,
-      ...LOADED_TOP_TEXTURES,
-      ...LOADED_SCREEN_TEXTURES,
-      ...LOADED_TOP_VARIANT_TEXTURES,
-      ...LOADED_MP_ONLY_TEXTURES,
-      ...LOADED_POSTER_TEXTURES,
-      ...LOADED_POSTER_VARIANT_TEXTURES,
-      ...LOADED_TRACK_POSTER_TEXTURES,
-      ...LOADED_ENVIRONMENT_TEXTURES,
-    ])
-      this.load.image(t.key, t.url)
+    // CORE only: everything Menu renders, the whole race path, and every
+    // multiplayer-reachable texture (Lobby/Multiplayer have no load-guard,
+    // so their art — including base car posters — must already be present).
+    // The rest (hero renders, venue posters, most screen backgrounds)
+    // streams in after Menu via the persistent deferred-load worker scene.
+    for (const t of CORE_TEXTURES) this.load.image(t.key, t.url)
   }
 
   /**

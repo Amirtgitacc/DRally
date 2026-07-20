@@ -6,6 +6,7 @@ import { C, TIER_COLOR, TIER_LABEL } from '../ui/theme'
 import { backButton, fitImage, flavor, heading, text } from '../ui/widgets'
 import { sceneBackground } from '../ui/sceneBackground'
 import { trackPosterTextureFor } from '../textures/loadedAssets'
+import { whenReady } from '../textures/deferredLoad'
 
 // Portrait 2:3 poster plate on the left, live circuit map on the right.
 const POSTER = { cx: 385, cy: 475, w: 380, h: 570 }
@@ -16,6 +17,8 @@ export class PreviewScene extends Phaser.Scene {
   private gfx!: Phaser.GameObjects.Graphics
   private frameGfx!: Phaser.GameObjects.Graphics
   private poster!: Phaser.GameObjects.Image
+  private posterCurrentKey = ''
+  private posterLabel: Phaser.GameObjects.Text | null = null
   private title!: Phaser.GameObjects.Text
   private meta!: Phaser.GameObjects.Text
   constructor() { super('Preview') }
@@ -70,11 +73,27 @@ export class PreviewScene extends Phaser.Scene {
     this.frameGfx.lineStyle(3, color, 0.9)
     this.frameGfx.strokeRect(POSTER.cx - POSTER.w / 2 - 10, POSTER.cy - POSTER.h / 2 - 10, POSTER.w + 20, POSTER.h + 20)
     const posterKey = trackPosterTextureFor(track.id)
-    if (posterKey) {
+    this.posterCurrentKey = posterKey ?? ''
+    this.posterLabel?.destroy()
+    this.posterLabel = null
+    if (posterKey && this.textures.exists(posterKey)) {
       this.poster.setTexture(posterKey).setVisible(true)
       fitImage(this.poster, POSTER.w, POSTER.h)
     } else {
       this.poster.setVisible(false)
+      if (posterKey) {
+        this.posterLabel = text(this, POSTER.cx, POSTER.cy, 'LOADING ART', {
+          size: 'label', color: C.textMuted, origin: [0.5, 0.5],
+        })
+        whenReady([posterKey], () => {
+          // .active guards the scene having shut down before the art landed
+          if (!this.poster.active || this.posterCurrentKey !== posterKey) return
+          this.poster.setTexture(posterKey).setVisible(true)
+          fitImage(this.poster, POSTER.w, POSTER.h)
+          this.posterLabel?.destroy()
+          this.posterLabel = null
+        })
+      }
     }
     this.gfx.clear(); drawTrackMap(this.gfx, track, { cx: MAP.cx, cy: MAP.cy, width: MAP.w, height: MAP.h, color, lineWidth: 8, showStart: true, showSurface: true })
     this.title.setText(track.name).setColor(`#${color.toString(16).padStart(6, '0')}`)

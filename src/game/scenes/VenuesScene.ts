@@ -7,6 +7,7 @@ import { C, TIER_COLOR, TIER_LABEL, hex } from '../ui/theme'
 import { backButton, fitImage, flavor, heading, sectionLabel, text } from '../ui/widgets'
 import { sceneBackground } from '../ui/sceneBackground'
 import { trackPosterTextureFor } from '../textures/loadedAssets'
+import { whenReady } from '../textures/deferredLoad'
 import { loadCareer } from '../state/saveGame'
 import { formatTime } from '../../core/race/format'
 
@@ -23,6 +24,8 @@ export class VenuesScene extends Phaser.Scene {
   private mapGfx!: Phaser.GameObjects.Graphics
   private frameGfx!: Phaser.GameObjects.Graphics
   private poster!: Phaser.GameObjects.Image
+  private posterCurrentKey = ''
+  private posterLabel: Phaser.GameObjects.Text | null = null
   private nameText!: Phaser.GameObjects.Text
   private metaText!: Phaser.GameObjects.Text
   private dotsGfx!: Phaser.GameObjects.Graphics
@@ -107,11 +110,29 @@ export class VenuesScene extends Phaser.Scene {
     this.frameGfx.lineStyle(3, color, 0.9)
     this.frameGfx.strokeRect(POSTER.cx - POSTER.w / 2 - 10, POSTER.cy - POSTER.h / 2 - 10, POSTER.w + 20, POSTER.h + 20)
     const posterKey = trackPosterTextureFor(track.id)
-    if (posterKey) {
+    this.posterCurrentKey = posterKey ?? ''
+    this.posterLabel?.destroy()
+    this.posterLabel = null
+    if (posterKey && this.textures.exists(posterKey)) {
       this.poster.setTexture(posterKey).setVisible(true)
       fitImage(this.poster, POSTER.w, POSTER.h)
     } else {
       this.poster.setVisible(false)
+      if (posterKey) {
+        // Deferred art still streaming in — the tier-coloured frame above
+        // already reads as a placeholder; label it and swap in once ready.
+        this.posterLabel = text(this, POSTER.cx, POSTER.cy, 'LOADING ART', {
+          size: 'label', color: C.textMuted, origin: [0.5, 0.5],
+        })
+        whenReady([posterKey], () => {
+          // .active guards the scene having shut down before the art landed
+          if (!this.poster.active || this.posterCurrentKey !== posterKey) return
+          this.poster.setTexture(posterKey).setVisible(true)
+          fitImage(this.poster, POSTER.w, POSTER.h)
+          this.posterLabel?.destroy()
+          this.posterLabel = null
+        })
+      }
     }
 
     this.mapGfx.clear()

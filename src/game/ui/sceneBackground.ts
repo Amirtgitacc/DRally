@@ -12,6 +12,8 @@ import Phaser from 'phaser'
 import { GAME_HEIGHT, GAME_WIDTH } from '../../config/game'
 import { BackgroundTransform, coverTransform } from './backgroundTransform'
 import { C } from './theme'
+import { text } from './widgets'
+import { whenReady } from '../textures/deferredLoad'
 
 /** Backgrounds sit well below the -100 that procedural grain used to occupy. */
 export const SCENE_BG_DEPTH = -1000
@@ -43,6 +45,10 @@ function cover(image: Phaser.GameObjects.Image) {
   image.setScale(scale).setPosition(GAME_WIDTH / 2, GAME_HEIGHT / 2)
 }
 
+/** Dims the not-yet-loaded placeholder fill to read as an inert plate rather
+ *  than a stray white flash (Phaser's built-in `__WHITE` is always present). */
+const PLACEHOLDER_TEXTURE = '__WHITE'
+
 export function sceneBackground(
   scene: Phaser.Scene,
   textureKey: string,
@@ -50,8 +56,38 @@ export function sceneBackground(
 ): SceneBackgroundHandle {
   const { veil: veilAlpha = 0.35, depth = SCENE_BG_DEPTH } = options
 
-  const image = scene.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2, textureKey).setDepth(depth)
-  cover(image)
+  const image = scene.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2, PLACEHOLDER_TEXTURE).setDepth(depth)
+  let label: Phaser.GameObjects.Text | null = null
+
+  // Deferred background art (most non-menu screens) may not have finished
+  // streaming in yet — show a themed placeholder plate + label in its place
+  // and swap the real art in the moment it's ready. CORE keys (bg-menu,
+  // bg-mp, bg-lobby, and every race-path texture) always already exist here,
+  // so this is a no-op for them.
+  function applyTexture(key: string) {
+    if (scene.textures.exists(key)) {
+      label?.destroy()
+      label = null
+      image.clearTint()
+      image.setTexture(key)
+      cover(image)
+      return
+    }
+    image.setTexture(PLACEHOLDER_TEXTURE).setTint(C.surfaceSunken)
+    cover(image)
+    label?.destroy()
+    label = text(scene, GAME_WIDTH / 2, GAME_HEIGHT / 2, 'LOADING ART', {
+      size: 'label',
+      color: C.textMuted,
+      origin: [0.5, 0.5],
+    }).setDepth(depth + 2)
+    whenReady([key], () => {
+      if (!image.active) return
+      applyTexture(key)
+    })
+  }
+
+  applyTexture(textureKey)
 
   let veil: Phaser.GameObjects.Rectangle | null = null
   if (veilAlpha > 0) {
@@ -64,8 +100,7 @@ export function sceneBackground(
     image,
     veil,
     setTexture(key: string) {
-      image.setTexture(key)
-      cover(image)
+      applyTexture(key)
     },
     setVeil(alpha: number) {
       veil?.setAlpha(alpha)
