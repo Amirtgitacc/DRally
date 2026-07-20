@@ -18,5 +18,10 @@ Screenshot*.png
 /cars/
 /.playwright-cli/
 
-# Screen-background source masters — keep local, ship the derived webp
-public/assets/screens/generated/
+# Source art masters (PNG originals, posters, generated screens) — never ship
+# All PNGs are converted to WebP by optimize-assets.mjs; these are backups only
+/art-src/
+
+# Screenshot and video captures (local, do not commit)
+.mp-shots/
+output/
