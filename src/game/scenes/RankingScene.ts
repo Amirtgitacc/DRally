@@ -55,11 +55,17 @@ export class RankingScene extends Phaser.Scene {
 
     prompt(this, cx, GAME_HEIGHT - 60, 'ENTER: GARAGE')
 
+    // Touch zone: full-screen tap to advance (added before backButton so it has lower depth)
+    this.add
+      .zone(cx, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT)
+      .setInteractive()
+      .on('pointerup', () => this.scene.start('Garage'))
+
     backButton(this, () => this.scene.start('Garage'))
 
     const kb = this.input.keyboard!
-    const back = () => this.scene.start('Garage')
-    kb.on('keydown-ENTER', back)
-    this.events.once('shutdown', () => kb.off('keydown-ENTER', back))
+    const next = () => this.scene.start('Garage')
+    kb.on('keydown-ENTER', next)
+    this.events.once('shutdown', () => kb.off('keydown-ENTER', next))
   }
 }

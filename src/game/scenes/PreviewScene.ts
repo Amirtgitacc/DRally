@@ -29,8 +29,31 @@ export class PreviewScene extends Phaser.Scene {
     this.title = text(this, GAME_WIDTH / 2, 830, '', { size: 'heading', origin: [0.5, 0.5] })
     this.meta = text(this, GAME_WIDTH / 2, 890, '', { size: 'bodyLg', color: C.textSecondary, origin: [0.5, 0.5] })
     flavor(this, GAME_WIDTH / 2, GAME_HEIGHT - 60, 'Automatic venue reel · ←/→ browse · Esc menu')
-    backButton(this, () => this.scene.start('Menu'))
+
     const browse = (d: number) => { this.index = (this.index + d + ALL_TRACKS.length) % ALL_TRACKS.length; this.refresh() }
+
+    // Touch arrows: ‹ › for browsing (left/right)
+    const cx = GAME_WIDTH / 2
+    ;[-1, 1].forEach((dir) => {
+      const arrow = text(this, cx + dir * 890, GAME_HEIGHT * 0.44, dir < 0 ? '‹' : '›', {
+        size: 'title',
+        color: C.oxide,
+        origin: [0.5, 0.5],
+      })
+      // Pad the tap target well past the glyph's own bounds: at phone scale
+      // (~2.2x canvas downscale) a bare title-size glyph hit area is far
+      // under the ~44px minimum touch target.
+      const pad = 70
+      arrow.setInteractive({
+        hitArea: new Phaser.Geom.Rectangle(-pad, -pad, arrow.width + pad * 2, arrow.height + pad * 2),
+        hitAreaCallback: Phaser.Geom.Rectangle.Contains,
+        useHandCursor: true,
+      })
+      arrow.on('pointerdown', () => browse(dir))
+      this.tweens.add({ targets: arrow, alpha: 0.35, duration: 900, yoyo: true, repeat: -1 })
+    })
+
+    backButton(this, () => this.scene.start('Menu'))
     const kb = this.input.keyboard!
     const left = () => browse(-1); const right = () => browse(1); const back = () => this.scene.start('Menu')
     kb.on('keydown-LEFT', left); kb.on('keydown-RIGHT', right); kb.on('keydown-ESC', back)

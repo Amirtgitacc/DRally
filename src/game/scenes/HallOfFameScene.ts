@@ -23,6 +23,13 @@ export class HallOfFameScene extends Phaser.Scene {
       text(this, x - 340, y - 20, record ? [`Best lap    ${record.bestLapMs ? formatTime(record.bestLapMs) : '—'}`, `Best race   ${record.bestRaceMs ? formatTime(record.bestRaceMs) : '—'}`, `Best finish ${record.bestFinish ? ordinal(record.bestFinish) : '—'}     Wins ${record.wins}`].join('\n') : 'No recorded finish.', { size: 'body', color: C.textBody, lineSpacing: 8 })
     })
     flavor(this, GAME_WIDTH / 2, GAME_HEIGHT - 48, 'Esc / Enter: menu')
+
+    // Touch zone: full-screen tap to go back (added before backButton so it has lower depth)
+    this.add
+      .zone(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT)
+      .setInteractive()
+      .on('pointerup', () => this.scene.start('Menu'))
+
     backButton(this, () => this.scene.start('Menu'))
     const kb = this.input.keyboard!
     const back = () => this.scene.start('Menu')
