@@ -3,9 +3,12 @@
  * No Phaser, DOM, or side effects — only data structures and calculations.
  */
 
+import { STATUS_PLATE_X, TOUCH_HUD_SCALE, anchorBottom, anchorRight, statusPlateWidth } from '../race/hudScale'
+
 // Mirrors GAME_WIDTH from src/config/game.ts, which cannot be imported here:
 // that module reads window.location at load time and this one must stay browser-free.
 const LAYOUT_WIDTH = 1920
+const LAYOUT_HEIGHT = 1080
 
 export interface CircleControl {
   x: number
@@ -36,14 +39,40 @@ export interface TouchLayout {
  * driver/cash readouts (top left), lap + timer + standings (top right), the
  * hull/ammo/turbo/mines panel and speed (bottom left), and the position
  * readout (bottom right). Touch controls must not cover any of them.
+ *
+ * Touch controls only ever render on touch devices (`isTouchDevice()`), and
+ * on those devices RaceScene draws its HUD at `TOUCH_HUD_SCALE`, not 1x — so
+ * these boxes describe the *scaled* HUD footprint, not the desktop one.
+ *
+ * The top-left (driver/cash) cluster keeps its original box: every text
+ * element there uses a top-left anchor and grows down/right into padding
+ * that was already generous at 1x, so scaling its font doesn't grow its
+ * footprint enough to matter. The standings (top-right) and position
+ * (bottom-right) clusters do outgrow their boxes — their line heights and
+ * text widths were already tight at 1x — so those two boxes scale with the
+ * HUD using the same corner-anchor math RaceScene uses to lay them out. The
+ * bottom-left status plate's row grid scales horizontally (label · bar ·
+ * value no longer fit a 1x-wide row at touch font sizes), so its box widens
+ * to the scaled plate right edge — statusPlateWidth caps that edge at
+ * x=524, 16px clear of the brake button's hit box (starts x=540). Its top
+ * stays at y=820: rows keep their 36px pitch and the gear tag above the
+ * plate lifts to exactly y=820 (gearTagY), because the steer pad's hit zone
+ * ends at y=815 and the band between cannot grow.
  */
 export const HUD_RESERVED: ReadonlyArray<{ x: number; y: number; w: number; h: number }> = [
   { x: 0, y: 0, w: 620, h: 160 },
-  // standings plate starts at x=1600, not 1650
-  { x: 1600, y: 0, w: 320, h: 300 },
-  // status plate sits at y=854; the gear tag row above it starts at y=820
-  { x: 0, y: 820, w: 420, h: 260 },
-  { x: 1740, y: 950, w: 180, h: 130 },
+  // standings plate's right edge sits 320px in from the screen edge at 1x
+  // (plate starts at x=1600, not 1650); scaled, that gap grows to 320*1.4=448
+  { x: anchorRight(LAYOUT_WIDTH, 320, TOUCH_HUD_SCALE), y: 0, w: 320 * TOUCH_HUD_SCALE, h: 300 * TOUCH_HUD_SCALE },
+  // status plate sits at y=854; the gear tag row above it starts at y=820.
+  // Width = scaled plate right edge (14 + 510 = 524; see hudScale.ts)
+  { x: 0, y: 820, w: STATUS_PLATE_X + statusPlateWidth(TOUCH_HUD_SCALE), h: 260 },
+  {
+    x: anchorRight(LAYOUT_WIDTH, 180, TOUCH_HUD_SCALE),
+    y: anchorBottom(LAYOUT_HEIGHT, 130, TOUCH_HUD_SCALE),
+    w: 180 * TOUCH_HUD_SCALE,
+    h: 130 * TOUCH_HUD_SCALE,
+  },
 ]
 
 /** Extra hit-area padding around the steer pad, in the same 1920x1080 space. */
@@ -82,11 +111,13 @@ const MINE_R = 45
 // guide). They sit at the right end of the free gap between the HUD readouts
 // to shorten the thumb stretch, and do not mirror — a pause button that moves
 // between races would be worse than one that is always in the same place.
-const PAUSE_X = 1530
+// Pushed 150px left of their original x (1530/1400) because the scaled
+// standings HUD box now reaches to x=1472 — see HUD_RESERVED.
+const PAUSE_X = 1380
 const PAUSE_Y = 70
 const PAUSE_R = 48
 
-const MUTE_X = 1400
+const MUTE_X = 1250
 const MUTE_Y = 70
 const MUTE_R = 48
 

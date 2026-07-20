@@ -72,8 +72,20 @@ import {
 } from '../../data/weapons'
 import type { TrackDef, TrackEnvironmentKind } from '../../data/tracks/types'
 import type { RaceResults } from './ResultsScene'
-import { C, STROKE, hex } from '../ui/theme'
+import { C, STROKE, TYPE, hex } from '../ui/theme'
 import { damageColor, heading, hintBar, modal, plate, statBar, text, tile, wireTiles, type TileHandle } from '../ui/widgets'
+import {
+  anchorBottom,
+  anchorRight,
+  gearTagFontScale,
+  gearTagY,
+  hudScale,
+  STATUS_PLATE_X,
+  statusBarX,
+  statusBarWidth,
+  statusPlateWidth,
+  statusValueX,
+} from '../race/hudScale'
 import { InputManager } from '../input/inputManager'
 import { TouchControls } from '../input/touchControls'
 import { isTouchDevice } from '../input/device'
@@ -207,6 +219,8 @@ export class RaceScene extends Phaser.Scene {
   private bulletTrail!: Phaser.GameObjects.Particles.ParticleEmitter
 
   private hudContainer!: Phaser.GameObjects.Container
+  /** race HUD font/plate scale — 1 on desktop, TOUCH_HUD_SCALE on touch devices; see hudScale.ts */
+  private hudScaleFactor = 1
   private hudBars!: Phaser.GameObjects.Graphics
   /** red border flash when the player takes a hit */
   private edgeFlash!: Phaser.GameObjects.Image
@@ -2145,6 +2159,14 @@ export class RaceScene extends Phaser.Scene {
   // ---------------------------------------------------------------- HUD
 
   private buildHud() {
+    // On touch devices the 1920x1080 canvas renders ~2.2x smaller physically
+    // than on desktop, so the HUD's small type ramps become unreadable.
+    // hudScale.ts resolves the factor once here: 1 on desktop (every `* S`
+    // below is then a no-op, so desktop pixels are unchanged), TOUCH_HUD_SCALE
+    // on touch. See hudScale.ts for why only some clusters also reposition.
+    const S = hudScale(isTouchDevice())
+    this.hudScaleFactor = S
+
     // full-frame overlays, under the readouts: boost streaks, then damage flash
     this.speedStreaks = this.add.graphics().setBlendMode(Phaser.BlendModes.ADD)
     this.edgeFlash = this.add
@@ -2154,20 +2176,35 @@ export class RaceScene extends Phaser.Scene {
       .setAlpha(0)
 
     const plates = this.add.graphics()
-    plate(plates, 14, this.scale.height - 226, 390, 210) // status (bottom-left)
-    plate(plates, this.scale.width - 320, 160, 306, 138) // standings (right)
+    // status (bottom-left): rows keep their 36px pitch and the plate keeps
+    // its top edge (854), but the row grid — bar column and value anchor —
+    // scales horizontally, so the plate widens with it (capped clear of the
+    // touch brake button; see hudScale.ts statusPlateWidth). 390 wide at S=1.
+    plate(plates, STATUS_PLATE_X, this.scale.height - 226, statusPlateWidth(S), 210)
+    // standings (top-right): scaled, since standings rows can be as wide as
+    // "1. DRIVERNAME 100%" and were already tight against the plate edge at
+    // 1x — grows from its screen-edge anchor via anchorRight/anchorBottom,
+    // same math touchScheme.ts's HUD_RESERVED uses to clear it.
+    plate(plates, anchorRight(this.scale.width, 320, S), 160 * S, 306 * S, 138 * S)
 
     const hint = hintBar(this, 'Configured controls active · Esc pause/help · M mute')
+    hint.setFontSize(TYPE.caption * S)
 
     const statusRows = ['HULL', 'AMMO', this.hasOverTurbo ? 'OVERCHARGE' : 'TURBO', 'MINES']
     statusRows.forEach((label, i) => {
       const y = this.scale.height - 202 + i * 36
-      this.hudStatusLabels.push(text(this, 28, y, label, {
+      const labelText = text(this, 28, y, label, {
         size: 'micro', color: i === 2 && this.hasOverTurbo ? C.warn : C.textSecondary,
-      }))
-      this.hudStatusValues.push(text(this, 386, y - 2, '', {
+      })
+      labelText.setFontSize(TYPE.micro * S)
+      this.hudStatusLabels.push(labelText)
+      // right-anchored at the scaled grid's value column (386 at S=1) so the
+      // widest values ("100% LEFT", "100 / 100") never reach the bar column
+      const valueText = text(this, statusValueX(S), y - 2, '', {
         size: 'micro', color: C.textPrimary, origin: [1, 0],
-      }))
+      })
+      valueText.setFontSize(TYPE.micro * S)
+      this.hudStatusValues.push(valueText)
     })
 
     this.cashText = text(this, 16, 62, '$0', {
@@ -2176,6 +2213,7 @@ export class RaceScene extends Phaser.Scene {
       stroke: C.shadow,
       strokeThickness: STROKE.text,
     })
+    this.cashText.setFontSize(TYPE.action * S)
     // network races have no economy — cash always reads $0 there, so hide the chip
     // instead of showing a misleading static value (F3)
     this.cashText.setVisible(this.mode !== 'network')
@@ -2187,49 +2225,72 @@ export class RaceScene extends Phaser.Scene {
       strokeThickness: STROKE.heading,
       origin: [0, 1],
     })
+    // origin [0,1] anchors the text's bottom-left corner at (28, height-28),
+    // so a bigger font grows up and right — the anchor point itself never moves.
+    this.speedText.setFontSize(TYPE.speed * S)
 
     this.hudBars = this.add.graphics()
 
-    this.positionText = text(this, this.scale.width - 28, this.scale.height - 30, '4th', {
-      size: 'readout',
-      color: C.oxide,
-      stroke: C.shadow,
-      strokeThickness: STROKE.title,
-      origin: [1, 1],
-    })
+    // bottom-right anchor: grows up and left from the scaled screen-edge offset.
+    this.positionText = text(
+      this,
+      anchorRight(this.scale.width, 28, S),
+      anchorBottom(this.scale.height, 30, S),
+      '4th',
+      {
+        size: 'readout',
+        color: C.oxide,
+        stroke: C.shadow,
+        strokeThickness: STROKE.title,
+        origin: [1, 1],
+      },
+    )
+    this.positionText.setFontSize(TYPE.readout * S)
 
-    const right = this.scale.width - 28
-    this.lapText = text(this, right, 24, `LAP 1/${this.track.laps}`, {
+    // top-right anchor: the lap/time/best stack and the standings rows below
+    // it all share this x, and all reposition — at 1x their line gaps (54px,
+    // 38px, 30px) were already close to the unscaled line heights, so a
+    // bigger font needs a bigger gap, not just a bigger glyph.
+    const right = anchorRight(this.scale.width, 28, S)
+    this.lapText = text(this, right, 24 * S, `LAP 1/${this.track.laps}`, {
       size: 'heading',
       stroke: C.shadow,
       strokeThickness: STROKE.heading,
       origin: [1, 0],
     })
-    this.timeText = text(this, right, 78, '0:00.00', {
+    this.lapText.setFontSize(TYPE.heading * S)
+    this.timeText = text(this, right, 78 * S, '0:00.00', {
       size: 'bodyLg',
       color: C.textSecondary,
       stroke: C.shadow,
       strokeThickness: STROKE.text,
       origin: [1, 0],
     })
-    this.bestText = text(this, right, 116, '', {
+    this.timeText.setFontSize(TYPE.bodyLg * S)
+    this.bestText = text(this, right, 116 * S, '', {
       size: 'body',
       color: C.money,
       stroke: C.shadow,
       strokeThickness: STROKE.text,
       origin: [1, 0],
     })
+    this.bestText.setFontSize(TYPE.body * S)
 
     // black-market gear fitted for this race, shown above the status plate.
     // Overcharge is named directly on the boost bar instead of hidden here.
     const gear: string[] = []
     if (this.hasPlating) gear.push('RAM PLATING')
-    const gearText = text(this, 16, this.scale.height - 254, gear.join(' · '), {
+    // the band between the steer pad's touch zone (ends y=815) and the plate
+    // top (854) can't grow, so on touch the tag's font caps at 1.25x and the
+    // tag lifts ~6px to keep its bottom clear of the plate border (both are
+    // identity at S=1; see hudScale.ts gearTagY / gearTagFontScale)
+    const gearText = text(this, 16, gearTagY(this.scale.height, S), gear.join(' · '), {
       size: 'caption',
       color: C.oxideDim,
       stroke: C.shadow,
       strokeThickness: STROKE.text,
     })
+    gearText.setFontSize(TYPE.caption * gearTagFontScale(S))
 
     // identity is driven by the career in single-player, by the local roster entry online
     let identityLabel: string
@@ -2242,9 +2303,14 @@ export class RaceScene extends Phaser.Scene {
       identityLabel = `${this.career.profile.driverName.toUpperCase()} · WEAPONS ${this.career.profile.weaponsEnabled ? 'ON' : 'OFF'}`
       identityColor = this.career.profile.liveryColor
     }
-    const identityText = text(this, 16, 94, identityLabel, {
+    // y is derived from cashText's own (scaled) height, not a fixed 94: at
+    // 1x that gap (94 = 62 + 24 + 8) was already tight, and cashText's own
+    // font now grows into it.
+    const identityY = 62 + TYPE.action * S + 8
+    const identityText = text(this, 16, identityY, identityLabel, {
       size: 'caption', color: identityColor, stroke: C.shadow, strokeThickness: STROKE.text,
     })
+    identityText.setFontSize(TYPE.caption * S)
 
     const hudChildren: Phaser.GameObjects.GameObject[] = [
       this.speedStreaks,
@@ -2265,12 +2331,13 @@ export class RaceScene extends Phaser.Scene {
     ]
 
     for (let i = 0; i < 4; i++) {
-      const t = text(this, right, 170 + i * 30, '', {
+      const t = text(this, right, (170 + i * 30) * S, '', {
         size: 'bodySm',
         stroke: C.shadow,
         strokeThickness: STROKE.text,
         origin: [1, 0],
       })
+      t.setFontSize(TYPE.bodySm * S)
       this.standingsTexts.push(t)
       hudChildren.push(t)
     }
@@ -2290,10 +2357,15 @@ export class RaceScene extends Phaser.Scene {
 
     // HULL fills with safety remaining (not damage taken), so every bar answers
     // "how much do I have left?" in the same direction.
-    const bx = 130
+    // by/row spacing/pip spacing stay put; bx and bw come from the scaled row
+    // grid (130/170 at S=1) so the bar clears the widest label on its left
+    // and the right-anchored value text on its right — see hudScale.ts.
+    const S = this.hudScaleFactor
+    const bx = statusBarX(S)
     const by = this.scale.height - 200
-    const bw = 170
-    const bh = 14
+    const bw = statusBarWidth(S)
+    const bh = 14 * S
+    const pipRadius = 7 * S
     const hullRemaining = Math.max(0, 100 - player.damage)
     const bars: Array<[number, number]> = [
       [hullRemaining / 100, damageColor(player.damage)],
@@ -2309,9 +2381,9 @@ export class RaceScene extends Phaser.Scene {
       const x = bx + 8 + i * 25
       const y = by + 3 * 36 + 6
       this.hudBars.fillStyle(i < player.mines ? C.danger : C.surfaceTrack, 1)
-      this.hudBars.fillCircle(x, y, 7)
+      this.hudBars.fillCircle(x, y, pipRadius)
       this.hudBars.lineStyle(2, i < player.mines ? C.warn : C.border, 0.9)
-      this.hudBars.strokeCircle(x, y, 7)
+      this.hudBars.strokeCircle(x, y, pipRadius)
     }
 
     // env.weaponsEnabled mirrors career.profile.weaponsEnabled in single-player and
@@ -2346,6 +2418,8 @@ export class RaceScene extends Phaser.Scene {
           strokeThickness: STROKE.heading,
           origin: [0.5, 0.5],
         })
+        // center-anchored on both axes — bigger font just grows in place, no reposition needed
+        this.rivalsDoneToast.setFontSize(TYPE.subtitle * this.hudScaleFactor)
         // must join the container, or the HUD camera never draws it (D-011)
         this.hudContainer.add(this.rivalsDoneToast)
       }

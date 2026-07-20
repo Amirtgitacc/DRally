@@ -11,6 +11,7 @@ import {
   STEER_ZONE_SLOP,
   heldButtonActions,
 } from '../../../src/game/input/touchScheme'
+import { TOUCH_HUD_SCALE, anchorBottom, anchorRight } from '../../../src/game/race/hudScale'
 
 describe('computeTouchLayout', () => {
   it('returns a layout with all required controls', () => {
@@ -160,6 +161,91 @@ describe('computeTouchLayout', () => {
               `${box.name} overlaps HUD zone ${JSON.stringify(zone)} (mirrored=${mirrored})`,
             ).toBe(false)
           }
+        }
+      }
+    })
+  })
+
+  describe('scaled HUD footprint (touch HUD readability bump)', () => {
+    // RaceScene draws the HUD at TOUCH_HUD_SCALE on touch devices (the only
+    // devices where this touch scheme runs at all), so HUD_RESERVED must
+    // describe the *scaled* footprint, not the 1x one, or a bigger status
+    // readout / standings plate could sit under a control that thinks the
+    // space is free.
+
+    it('grows the standings box (top-right) from its screen edge using the same math RaceScene uses to lay the plate out', () => {
+      const standings = HUD_RESERVED[1]
+      expect(standings.x).toBeCloseTo(anchorRight(1920, 320, TOUCH_HUD_SCALE), 5)
+      expect(standings.w).toBeCloseTo(320 * TOUCH_HUD_SCALE, 5)
+      expect(standings.h).toBeCloseTo(300 * TOUCH_HUD_SCALE, 5)
+      expect(standings.y).toBe(0)
+      // absolute pin, computed independently of anchorRight: at the shipped
+      // 1.4 scale the box must be exactly 1472..1920 wide and 420 tall — if
+      // TOUCH_HUD_SCALE or the anchor math drifts, this line catches it
+      expect(standings.x).toBeCloseTo(1472, 9)
+      expect(standings.w).toBeCloseTo(448, 9)
+      expect(standings.h).toBeCloseTo(420, 9)
+      // right edge still touches the screen edge exactly, same as at 1x
+      expect(standings.x + standings.w).toBeCloseTo(1920, 5)
+    })
+
+    it('grows the position-readout box (bottom-right) the same way', () => {
+      const positionBox = HUD_RESERVED[3]
+      expect(positionBox.x).toBeCloseTo(anchorRight(1920, 180, TOUCH_HUD_SCALE), 5)
+      expect(positionBox.y).toBeCloseTo(anchorBottom(1080, 130, TOUCH_HUD_SCALE), 5)
+      expect(positionBox.w).toBeCloseTo(180 * TOUCH_HUD_SCALE, 5)
+      expect(positionBox.h).toBeCloseTo(130 * TOUCH_HUD_SCALE, 5)
+      // absolute pins (independent of the helpers): 1920-180*1.4 and 1080-130*1.4
+      expect(positionBox.x).toBeCloseTo(1668, 9)
+      expect(positionBox.y).toBeCloseTo(898, 9)
+      expect(positionBox.w).toBeCloseTo(252, 9)
+      expect(positionBox.h).toBeCloseTo(182, 9)
+      // bottom-right corner still touches the screen corner exactly
+      expect(positionBox.x + positionBox.w).toBeCloseTo(1920, 5)
+      expect(positionBox.y + positionBox.h).toBeCloseTo(1080, 5)
+    })
+
+    it('leaves the driver/cash box (top-left) at its 1x size', () => {
+      // Every text element in this cluster uses a top-left Phaser text
+      // origin and grows down/right into padding that was already generous
+      // at 1x (see hudScale.ts / RaceScene buildHud comments), so scaling
+      // its font doesn't outgrow the box RaceScene already clears for it.
+      expect(HUD_RESERVED[0]).toEqual({ x: 0, y: 0, w: 620, h: 160 })
+    })
+
+    it('widens the status box (bottom-left) to the touch plate width, bounded clear of the brake', () => {
+      // The status plate's row grid scales horizontally on touch (see
+      // hudScale.ts statusPlateWidth): plate right edge = 14 + min(390*1.4,
+      // 510) = 524, an independent literal here. y and h are unchanged — the
+      // rows keep their 36px pitch, and the gear tag above the plate lifts
+      // to exactly y=820, the box top.
+      expect(HUD_RESERVED[2]).toEqual({ x: 0, y: 820, w: 524, h: 260 })
+    })
+
+    it('keeps the widened status box ≥16px clear of the unmirrored brake hit box', () => {
+      const layout = computeTouchLayout(false)
+      const brakeLeft = layout.brake.x - layout.brake.r
+      expect(brakeLeft).toBe(540)
+      const statusBox = HUD_RESERVED[2]
+      expect(statusBox.x + statusBox.w).toBeLessThanOrEqual(brakeLeft - 16)
+      // and the box top stays below the steer-pad hit zone, which ends at
+      // y = 680 + 95 + 40 = 815
+      const pad = computeTouchLayout(false).steerPad
+      expect(statusBox.y).toBeGreaterThanOrEqual(pad.y + pad.halfHeight + STEER_ZONE_SLOP)
+    })
+
+    it('keeps pause and mute clear of the grown standings box in both mirror modes (they do not mirror)', () => {
+      for (const mirrored of [false, true]) {
+        const layout = computeTouchLayout(mirrored)
+        const standings = HUD_RESERVED[1]
+        for (const name of ['pause', 'mute'] as const) {
+          const c = layout[name]
+          const overlaps =
+            c.x - c.r < standings.x + standings.w &&
+            c.x + c.r > standings.x &&
+            c.y - c.r < standings.y + standings.h &&
+            c.y + c.r > standings.y
+          expect(overlaps, `${name} overlaps the scaled standings box (mirrored=${mirrored})`).toBe(false)
         }
       }
     })
