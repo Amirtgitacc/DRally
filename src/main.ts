@@ -28,6 +28,13 @@ import { PreviewScene } from './game/scenes/PreviewScene'
 import { PrepareRaceScene } from './game/scenes/PrepareRaceScene'
 import { RacePauseScene } from './game/scenes/RacePauseScene'
 import { initOrientation, initFullscreenOnGesture } from './game/systems/orientation'
+import { audioBus } from './game/systems/audio'
+
+// Touch-only devices never fire the keydown that MenuScene listens for, so the
+// AudioContext would stay suspended forever. Arm this as early as possible
+// (ahead of the async font/game boot below) so the very first tap anywhere on
+// the page — not just inside a scene — unlocks audio. unlock() is idempotent.
+document.addEventListener('pointerdown', () => audioBus.unlock(), { once: true, capture: true })
 
 /**
  * Phaser bakes glyph metrics into every Text object the moment it is created.

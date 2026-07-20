@@ -115,6 +115,7 @@ export class MenuScene extends Phaser.Scene {
     const fresh = () => this.scene.start('Profile', { replace: true })
     const multi = () => this.scene.start('Multiplayer')
     kb.once('keydown', () => audioBus.unlock())
+    this.input.once('pointerdown', () => audioBus.unlock())
     kb.on('keydown-UP', up)
     kb.on('keydown-DOWN', down)
     kb.on('keydown-ENTER', enter)

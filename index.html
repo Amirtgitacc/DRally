@@ -2,22 +2,46 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
     <title>Deathrally (dev)</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230b0b10'/%3E%3Crect x='3' y='5' width='10' height='6' rx='2' fill='%23f2a33c'/%3E%3C/svg%3E" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <meta name="theme-color" content="#0b0b10" />
+    <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Deathrally" />
     <style>
-      html, body { margin: 0; height: 100%; background: #0b0b10; }
+      html, body {
+        margin: 0; height: 100%; background: #0b0b10;
+        overscroll-behavior: none;
+        -webkit-user-select: none; user-select: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+      /* touch-action is scoped to the game surface, not the whole body: the
+         page has no scrollable content of its own (the rotate overlay is a
+         static full-screen notice), so the only element that needs default
+         touch gestures (pan/pinch/double-tap-zoom) suppressed is the canvas
+         the player is dragging/tapping on for on-screen controls. */
+      #game, #game canvas {
+        touch-action: none;
+        -webkit-touch-callout: none;
+        -webkit-user-select: none; user-select: none;
+      }
       #game { height: 100%; }
       canvas { outline: none; }
       #rotate { display: none; position: fixed; inset: 0; z-index: 10; background: #0b0b10;
         color: #e8e8f0; font-family: system-ui, sans-serif; align-items: center; justify-content: center;
-        text-align: center; flex-direction: column; gap: 16px; }
+        text-align: center; flex-direction: column; gap: 16px; box-sizing: border-box;
+        touch-action: none;
+        padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+          max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
       #rotate.show { display: flex; }
       #rotate .icon { font-size: 64px; }
     </style>
   </head>
   <body>
-    <div id="game" role="application" aria-label="Deathrally — top-down combat racing game. Use arrow keys to drive, Enter to select."></div>
+    <div id="game" role="application" aria-label="Deathrally — top-down combat racing game. Use arrow keys and Enter, or the on-screen touch controls, to drive and select."></div>
     <div id="rotate" aria-hidden="true">
       <div class="icon">⟳</div>
       <div>Rotate your device to landscape to play.</div>
