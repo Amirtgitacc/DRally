@@ -4,6 +4,7 @@ import { mpCarById, MP_CAR_OPTIONS } from '../../data/mpCars'
 import { ALL_TRACKS, trackById } from '../../data/tracks'
 import { MAX_PLAYERS, type LobbyPlayer, type LobbySnapshot, type ServerMsg } from '../../core/net/protocol'
 import { NetClient } from '../net/netClient'
+import { isTouchDevice } from '../input/device'
 import { C, hex } from '../ui/theme'
 import { backButton, fitImage, flavor, heading, keyGuideBar, text, tile, type KeyGuideHandle, type KeyGuideItem, type TileHandle } from '../ui/widgets'
 import { sceneBackground } from '../ui/sceneBackground'
@@ -21,6 +22,31 @@ const CARD_GAP = 22
 const POSTER_MAX_W = 205
 const POSTER_MAX_H = 290
 
+/**
+ * Give a small touch affordance (an arrow glyph, a status pill) a tap target
+ * comfortably past its own visual bounds — a bare glyph or thin pill is far
+ * under a usable touch-target size at phone scale (the canvas is downscaled
+ * ~2.2x on phones). Padding is asymmetric per side so a hit zone can bleed
+ * into neighbouring *inert* space (poster art, empty board past the card)
+ * rather than into another affordance's own hit zone.
+ *
+ * Phaser's custom `hitArea` rectangle is in the object's own unscaled local
+ * frame — (0,0) at its top-left, (width,height) at its bottom-right —
+ * regardless of `setOrigin`, so padding each side out from 0/width/height is
+ * exactly the padding applied on that visual side.
+ */
+function padInteractive(
+  obj: Phaser.GameObjects.Text | Phaser.GameObjects.Rectangle,
+  pad: { left?: number; right?: number; top?: number; bottom?: number },
+) {
+  const { left = 0, right = 0, top = 0, bottom = 0 } = pad
+  obj.setInteractive({
+    hitArea: new Phaser.Geom.Rectangle(-left, -top, obj.width + left + right, obj.height + top + bottom),
+    hitAreaCallback: Phaser.Geom.Rectangle.Contains,
+    useHandCursor: true,
+  })
+}
+
 /** One roster slot: a fixed frame whose contents are repainted from the
  *  current LobbySnapshot on every render — objects are reused, never leaked. */
 interface PlayerCard {
@@ -32,6 +58,14 @@ interface PlayerCard {
   note: Phaser.GameObjects.Text
   /** big centred label for empty slots ('+ ADD AI' / '— OPEN SLOT —') */
   slot: Phaser.GameObjects.Text
+  /** Tap targets for the local player's own card (car-change arrows); visible
+   *  on any pointer-capable device, gated on `isYou`, not on `this.touch` —
+   *  see renderOwnControls(). */
+  carLeft: Phaser.GameObjects.Text
+  carRight: Phaser.GameObjects.Text
+  /** Tap target for the local player's own card (ready-toggle pill behind
+   *  `ready`'s text); same isYou-only gating as carLeft/carRight above. */
+  readyBtn: Phaser.GameObjects.Rectangle
 }
 
 /**
@@ -48,8 +82,13 @@ export class LobbyScene extends Phaser.Scene {
   private transitioning = false
   private cards: PlayerCard[] = []
   private trackText!: Phaser.GameObjects.Text
+  private trackLeft!: Phaser.GameObjects.Text
+  private trackRight!: Phaser.GameObjects.Text
   private statusText!: Phaser.GameObjects.Text
-  private keyGuide!: KeyGuideHandle
+  private touch = false
+  /** desktop: keyboard chip strip. touch: short replacement hint — see create(). */
+  private keyGuide?: KeyGuideHandle
+  private touchHint?: Phaser.GameObjects.Text
   private startTile!: TileHandle
   private copiedLabel!: Phaser.GameObjects.Text
   private disconnectTimer?: Phaser.Time.TimerEvent
@@ -70,6 +109,7 @@ export class LobbyScene extends Phaser.Scene {
     this.transitioning = false
     this.cards = []
     this.disconnectTimer = undefined
+    this.touch = isTouchDevice()
 
     const cx = GAME_WIDTH / 2
     const bg = sceneBackground(this, 'bg-lobby', { veil: 0.25 })
@@ -91,6 +131,10 @@ export class LobbyScene extends Phaser.Scene {
     this.trackText = text(this, board.x, board.y - boardH / 2 + 45, '', {
       size: 'bodySm', color: C.textSecondary, origin: [0.5, 0.5],
     })
+    // Host-only tap arrows for track cycling (mirrors [ / ] / T). Hidden
+    // entirely for non-hosts each render — see render()/renderTrackControls().
+    this.trackLeft = text(this, board.x - 260, this.trackText.y, '‹', { size: 'action', color: C.oxide, origin: [0.5, 0.5] })
+    this.trackRight = text(this, board.x + 260, this.trackText.y, '›', { size: 'action', color: C.oxide, origin: [0.5, 0.5] })
 
     const cardCy = board.y + 40
     for (let i = 0; i < MAX_PLAYERS; i++) {
@@ -105,12 +149,24 @@ export class LobbyScene extends Phaser.Scene {
       const car = text(this, cardCx, cardCy + 124, '', {
         size: 'caption', color: C.textSecondary, origin: [0.5, 0.5], align: 'center', wordWrapWidth: CARD_W - 20,
       })
+      // Own-card-only change-car arrows, flanking the car readout. Padding
+      // bleeds upward into the (non-interactive) name/poster area so the tap
+      // target clears ~100 canvas px tall without reaching the ready pill
+      // below — see renderOwnControls().
+      const carLeft = text(this, cardCx - 70, cardCy + 124, '‹', { size: 'action', color: C.oxide, origin: [0.5, 0.5] }).setVisible(false)
+      const carRight = text(this, cardCx + 70, cardCy + 124, '›', { size: 'action', color: C.oxide, origin: [0.5, 0.5] }).setVisible(false)
+      // Own-card-only ready-toggle pill, drawn behind the `ready` text below
+      // so the status readout stays on top of the button chrome.
+      const readyBtn = this.add
+        .rectangle(cardCx, cardCy + 162, 170, 44, C.surfaceTile, 0.85)
+        .setStrokeStyle(2, C.oxide, 1)
+        .setVisible(false)
       const ready = text(this, cardCx, cardCy + 162, '', { size: 'bodySm', origin: [0.5, 0.5] })
       const note = text(this, cardCx, cardCy + 192, '', {
         size: 'caption', color: C.textMuted, origin: [0.5, 0.5],
       })
       const slot = text(this, cardCx, cardCy, '', { size: 'action', origin: [0.5, 0.5] })
-      this.cards.push({ frame, poster, name, car, ready, note, slot })
+      this.cards.push({ frame, poster, name, car, ready, note, slot, carLeft, carRight, readyBtn })
     }
 
     this.statusText = text(this, cx, 850, '', {
@@ -123,7 +179,13 @@ export class LobbyScene extends Phaser.Scene {
 
     flavor(this, cx, GAME_HEIGHT - 28, 'Career progress is untouched — this is a standalone quick race.')
 
-    this.keyGuide = keyGuideBar(this)
+    // Touch has no keyboard chips to show — a short hint replaces the strip;
+    // desktop keeps the chip bar exactly as before.
+    if (this.touch) {
+      this.touchHint = text(this, 24, 20, '', { size: 'caption', color: C.textSecondary, origin: [0, 0] })
+    } else {
+      this.keyGuide = keyGuideBar(this)
+    }
     backButton(this, () => this.leave())
 
     const kb = this.input.keyboard!
@@ -332,11 +394,69 @@ export class LobbyScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * Wire (or hide) the local player's own touch affordances on one card:
+   * change-car arrows and the ready-toggle pill. Torn down and rebuilt every
+   * render so they always track whichever slot `youId` currently occupies —
+   * the roster can reorder (a player ahead of you leaves) between renders.
+   * Sends the exact same messages as the ←/→ and Enter/R key handlers.
+   */
+  private renderOwnControls(card: PlayerCard, p: LobbyPlayer | undefined, isYou: boolean) {
+    card.carLeft.removeAllListeners('pointerup')
+    card.carRight.removeAllListeners('pointerup')
+    card.readyBtn.removeAllListeners('pointerup')
+    card.carLeft.disableInteractive()
+    card.carRight.disableInteractive()
+    card.readyBtn.disableInteractive()
+
+    if (!isYou || !p) {
+      card.carLeft.setVisible(false)
+      card.carRight.setVisible(false)
+      card.readyBtn.setVisible(false)
+      return
+    }
+
+    card.carLeft.setVisible(true)
+    card.carRight.setVisible(true)
+    card.readyBtn.setVisible(true)
+    card.readyBtn.setStrokeStyle(2, p.ready ? C.ok : C.oxide, 1)
+
+    // Bleeds up into the inert name/poster space, not down toward the ready
+    // pill — see the padInteractive() doc comment.
+    padInteractive(card.carLeft, { left: 42, right: 42, top: 70 })
+    padInteractive(card.carRight, { left: 42, right: 42, top: 70 })
+    card.carLeft.on('pointerup', () => this.changeCar(p, -1))
+    card.carRight.on('pointerup', () => this.changeCar(p, 1))
+
+    // Bleeds down past the card's own bottom edge into empty board space,
+    // not up toward the car-change arrows above.
+    padInteractive(card.readyBtn, { left: 10, right: 10, bottom: 86 })
+    card.readyBtn.on('pointerup', () => this.net.send({ t: 'ready', ready: !p.ready }))
+  }
+
+  /** Host-only track-cycle arrows beside the track readout — hidden entirely
+   *  for non-hosts, mirroring the [ / ] / T keyboard gate exactly. */
+  private renderTrackControls(isHost: boolean) {
+    this.trackLeft.removeAllListeners('pointerup')
+    this.trackRight.removeAllListeners('pointerup')
+    this.trackLeft.disableInteractive()
+    this.trackRight.disableInteractive()
+    this.trackLeft.setVisible(isHost)
+    this.trackRight.setVisible(isHost)
+    if (!isHost) return
+
+    padInteractive(this.trackLeft, { left: 45, right: 45, top: 45, bottom: 45 })
+    padInteractive(this.trackRight, { left: 45, right: 45, top: 45, bottom: 45 })
+    this.trackLeft.on('pointerup', () => this.cycleTrack(-1))
+    this.trackRight.on('pointerup', () => this.cycleTrack(1))
+  }
+
   /** Rebuild the dynamic board content from `this.lobby`. Reuses card objects — no leaks. */
   private render() {
     const isHost = this.lobby.hostId === this.youId
     const track = trackById(this.lobby.trackId)
     this.trackText.setText(`TRACK: ${track.name}${isHost ? '   ( [ / ]  or T to change )' : ''}`)
+    this.renderTrackControls(isHost)
 
     for (let i = 0; i < MAX_PLAYERS; i++) {
       const card = this.cards[i]
@@ -352,6 +472,7 @@ export class LobbyScene extends Phaser.Scene {
       const p = this.lobby.players[i]
       if (p) this.renderPlayerCard(card, p, isHost)
       else this.renderEmptyCard(card, isHost, this.lobby.players.length === i)
+      this.renderOwnControls(card, p, p?.id === this.youId)
     }
 
     const canStart = this.canStart()
@@ -362,20 +483,28 @@ export class LobbyScene extends Phaser.Scene {
       this.startTile.label.setText('Waiting for host…')
     }
 
-    const guide: KeyGuideItem[] = [
-      { key: '←/→', label: 'change car' },
-      { key: 'Enter/R', label: 'ready' },
-    ]
-    if (isHost) {
-      guide.push(
-        { key: '[ / ] · T', label: 'track' },
-        { key: 'A', label: 'add AI' },
-        { key: 'X', label: 'remove AI' },
+    if (this.touch) {
+      this.touchHint!.setText(
+        isHost
+          ? 'Tap your card ‹ › for car · READY to toggle · ‹ › by TRACK to change it · add/remove AI cards by tapping them'
+          : 'Tap your card ‹ › for car · READY to toggle · tap COPY CODE or BACK as needed',
       )
+    } else {
+      const guide: KeyGuideItem[] = [
+        { key: '←/→', label: 'change car' },
+        { key: 'Enter/R', label: 'ready' },
+      ]
+      if (isHost) {
+        guide.push(
+          { key: '[ / ] · T', label: 'track' },
+          { key: 'A', label: 'add AI' },
+          { key: 'X', label: 'remove AI' },
+        )
+      }
+      guide.push({ key: 'C', label: 'copy code' })
+      if (isHost && canStart) guide.push({ key: 'Space', label: 'start' })
+      guide.push({ key: 'Esc', label: 'leave' })
+      this.keyGuide!.setItems(guide)
     }
-    guide.push({ key: 'C', label: 'copy code' })
-    if (isHost && canStart) guide.push({ key: 'Space', label: 'start' })
-    guide.push({ key: 'Esc', label: 'leave' })
-    this.keyGuide.setItems(guide)
   }
 }
