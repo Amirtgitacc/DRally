@@ -1,20 +1,26 @@
 import Phaser from 'phaser'
 import { GAME_HEIGHT, GAME_WIDTH } from '../../config/game'
 import { ACTION_LABELS, readableCode, rebind } from '../input/bindings'
+import { isTouchDevice } from '../input/device'
 import { GAME_ACTIONS, type GameAction } from '../input/inputTypes'
 import { audioBus } from '../systems/audio'
 import { loadSettings, resetSettings, saveSettings, type SettingsState } from '../state/settings'
+import { resolveSettingsTap, type SettingsRowKind } from '../ui/stepper'
 import { C } from '../ui/theme'
 import { flavor, heading, text, tile, type TileHandle, wireTiles } from '../ui/widgets'
 import { sceneBackground } from '../ui/sceneBackground'
 
-type SettingRow = { id: 'master' | 'music' | 'effects' | 'mute' | 'shake' | 'flash' | 'touchOpacity' | 'touchMirrored' | 'turbo' | 'fire' | 'reset' | 'back'; label: string }
+type SettingRow = {
+  id: 'master' | 'music' | 'effects' | 'mute' | 'shake' | 'flash' | 'touchOpacity' | 'touchMirrored' | 'turbo' | 'fire' | 'reset' | 'back'
+  label: string
+  kind: SettingsRowKind
+}
 const SETTINGS: SettingRow[] = [
-  { id: 'master', label: 'MASTER VOLUME' }, { id: 'music', label: 'MUSIC VOLUME' }, { id: 'effects', label: 'EFFECTS VOLUME' }, { id: 'mute', label: 'MUTED' },
-  { id: 'shake', label: 'REDUCED SHAKE' }, { id: 'flash', label: 'REDUCED FLASH' },
-  { id: 'touchOpacity', label: 'TOUCH OPACITY' }, { id: 'touchMirrored', label: 'MIRROR TOUCH LAYOUT' },
-  { id: 'turbo', label: 'TURBO INPUT' }, { id: 'fire', label: 'FIRE INPUT' },
-  { id: 'reset', label: 'RESET DEFAULTS' }, { id: 'back', label: 'BACK' },
+  { id: 'master', label: 'MASTER VOLUME', kind: 'adjustable' }, { id: 'music', label: 'MUSIC VOLUME', kind: 'adjustable' }, { id: 'effects', label: 'EFFECTS VOLUME', kind: 'adjustable' }, { id: 'mute', label: 'MUTED', kind: 'toggle' },
+  { id: 'shake', label: 'REDUCED SHAKE', kind: 'toggle' }, { id: 'flash', label: 'REDUCED FLASH', kind: 'toggle' },
+  { id: 'touchOpacity', label: 'TOUCH OPACITY', kind: 'adjustable' }, { id: 'touchMirrored', label: 'MIRROR TOUCH LAYOUT', kind: 'toggle' },
+  { id: 'turbo', label: 'TURBO INPUT', kind: 'toggle' }, { id: 'fire', label: 'FIRE INPUT', kind: 'toggle' },
+  { id: 'reset', label: 'RESET DEFAULTS', kind: 'action' }, { id: 'back', label: 'BACK', kind: 'action' },
 ]
 
 export class SettingsScene extends Phaser.Scene {
@@ -27,14 +33,43 @@ export class SettingsScene extends Phaser.Scene {
   constructor() { super('Settings') }
 
   create() {
+    const touch = isTouchDevice()
     this.settings = loadSettings(); this.selected = 0; this.rebinding = null; this.settingTiles = []; this.bindTiles = []
     sceneBackground(this, 'bg-race-ops', { veil: 0.62 })
     heading(this, GAME_WIDTH / 2, 65, 'SETTINGS / CONTROLS')
     text(this, 450, 130, 'GAME', { size: 'subtitle', color: C.oxide })
-    SETTINGS.forEach((row, i) => this.settingTiles.push(tile(this, 450, 190 + i * 68, 700, 58, row.label, { size: 'bodySm' })))
-    text(this, 1360, 130, 'RACE BINDINGS', { size: 'subtitle', color: C.oxide })
+    const ROW_W = 700
+    SETTINGS.forEach((row, i) => {
+      const y = 190 + i * 68
+      const handle = tile(this, 450, y, ROW_W, 58, row.label, { size: 'bodySm' })
+      this.settingTiles.push(handle)
+      if (row.kind === 'adjustable') {
+        text(this, 450 - ROW_W / 2 + 26, y, '‹', { size: 'action', color: C.oxide, origin: [0, 0.5] })
+        text(this, 450 + ROW_W / 2 - 26, y, '›', { size: 'action', color: C.oxide, origin: [1, 0.5] })
+        handle.rect.on('pointerup', (_pointer: Phaser.Input.Pointer, localX: number) => {
+          this.selected = i
+          const action = resolveSettingsTap(row.kind, ROW_W, localX)
+          if (action === 'decrement') this.adjust(-1)
+          else if (action === 'increment') this.adjust(1)
+          this.refresh()
+        })
+      }
+    })
+
     this.gamepadText = text(this, 1904, 138, '', { size: 'caption', color: C.textSecondary, origin: [1, 0.5] })
-    GAME_ACTIONS.forEach((action, i) => this.bindTiles.push(tile(this, 1360, 200 + i * 68, 820, 58, ACTION_LABELS[action], { size: 'bodySm' })))
+    if (touch) {
+      text(this, 1360, 130, 'RACE BINDINGS', { size: 'subtitle', color: C.oxide })
+      text(
+        this,
+        1360,
+        190,
+        'Key and button rebinding needs a physical keyboard or gamepad — not available on a touch screen. Connect one to customize bindings for that play session.',
+        { size: 'bodySm', color: C.textSecondary, wordWrapWidth: 520, lineSpacing: 10 },
+      )
+    } else {
+      text(this, 1360, 130, 'RACE BINDINGS', { size: 'subtitle', color: C.oxide })
+      GAME_ACTIONS.forEach((action, i) => this.bindTiles.push(tile(this, 1360, 200 + i * 68, 820, 58, ACTION_LABELS[action], { size: 'bodySm' })))
+    }
 
     const N = SETTINGS.length
     wireTiles(
@@ -47,7 +82,14 @@ export class SettingsScene extends Phaser.Scene {
       (i) => { this.selected = N + i; this.refresh() },
       (i) => { this.selected = N + i; this.activate() },
     )
-    flavor(this, GAME_WIDTH / 2, GAME_HEIGHT - 48, '↑/↓ navigate · ←/→ adjust · Enter select/rebind · Esc save and back')
+    flavor(
+      this,
+      GAME_WIDTH / 2,
+      GAME_HEIGHT - 48,
+      touch
+        ? 'Tap ‹ › to adjust · tap a row to toggle/select · BACK to save and exit'
+        : '↑/↓ navigate · ←/→ adjust · Enter select/rebind · Esc save and back',
+    )
 
     const kb = this.input.keyboard!
     const onKey = (event: KeyboardEvent) => this.handleKey(event)
@@ -67,7 +109,7 @@ export class SettingsScene extends Phaser.Scene {
       else { this.settings.bindings = rebind(this.settings.bindings, this.rebinding, event.code); this.rebinding = null; this.persist() }
       this.refresh(); return
     }
-    const total = SETTINGS.length + GAME_ACTIONS.length
+    const total = SETTINGS.length + this.bindTiles.length
     if (event.code === 'ArrowUp') this.selected = (this.selected + total - 1) % total
     else if (event.code === 'ArrowDown') this.selected = (this.selected + 1) % total
     else if (event.code === 'ArrowLeft') this.adjust(-1)
