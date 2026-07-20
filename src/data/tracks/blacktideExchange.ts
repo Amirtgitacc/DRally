@@ -59,15 +59,15 @@ export const BLACKTIDE_EXCHANGE: TrackDef = {
     { texture: 'obstacle-sealed-cargo-pallet', control: 2, lateral: 0, scale: 0.24,
       circles: [{ fwd: 0, side: 0, r: 54 }] },
     // pier-entry braking zone: forgiving tyre bale on the outer edge
-    { texture: 'obstacle-strapped-tyre-bale', control: 4, lateral: 95, scale: 0.335,
-      circles: [{ fwd: -45, side: 0, r: 29 }, { fwd: 45, side: 0, r: 29 }] },
+    { texture: 'obstacle-strapped-tyre-bale', control: 4, lateral: 95, scale: 0.31,
+      circles: [{ fwd: -28, side: 0, r: 40 }, { fwd: 28, side: 0, r: 40 }] },
     // north container sweep: armoured divider nudged toward the basin —
     // wide fast outer lane (128px) against a shorter, tighter inner lane (80px)
     { texture: 'obstacle-armoured-concrete-divider', control: 12, lateral: -24, scale: 0.45,
       circles: [{ fwd: -77, side: 0, r: 36 }, { fwd: 0, side: 0, r: 36 }, { fwd: 77, side: 0, r: 36 }] },
     // west-return braking into the basin crescent: second dockside tyre bale
-    { texture: 'obstacle-strapped-tyre-bale', control: 18, lateral: 92, scale: 0.335,
-      circles: [{ fwd: -45, side: 0, r: 29 }, { fwd: 45, side: 0, r: 29 }] },
+    { texture: 'obstacle-strapped-tyre-bale', control: 18, lateral: 92, scale: 0.31,
+      circles: [{ fwd: -28, side: 0, r: 40 }, { fwd: 28, side: 0, r: 40 }] },
   ],
   // Non-colliding harbour landmarks beyond the barriers. Container stacks
   // follow the outer quay grid; moorings mark the water side; crane platforms

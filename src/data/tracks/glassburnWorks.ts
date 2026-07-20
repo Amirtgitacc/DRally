@@ -62,18 +62,18 @@ export const GLASSBURN_WORKS: TrackDef = {
   setPieces: [
     // maintenance straight: signature pipe-manifold island, centered —
     // a 97px lane either side of the plinth
-    { texture: 'obstacle-low-pipe-manifold', control: 2, lateral: 0, scale: 0.41,
+    { texture: 'obstacle-low-pipe-manifold', control: 2, lateral: 0, scale: 0.43,
       circles: [{ fwd: -65, side: 0, r: 40 }, { fwd: 0, side: 0, r: 40 }, { fwd: 65, side: 0, r: 40 }] },
     // straight-exit braking into the furnace arc: forgiving tyre bale outside
-    { texture: 'obstacle-strapped-tyre-bale', control: 5, lateral: 92, scale: 0.335,
-      circles: [{ fwd: -45, side: 0, r: 29 }, { fwd: 45, side: 0, r: 29 }] },
+    { texture: 'obstacle-strapped-tyre-bale', control: 5, lateral: 92, scale: 0.31,
+      circles: [{ fwd: -28, side: 0, r: 40 }, { fwd: 28, side: 0, r: 40 }] },
     // process bend: pipe-rack overpass — purely visual, supports off-road
     { texture: 'set-pipe-rack', control: 8, lateral: 0, scale: 0.5, circles: [], overhead: true },
     // flare-basin carousel: alternating manifold islands, inside then outside —
     // a rhythm of two clear line changes, each with a control point of recovery
-    { texture: 'obstacle-low-pipe-manifold', control: 14, lateral: -52, scale: 0.41,
+    { texture: 'obstacle-low-pipe-manifold', control: 14, lateral: -52, scale: 0.43,
       circles: [{ fwd: -65, side: 0, r: 40 }, { fwd: 0, side: 0, r: 40 }, { fwd: 65, side: 0, r: 40 }] },
-    { texture: 'obstacle-low-pipe-manifold', control: 16, lateral: 52, scale: 0.41,
+    { texture: 'obstacle-low-pipe-manifold', control: 16, lateral: 52, scale: 0.43,
       circles: [{ fwd: -65, side: 0, r: 40 }, { fwd: 0, side: 0, r: 40 }, { fwd: 65, side: 0, r: 40 }] },
     // west pipe field: second overpass
     { texture: 'set-pipe-rack', control: 21, lateral: 0, scale: 0.5, circles: [], overhead: true },

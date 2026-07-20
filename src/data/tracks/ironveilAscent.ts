@@ -58,8 +58,8 @@ export const IRONVEIL_ASCENT: TrackDef = {
   setPieces: [
     // crusher apron: signature rockfall island, nudged toward the void —
     // safe 130px outer lane against a risky 40px inside squeeze
-    { texture: 'obstacle-contained-rockfall', control: 1, lateral: 45, scale: 0.37,
-      circles: [{ fwd: -42, side: 0, r: 50 }, { fwd: 0, side: 0, r: 50 }, { fwd: 42, side: 0, r: 50 }] },
+    { texture: 'obstacle-contained-rockfall', control: 1, lateral: 45, scale: 0.41,
+      circles: [{ fwd: -55, side: 0, r: 50 }, { fwd: 0, side: 0, r: 50 }, { fwd: 55, side: 0, r: 50 }] },
     // broad south sweep: armoured divider as quarry safety infrastructure —
     // a different silhouette, tight void-side lane vs a wide outer lane.
     // (Kept off the switchbacks: bumped AI cars wedge on obstacles at apexes.)
@@ -67,11 +67,11 @@ export const IRONVEIL_ASCENT: TrackDef = {
       circles: [{ fwd: -77, side: 0, r: 36 }, { fwd: 0, side: 0, r: 36 }, { fwd: 77, side: 0, r: 36 }] },
     // rock-cut ascent: small contained spill nibbling the outer edge of the
     // gentle climb — not the switchback apex, for the same wedging reason
-    { texture: 'obstacle-contained-rockfall', control: 9, lateral: -105, scale: 0.235,
-      circles: [{ fwd: -25, side: 0, r: 32 }, { fwd: 25, side: 0, r: 32 }] },
+    { texture: 'obstacle-contained-rockfall', control: 9, lateral: -105, scale: 0.25,
+      circles: [{ fwd: -30, side: 0, r: 30 }, { fwd: 30, side: 0, r: 30 }] },
     // high bench: second rockfall offset outward — fast line hugs the void
-    { texture: 'obstacle-contained-rockfall', control: 12, lateral: -40, scale: 0.37,
-      circles: [{ fwd: -42, side: 0, r: 50 }, { fwd: 0, side: 0, r: 50 }, { fwd: 42, side: 0, r: 50 }] },
+    { texture: 'obstacle-contained-rockfall', control: 12, lateral: -40, scale: 0.41,
+      circles: [{ fwd: -55, side: 0, r: 50 }, { fwd: 0, side: 0, r: 50 }, { fwd: 55, side: 0, r: 50 }] },
   ],
   // Non-colliding quarry landmarks on the outer benches. One hero excavator,
   // and an ore hopper + conveyor-drive pair telling one story at the crusher.
