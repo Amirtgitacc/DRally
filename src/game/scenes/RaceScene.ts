@@ -78,6 +78,7 @@ import { InputManager } from '../input/inputManager'
 import { TouchControls } from '../input/touchControls'
 import { isTouchDevice } from '../input/device'
 import { loadSettings, saveSettings, type SettingsState } from '../state/settings'
+import { QUALITY_PROFILE, resolveQuality, type ResolvedQuality } from '../race/qualityProfile'
 import { createSeededRandom, randomSeed } from '../../core/race/random'
 import { FixedStepClock } from '../race/raceSimulation'
 import {
@@ -176,6 +177,15 @@ export class RaceScene extends Phaser.Scene {
   private mineQueued = false
   private rivalsDoneToast?: Phaser.GameObjects.Text
 
+  // reused per-frame scratch containers (avoid allocating a Set/Map every frame)
+  private liveBulletIds = new Set<number>()
+  private liveMineIds = new Set<number>()
+  private carsById = new Map<string, CarSim>()
+
+  /** presentation-only render quality, resolved once in create(); never touches sim state */
+  private quality: ResolvedQuality = 'high'
+  private particleScale = 1
+
   private lookAheadX = 0
   private lookAheadY = 0
   /** cosmetics-only seeded RNG (debris scatter, flame flicker, streaks, scorch rotation) */
@@ -235,6 +245,9 @@ export class RaceScene extends Phaser.Scene {
     this.carViews = new Map()
     this.bulletViews = new Map()
     this.mineViews = new Map()
+    this.liveBulletIds.clear()
+    this.liveMineIds.clear()
+    this.carsById.clear()
     this.pickupViews = []
     this.barriers = []
     this.obstacleSprites = []
@@ -260,6 +273,10 @@ export class RaceScene extends Phaser.Scene {
 
     // settings are career-independent (volume, bindings, reduced fx) — load in both modes
     this.settings = loadSettings()
+    // presentation-only quality resolution: never read again mid-race, so a
+    // settings change during a race takes effect on the next race, not live
+    this.quality = resolveQuality(this.settings.quality, isTouchDevice())
+    this.particleScale = QUALITY_PROFILE[this.quality].particleScale
 
     if (this.mode === 'network') {
       this.setupNetworkRace()
@@ -444,7 +461,7 @@ export class RaceScene extends Phaser.Scene {
           this.onBulletHitFx(e)
           break
         case 'bullet-wall':
-          this.hitSparks.explode(3, e.x, e.y)
+          this.hitSparks.explode(this.scaleCount(3), e.x, e.y)
           break
         case 'car-wrecked':
           this.onCarWreckedFx(e)
@@ -658,7 +675,7 @@ export class RaceScene extends Phaser.Scene {
   }
 
   private onBulletHitFx(e: Extract<SimEvent, { type: 'bullet-hit' }>) {
-    this.hitSparks.explode(5, e.x, e.y)
+    this.hitSparks.explode(this.scaleCount(5), e.x, e.y)
     this.flashCar(e.carId)
     if (e.carId === this.localCarId) {
       this.shake(60, IMPACT_FX.playerHitShake)
@@ -669,7 +686,7 @@ export class RaceScene extends Phaser.Scene {
   private onCarsCollidedFx(e: Extract<SimEvent, { type: 'cars-collided' }>) {
     if (e.rammed) {
       // metal on metal: sparks scale with how hard they met
-      this.hitSparks.explode(Math.round(6 + Math.min(18, e.impact / 40)), e.x, e.y)
+      this.hitSparks.explode(this.scaleCount(Math.round(6 + Math.min(18, e.impact / 40))), e.x, e.y)
       this.flashCar(e.aId)
       this.flashCar(e.bId)
     }
@@ -681,7 +698,7 @@ export class RaceScene extends Phaser.Scene {
   private onCarWreckedFx(e: Extract<SimEvent, { type: 'car-wrecked' }>) {
     const view = this.carViews.get(e.carId)!
     audioBus.explosion()
-    this.explosionSmoke.explode(30, e.x, e.y)
+    this.explosionSmoke.explode(this.scaleCount(30), e.x, e.y)
     this.blastEffects(e.x, e.y, 1.6, 'explosion')
 
     // flying debris chunks
@@ -722,7 +739,7 @@ export class RaceScene extends Phaser.Scene {
     this.skidRT.draw(this.scorchStamp)
     view.sprite.setTint(0x2c2c30)
     view.shadow.setAlpha(0.2)
-    view.damageSmoke.frequency = 30
+    view.damageSmoke.frequency = this.scaleFrequency(30)
     this.shake(260, 0.008)
   }
 
@@ -744,7 +761,7 @@ export class RaceScene extends Phaser.Scene {
       ease: 'cubic.out',
       onComplete: () => dust.destroy(),
     })
-    this.tireSmoke.explode(IMPACT_FX.landingDustCount, x, y)
+    this.tireSmoke.explode(this.scaleCount(IMPACT_FX.landingDustCount), x, y)
 
     // suspension bounce: the sprite squashes and settles
     view.sprite.setScale(CAR_SCALE)
@@ -793,8 +810,8 @@ export class RaceScene extends Phaser.Scene {
 
   private onMineDetonatedFx(e: Extract<SimEvent, { type: 'mine-detonated' }>) {
     audioBus.explosion()
-    this.explosionSmoke.explode(16, e.x, e.y)
-    this.hitSparks.explode(8, e.x, e.y)
+    this.explosionSmoke.explode(this.scaleCount(16), e.x, e.y)
+    this.hitSparks.explode(this.scaleCount(8), e.x, e.y)
     this.blastEffects(e.x, e.y, 1, 'mine-blast')
     this.scorchStamp.setPosition(e.x, e.y).setRotation(this.random() * Math.PI)
     this.skidRT.draw(this.scorchStamp)
@@ -825,7 +842,7 @@ export class RaceScene extends Phaser.Scene {
       }
       this.spawnToast(e.x, e.y, ...toasts[e.pickup])
     }
-    this.hitSparks.explode(4, e.x, e.y)
+    this.hitSparks.explode(this.scaleCount(4), e.x, e.y)
     this.pickupViews[e.index]?.sprite.setVisible(false)
   }
 
@@ -844,7 +861,8 @@ export class RaceScene extends Phaser.Scene {
   // ---------------------------------------------------------------- view sync
 
   private syncBulletViews() {
-    const live = new Set<number>()
+    const live = this.liveBulletIds
+    live.clear()
     for (const b of this.sim.bullets) {
       live.add(b.id)
       let sprite = this.bulletViews.get(b.id)
@@ -861,8 +879,13 @@ export class RaceScene extends Phaser.Scene {
       }
       sprite.setPosition(b.x, b.y)
       // every frame, not coin-flipped: at the higher bullet speed a 50% gate
-      // reads as a dotted line instead of a streak
-      this.bulletTrail.emitParticleAt(b.x, b.y)
+      // reads as a dotted line instead of a streak. On low quality we still
+      // avoid per-frame flicker by gating on the bullet's own id (stable for
+      // its whole flight) instead of the frame — half the bullets get a full
+      // trail, half get none, rather than every bullet getting a dotted one.
+      if (this.particleScale >= 1 || b.id % 2 === 0) {
+        this.bulletTrail.emitParticleAt(b.x, b.y)
+      }
     }
     for (const [id, sprite] of this.bulletViews) {
       if (!live.has(id)) {
@@ -875,7 +898,8 @@ export class RaceScene extends Phaser.Scene {
   private syncMineViews() {
     const now = this.sim.simTimeMs
     const blink = 0.55 + 0.45 * Math.sin(now * 0.014)
-    const live = new Set<number>()
+    const live = this.liveMineIds
+    live.clear()
     for (const mine of this.sim.mines) {
       live.add(mine.id)
       let view = this.mineViews.get(mine.id)
@@ -1156,6 +1180,18 @@ export class RaceScene extends Phaser.Scene {
     }
   }
 
+  /** Scales an emitter's ms-between-particles interval by particleScale (larger interval
+   *  = fewer particles). -1 (off) passes through; the huge "paused" sentinel (999999) is
+   *  scaled too, which is harmless — it stays effectively "never emits". */
+  private scaleFrequency(ms: number): number {
+    return ms > 0 ? ms / this.particleScale : ms
+  }
+
+  /** Scales an explode() particle count by particleScale, never dropping below 1. */
+  private scaleCount(n: number): number {
+    return Math.max(1, Math.round(n * this.particleScale))
+  }
+
   private makeCarView(textureKey: string, color: number, isPlayer: boolean): CarView {
     const shadow = this.add
       .image(0, 0, textureKey)
@@ -1171,7 +1207,7 @@ export class RaceScene extends Phaser.Scene {
       lifespan: 550,
       angle: { min: 0, max: 360 },
       tint: 0x8a8f98,
-      frequency: 100,
+      frequency: this.scaleFrequency(100),
     })
     exhaust.setDepth(4.5)
     const damageSmoke = this.add.particles(0, 0, 'smoke', {
@@ -1193,7 +1229,7 @@ export class RaceScene extends Phaser.Scene {
       angle: { min: 0, max: 360 },
       tint: 0x66ccff,
       blendMode: Phaser.BlendModes.ADD,
-      frequency: 18,
+      frequency: this.scaleFrequency(18),
       emitting: false,
     })
     turboFlame.setDepth(4.6)
@@ -1818,7 +1854,7 @@ export class RaceScene extends Phaser.Scene {
       lifespan: 750,
       angle: { min: 0, max: 360 },
       tint: 0xb8bcc4,
-      frequency: 25,
+      frequency: this.scaleFrequency(25),
       emitting: false,
     })
     this.tireSmoke.setDepth(4.5)
@@ -1909,7 +1945,7 @@ export class RaceScene extends Phaser.Scene {
     const sin = Math.sin(car.state.heading)
     const airborne = isAirborne(car.state)
     view.exhaust.setPosition(car.state.x - 42 * cos, car.state.y - 42 * sin)
-    view.exhaust.frequency = car.wrecked || airborne ? 999999 : turboActive ? 15 : input.throttle > 0 ? 40 : 120
+    view.exhaust.frequency = this.scaleFrequency(car.wrecked || airborne ? 999999 : turboActive ? 15 : input.throttle > 0 ? 40 : 120)
 
     view.turboFlame.setPosition(car.state.x - 46 * cos, car.state.y - 46 * sin)
     view.turboFlame.emitting = turboActive && !car.wrecked
@@ -1960,7 +1996,7 @@ export class RaceScene extends Phaser.Scene {
 
     view.damageSmoke.setPosition(car.state.x + 10 * cos, car.state.y + 10 * sin)
     if (!car.wrecked) {
-      view.damageSmoke.frequency = car.damage > 80 ? 45 : car.damage > 50 ? 110 : -1
+      view.damageSmoke.frequency = this.scaleFrequency(car.damage > 80 ? 45 : car.damage > 50 ? 110 : -1)
     }
 
     const skidding =
@@ -2038,8 +2074,9 @@ export class RaceScene extends Phaser.Scene {
     cam.startFollow(this.myView().sprite, true, 0.08, 0.08)
     cam.setZoom(1.05)
     if (this.game.renderer.type === Phaser.WEBGL) {
+      // vignette is cheap and part of the visual identity — keep it at every quality level
       cam.postFX.addVignette(0.5, 0.5, 1.0, 0.18)
-      cam.postFX.addBloom(0xffffff, 1, 1, 0.55, 1.05)
+      if (QUALITY_PROFILE[this.quality].bloom) cam.postFX.addBloom(0xffffff, 1, 1, 0.55, 1.05)
     }
     cam.ignore(this.hudContainer)
     const hudCam = this.cameras.add(0, 0, this.scale.width, this.scale.height)
@@ -2288,8 +2325,10 @@ export class RaceScene extends Phaser.Scene {
     const playerPos = this.sim.placementOrder.indexOf(this.localCarId) + 1
     if (playerPos > 0) this.positionText.setText(player.wrecked ? 'OUT' : ordinal(playerPos))
 
+    this.carsById.clear()
+    for (const car of this.sim.cars) this.carsById.set(car.id, car)
     this.sim.placementOrder.forEach((id, i) => {
-      const car = this.sim.cars.find((c) => c.id === id)!
+      const car = this.carsById.get(id)!
       const info = this.carInfo.get(id)!
       const row = this.standingsTexts[i]
       const status = car.wrecked ? ' ✗' : car.finishedAt !== null ? ' *' : ` ${Math.round(car.damage)}%`

@@ -1,5 +1,6 @@
 import { DEFAULT_BINDINGS, normalizeBindings } from '../input/bindings'
 import type { SerializedBindings } from '../input/inputTypes'
+import type { QualitySetting } from '../race/qualityProfile'
 
 export const SETTINGS_KEY = 'deathrally-settings-v1'
 
@@ -15,6 +16,7 @@ export interface SettingsState {
   toggleFire: boolean
   touchOpacity: number
   touchMirrored: boolean
+  quality: QualitySetting
 }
 
 export const DEFAULT_SETTINGS: SettingsState = {
@@ -29,7 +31,13 @@ export const DEFAULT_SETTINGS: SettingsState = {
   toggleFire: false,
   touchOpacity: 0.5,
   touchMirrored: false,
+  quality: 'auto',
 }
+
+const QUALITY_VALUES: readonly QualitySetting[] = ['auto', 'high', 'low']
+
+const quality = (value: unknown, fallback: QualitySetting): QualitySetting =>
+  typeof value === 'string' && (QUALITY_VALUES as readonly string[]).includes(value) ? (value as QualitySetting) : fallback
 
 const volume = (value: unknown, fallback: number): number =>
   typeof value === 'number' && Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : fallback
@@ -51,6 +59,7 @@ export function normalizeSettings(value: unknown): SettingsState {
     toggleFire: data.toggleFire === true,
     touchOpacity: clamped(data.touchOpacity, 0.2, 1, DEFAULT_SETTINGS.touchOpacity),
     touchMirrored: data.touchMirrored === true,
+    quality: quality(data.quality, DEFAULT_SETTINGS.quality),
   }
 }
 

@@ -5,23 +5,28 @@ import { isTouchDevice } from '../input/device'
 import { GAME_ACTIONS, type GameAction } from '../input/inputTypes'
 import { audioBus } from '../systems/audio'
 import { loadSettings, resetSettings, saveSettings, type SettingsState } from '../state/settings'
+import type { QualitySetting } from '../race/qualityProfile'
 import { resolveSettingsTap, type SettingsRowKind } from '../ui/stepper'
 import { C } from '../ui/theme'
 import { flavor, heading, text, tile, type TileHandle, wireTiles } from '../ui/widgets'
 import { sceneBackground } from '../ui/sceneBackground'
 
 type SettingRow = {
-  id: 'master' | 'music' | 'effects' | 'mute' | 'shake' | 'flash' | 'touchOpacity' | 'touchMirrored' | 'turbo' | 'fire' | 'reset' | 'back'
+  id: 'master' | 'music' | 'effects' | 'mute' | 'shake' | 'flash' | 'quality' | 'touchOpacity' | 'touchMirrored' | 'turbo' | 'fire' | 'reset' | 'back'
   label: string
   kind: SettingsRowKind
 }
 const SETTINGS: SettingRow[] = [
   { id: 'master', label: 'MASTER VOLUME', kind: 'adjustable' }, { id: 'music', label: 'MUSIC VOLUME', kind: 'adjustable' }, { id: 'effects', label: 'EFFECTS VOLUME', kind: 'adjustable' }, { id: 'mute', label: 'MUTED', kind: 'toggle' },
   { id: 'shake', label: 'REDUCED SHAKE', kind: 'toggle' }, { id: 'flash', label: 'REDUCED FLASH', kind: 'toggle' },
+  { id: 'quality', label: 'GRAPHICS QUALITY', kind: 'adjustable' },
   { id: 'touchOpacity', label: 'TOUCH OPACITY', kind: 'adjustable' }, { id: 'touchMirrored', label: 'MIRROR TOUCH LAYOUT', kind: 'toggle' },
   { id: 'turbo', label: 'TURBO INPUT', kind: 'toggle' }, { id: 'fire', label: 'FIRE INPUT', kind: 'toggle' },
   { id: 'reset', label: 'RESET DEFAULTS', kind: 'action' }, { id: 'back', label: 'BACK', kind: 'action' },
 ]
+
+const QUALITY_CYCLE: QualitySetting[] = ['auto', 'high', 'low']
+const QUALITY_LABEL: Record<QualitySetting, string> = { auto: 'AUTO', high: 'HIGH', low: 'LOW' }
 
 export class SettingsScene extends Phaser.Scene {
   private settings!: SettingsState
@@ -39,8 +44,11 @@ export class SettingsScene extends Phaser.Scene {
     heading(this, GAME_WIDTH / 2, 65, 'SETTINGS / CONTROLS')
     text(this, 450, 130, 'GAME', { size: 'subtitle', color: C.oxide })
     const ROW_W = 700
+    // tightened from 68 -> 64 so the new QUALITY row still leaves clearance above the
+    // bottom flavor-text hint (13 rows now vs. the previous 12)
+    const ROW_H = 64
     SETTINGS.forEach((row, i) => {
-      const y = 190 + i * 68
+      const y = 190 + i * ROW_H
       const handle = tile(this, 450, y, ROW_W, 58, row.label, { size: 'bodySm' })
       this.settingTiles.push(handle)
       if (row.kind === 'adjustable') {
@@ -126,6 +134,10 @@ export class SettingsScene extends Phaser.Scene {
     if (id === 'music') this.settings.musicVolume = Phaser.Math.Clamp(Math.round((this.settings.musicVolume + delta * 0.1) * 10) / 10, 0, 1)
     if (id === 'effects') this.settings.effectsVolume = Phaser.Math.Clamp(Math.round((this.settings.effectsVolume + delta * 0.1) * 10) / 10, 0, 1)
     if (id === 'touchOpacity') this.settings.touchOpacity = Phaser.Math.Clamp(Math.round((this.settings.touchOpacity + delta * 0.1) * 10) / 10, 0.2, 1)
+    if (id === 'quality') {
+      const idx = QUALITY_CYCLE.indexOf(this.settings.quality)
+      this.settings.quality = QUALITY_CYCLE[(idx + delta + QUALITY_CYCLE.length) % QUALITY_CYCLE.length]
+    }
     this.persist()
   }
 
@@ -145,7 +157,7 @@ export class SettingsScene extends Phaser.Scene {
 
   private persist() { saveSettings(this.settings); audioBus.applySettings(this.settings) }
   private refresh() {
-    const values = [`${Math.round(this.settings.masterVolume * 100)}%`, `${Math.round(this.settings.musicVolume * 100)}%`, `${Math.round(this.settings.effectsVolume * 100)}%`, this.settings.muted ? 'YES' : 'NO', this.settings.reducedShake ? 'ON' : 'OFF', this.settings.reducedFlash ? 'ON' : 'OFF', `${Math.round(this.settings.touchOpacity * 100)}%`, this.settings.touchMirrored ? 'ON' : 'OFF', this.settings.toggleTurbo ? 'TOGGLE' : 'HOLD', this.settings.toggleFire ? 'TOGGLE' : 'HOLD', '', '']
+    const values = [`${Math.round(this.settings.masterVolume * 100)}%`, `${Math.round(this.settings.musicVolume * 100)}%`, `${Math.round(this.settings.effectsVolume * 100)}%`, this.settings.muted ? 'YES' : 'NO', this.settings.reducedShake ? 'ON' : 'OFF', this.settings.reducedFlash ? 'ON' : 'OFF', QUALITY_LABEL[this.settings.quality], `${Math.round(this.settings.touchOpacity * 100)}%`, this.settings.touchMirrored ? 'ON' : 'OFF', this.settings.toggleTurbo ? 'TOGGLE' : 'HOLD', this.settings.toggleFire ? 'TOGGLE' : 'HOLD', '', '']
     this.settingTiles.forEach((handle, i) => { handle.label.setText(`${SETTINGS[i].label}${values[i] ? `\n${values[i]}` : ''}`); handle.setState(this.selected === i, true) })
     this.bindTiles.forEach((handle, i) => { const action = GAME_ACTIONS[i]; handle.label.setText(`${ACTION_LABELS[action].padEnd(20)} ${this.settings.bindings[action].map(readableCode).join(' / ')}`); handle.setState(this.selected === SETTINGS.length + i, true) })
     if (this.rebinding) this.bindTiles[GAME_ACTIONS.indexOf(this.rebinding)].label.setText(`${ACTION_LABELS[this.rebinding]}   PRESS A KEY…`)

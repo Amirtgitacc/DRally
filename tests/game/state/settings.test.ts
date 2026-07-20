@@ -50,4 +50,37 @@ describe('settings migration', () => {
     expect(roundTrip.touchOpacity).toBe(0.75)
     expect(roundTrip.touchMirrored).toBe(true)
   })
+
+  it('defaults quality to auto for old saves missing the field', () => {
+    const settings = normalizeSettings({ masterVolume: 0.7, muted: false })
+    expect(settings.quality).toBe('auto')
+    expect(DEFAULT_SETTINGS.quality).toBe('auto')
+  })
+
+  it('accepts valid quality values', () => {
+    expect(normalizeSettings({ quality: 'auto' }).quality).toBe('auto')
+    expect(normalizeSettings({ quality: 'high' }).quality).toBe('high')
+    expect(normalizeSettings({ quality: 'low' }).quality).toBe('low')
+  })
+
+  it('sanitizes malformed quality values to auto', () => {
+    expect(normalizeSettings({ quality: 'ultra' as any }).quality).toBe('auto')
+    expect(normalizeSettings({ quality: 1 as any }).quality).toBe('auto')
+    expect(normalizeSettings({ quality: null as any }).quality).toBe('auto')
+    expect(normalizeSettings({ quality: undefined }).quality).toBe('auto')
+  })
+
+  it('round-trip save/load preserves quality', () => {
+    const normalized = normalizeSettings({ ...DEFAULT_SETTINGS, quality: 'low' })
+    expect(normalized.quality).toBe('low')
+    const roundTrip = normalizeSettings(JSON.parse(JSON.stringify(normalized)))
+    expect(roundTrip.quality).toBe('low')
+  })
+
+  it('resetSettings restores quality to auto', () => {
+    const settings = normalizeSettings({ quality: 'high' })
+    expect(settings.quality).toBe('high')
+    const reset = normalizeSettings(DEFAULT_SETTINGS)
+    expect(reset.quality).toBe('auto')
+  })
 })
