@@ -80,6 +80,7 @@ import {
   gearTagFontScale,
   gearTagY,
   hudScale,
+  speedTextBottomMargin,
   STATUS_PLATE_X,
   statusBarX,
   statusBarWidth,
@@ -2187,7 +2188,10 @@ export class RaceScene extends Phaser.Scene {
     // same math touchScheme.ts's HUD_RESERVED uses to clear it.
     plate(plates, anchorRight(this.scale.width, 320, S), 160 * S, 306 * S, 138 * S)
 
-    const hint = hintBar(this, 'Configured controls active · Esc pause/help · M mute')
+    const hintCopy = isTouchDevice()
+      ? 'Steer pad + hold buttons to drive · II pause · MUTE mute'
+      : 'Configured controls active · Esc pause/help · M mute'
+    const hint = hintBar(this, hintCopy)
     hint.setFontSize(TYPE.caption * S)
 
     const statusRows = ['HULL', 'AMMO', this.hasOverTurbo ? 'OVERCHARGE' : 'TURBO', 'MINES']
@@ -2218,15 +2222,17 @@ export class RaceScene extends Phaser.Scene {
     // instead of showing a misleading static value (F3)
     this.cashText.setVisible(this.mode !== 'network')
 
-    this.speedText = text(this, 28, this.scale.height - 28, '0 MPH', {
+    this.speedText = text(this, 28, this.scale.height - speedTextBottomMargin(S), '0 MPH', {
       size: 'speed',
       color: C.oxide,
       stroke: C.shadow,
       strokeThickness: STROKE.heading,
       origin: [0, 1],
     })
-    // origin [0,1] anchors the text's bottom-left corner at (28, height-28),
+    // origin [0,1] anchors the text's bottom-left corner at (28, height - margin),
     // so a bigger font grows up and right — the anchor point itself never moves.
+    // The margin shrinks at touch scale (speedTextBottomMargin) so the enlarged
+    // glyph's top edge still clears the MINES pip row above it — see hudScale.ts.
     this.speedText.setFontSize(TYPE.speed * S)
 
     this.hudBars = this.add.graphics()

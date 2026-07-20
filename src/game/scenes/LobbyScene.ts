@@ -156,13 +156,16 @@ export class LobbyScene extends Phaser.Scene {
       const carLeft = text(this, cardCx - 70, cardCy + 124, '‹', { size: 'action', color: C.oxide, origin: [0.5, 0.5] }).setVisible(false)
       const carRight = text(this, cardCx + 70, cardCy + 124, '›', { size: 'action', color: C.oxide, origin: [0.5, 0.5] }).setVisible(false)
       // Own-card-only ready-toggle pill, drawn behind the `ready` text below
-      // so the status readout stays on top of the button chrome.
+      // so the status readout stays on top of the button chrome. Sits 18px
+      // lower than the original +162 so a two-line livery readout in `car`
+      // (name + variant, see renderPlayerCard) clears the pill instead of
+      // being clipped behind it.
       const readyBtn = this.add
-        .rectangle(cardCx, cardCy + 162, 170, 44, C.surfaceTile, 0.85)
+        .rectangle(cardCx, cardCy + 180, 170, 44, C.surfaceTile, 0.85)
         .setStrokeStyle(2, C.oxide, 1)
         .setVisible(false)
-      const ready = text(this, cardCx, cardCy + 162, '', { size: 'bodySm', origin: [0.5, 0.5] })
-      const note = text(this, cardCx, cardCy + 192, '', {
+      const ready = text(this, cardCx, cardCy + 180, '', { size: 'bodySm', origin: [0.5, 0.5] })
+      const note = text(this, cardCx, cardCy + 210, '', {
         size: 'caption', color: C.textMuted, origin: [0.5, 0.5],
       })
       const slot = text(this, cardCx, cardCy, '', { size: 'action', origin: [0.5, 0.5] })
@@ -429,8 +432,11 @@ export class LobbyScene extends Phaser.Scene {
     card.carRight.on('pointerup', () => this.changeCar(p, 1))
 
     // Bleeds down past the card's own bottom edge into empty board space,
-    // not up toward the car-change arrows above.
-    padInteractive(card.readyBtn, { left: 10, right: 10, bottom: 86 })
+    // not up toward the car-change arrows above. Bottom pad trimmed by the
+    // same 18px the pill itself moved down, so the padded hit zone reaches
+    // exactly as far as it did before (unchanged clearance from anything
+    // below the card row).
+    padInteractive(card.readyBtn, { left: 10, right: 10, bottom: 68 })
     card.readyBtn.on('pointerup', () => this.net.send({ t: 'ready', ready: !p.ready }))
   }
 
@@ -455,7 +461,8 @@ export class LobbyScene extends Phaser.Scene {
   private render() {
     const isHost = this.lobby.hostId === this.youId
     const track = trackById(this.lobby.trackId)
-    this.trackText.setText(`TRACK: ${track.name}${isHost ? '   ( [ / ]  or T to change )' : ''}`)
+    const trackHint = isHost && !this.touch ? '   ( [ / ]  or T to change )' : ''
+    this.trackText.setText(`TRACK: ${track.name}${trackHint}`)
     this.renderTrackControls(isHost)
 
     for (let i = 0; i < MAX_PLAYERS; i++) {

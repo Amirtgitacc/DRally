@@ -6,6 +6,7 @@ import {
   gearTagFontScale,
   gearTagY,
   hudScale,
+  speedTextBottomMargin,
   STATUS_PLATE_X,
   statusBarX,
   statusBarWidth,
@@ -129,6 +130,36 @@ describe('status row grid (bottom-left plate)', () => {
     // and its top stays below the steer-pad hit zone (ends y=815) and inside
     // the reserved HUD box (starts y=820)
     expect(gearTagY(1080, TOUCH_HUD_SCALE)).toBeGreaterThan(819.999)
+  })
+})
+
+describe('speedTextBottomMargin', () => {
+  it('reproduces the legacy 28px desktop margin exactly at scale 1', () => {
+    expect(speedTextBottomMargin(1)).toBe(28)
+  })
+
+  it('pulls the margin in at touch scale so the bigger glyph clears the MINES pips above it', () => {
+    // RaceScene.buildHud/updateHud geometry, reproduced here so this test
+    // catches a regression in either file:
+    //   - speedText is origin [0,1] (bottom-left) at
+    //     (28, height - speedTextBottomMargin(scale)), font TYPE.speed(42) * scale
+    //   - MINES pips sit at y = (height - 200) + 3*36 + 6, radius 7 * scale
+    // Text height is approximated as its nominal font size (a normal-caps
+    // string like "0 MPH" has no ascenders/descenders past cap-height).
+    const height = 1080
+    const speedFont = 42 * TOUCH_HUD_SCALE
+    const speedTop = height - speedTextBottomMargin(TOUCH_HUD_SCALE) - speedFont
+    const pipRadius = 7 * TOUCH_HUD_SCALE
+    const pipBottom = (height - 200) + 3 * 36 + 6 + pipRadius
+    expect(speedTextBottomMargin(TOUCH_HUD_SCALE)).toBeCloseTo(4, 9)
+    expect(speedTop - pipBottom).toBeGreaterThanOrEqual(8)
+  })
+
+  it('holds the same clearance at scale 1 (desktop was already clear)', () => {
+    const height = 1080
+    const speedTop = height - speedTextBottomMargin(1) - 42
+    const pipBottom = (height - 200) + 3 * 36 + 6 + 7
+    expect(speedTop - pipBottom).toBeGreaterThan(0)
   })
 })
 

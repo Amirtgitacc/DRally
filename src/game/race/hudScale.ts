@@ -109,3 +109,15 @@ export function gearTagFontScale(scale: number): number {
 export function gearTagY(height: number, scale: number): number {
   return height - 254 - 15 * (scale - 1)
 }
+
+/**
+ * Bottom margin (px from the screen edge) for the "0 MPH" speed readout.
+ * It's origin-anchored [0,1] (bottom-left) and grows upward as its font
+ * scales, so at touch scale its top edge climbs toward the MINES pip row
+ * above it (pip row: fixed y, radius 7 * scale — see RaceScene.updateHud).
+ * 28 at scale 1 (legacy desktop, already clear); pulled in to 4 at touch
+ * scale so the bigger glyph's top edge still clears the pips by ~8px+.
+ */
+export function speedTextBottomMargin(scale: number): number {
+  return 28 - 60 * (scale - 1)
+}
