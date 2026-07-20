@@ -75,18 +75,3 @@ export function sceneBackground(
     },
   }
 }
-
-/** Track id → venue background key. Uses ids, never display names. */
-const VENUE_BG_BY_TRACK: Record<string, string> = {
-  'dust-bowl': 'bg-venue-dust-bowl-run',
-  'boneyard-loop': 'bg-venue-boneyard-loop',
-  'test-circuit': 'bg-venue-rust-belt-circuit',
-  'cinder-yards': 'bg-venue-cinder-yards',
-  'serpents-throat': 'bg-venue-serpents-throat',
-  'widows-coil': 'bg-venue-widows-coil',
-}
-
-/** Venue art for a track id, falling back to race-ops if an unknown id arrives. */
-export function venueBackgroundKey(trackId: string): string {
-  return VENUE_BG_BY_TRACK[trackId] ?? 'bg-race-ops'
-}

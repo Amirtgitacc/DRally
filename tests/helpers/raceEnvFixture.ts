@@ -3,7 +3,7 @@
 // same buildRaceEnv the game and server use.
 import type { RaceEnv } from '../../src/core/race/raceState'
 import { buildRaceEnv } from '../../src/core/race/raceEnvBuilder'
-import type { TrackDef } from '../../src/data/tracks/testCircuit'
+import type { TrackDef } from '../../src/data/tracks/types'
 import { STARTER_CAR } from '../../src/data/cars'
 
 const SQUARE_CONTROLS = [

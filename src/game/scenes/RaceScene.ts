@@ -9,16 +9,20 @@ import {
   type CarState,
 } from '../../core/vehicle/carPhysics'
 import {
+  distanceToClosedPolyline,
   lineTangentAt,
   offsetClosedPolyline,
   scatterPointsAlong,
+  signedLoopArea,
   spacedPointsAlong,
+  spacedPosesAlong,
   turnAmount,
   type Gate,
   type Pose,
   type Vec2,
 } from '../../core/track/geometry'
 import { buildRaceEnv, computeBarriers } from '../../core/race/raceEnvBuilder'
+import { resolveDecorations } from '../../core/track/setPieces'
 import { placeSpritesAlong, scatterImages } from '../track/placement'
 import { currentLap } from '../../core/race/progress'
 import { ordinal } from '../../core/race/placement'
@@ -66,7 +70,7 @@ import {
   TURBO_FX,
   WEAPONS_FREE_DELAY_MS,
 } from '../../data/weapons'
-import type { TrackDef } from '../../data/tracks/testCircuit'
+import type { TrackDef, TrackEnvironmentKind } from '../../data/tracks/types'
 import type { RaceResults } from './ResultsScene'
 import { C, STROKE, hex } from '../ui/theme'
 import { damageColor, heading, hintBar, modal, plate, statBar, text, tile, wireTiles, type TileHandle } from '../ui/widgets'
@@ -125,6 +129,8 @@ export class RaceScene extends Phaser.Scene {
   private centerline: Vec2[] = []
   private gates: Gate[] = []
   private barriers: Vec2[] = []
+  /** authored set-piece sprites, kept for the debug bounds overlay */
+  private obstacleSprites: Phaser.GameObjects.Image[] = []
 
   private career!: CareerState
   private playerSpec = { ...STARTER_CAR }
@@ -232,6 +238,7 @@ export class RaceScene extends Phaser.Scene {
     this.mineViews = new Map()
     this.pickupViews = []
     this.barriers = []
+    this.obstacleSprites = []
     this.standingsTexts = []
     this.hudStatusLabels = []
     this.hudStatusValues = []
@@ -1498,6 +1505,53 @@ export class RaceScene extends Phaser.Scene {
       this.add.image(p.x, p.y, 'tire-wall').setDepth(3)
     }
 
+    // Drop shadow under a placed prop — same silhouette-tint idiom as the car
+    // shadows, offset toward the same world light so everything grounds alike.
+    // Overhead spans throw a longer, softer shadow that lands on the road.
+    const dropShadow = (x: number, y: number, texture: string, angle: number, scale: number, overhead: boolean, spriteDepth: number) => {
+      const off = overhead ? 22 : 9
+      this.add
+        .image(x + off, y + off * 1.35, texture)
+        .setRotation(angle)
+        .setScale(scale)
+        .setTintFill(0x000000)
+        .setAlpha(overhead ? 0.2 : 0.32)
+        .setDepth(overhead ? 1.95 : spriteDepth - 0.06)
+    }
+
+    // authored set pieces: splitters and buffers collide via env.obstacleCircles
+    // (core-owned); overhead spans draw above the cars, casting no collision
+    for (const piece of this.env.obstacles) {
+      dropShadow(piece.x, piece.y, piece.texture, piece.angle, piece.scale, piece.overhead, 3.2)
+      const sprite = this.add
+        .image(piece.x, piece.y, piece.texture)
+        .setRotation(piece.angle)
+        .setScale(piece.scale)
+        .setDepth(piece.overhead ? 5.6 : 3.2)
+      this.obstacleSprites.push(sprite)
+    }
+
+    // authored venue landmarks: stable non-colliding scenery beyond the
+    // barriers, each grounded by a shadow and a warm work-light pool
+    const glowWarm = this.track.environment?.glowWarm ?? 0xffbb55
+    for (const d of resolveDecorations(this.track, this.centerline)) {
+      dropShadow(d.x, d.y, d.texture, d.angle, d.scale, d.overhead, 3)
+      this.add
+        .image(d.x, d.y, d.texture)
+        .setRotation(d.angle)
+        .setScale(d.scale)
+        .setDepth(d.overhead ? 5.6 : 3)
+      if (!d.overhead) {
+        this.add
+          .image(d.x, d.y, 'glow-soft')
+          .setScale(1.1)
+          .setTint(glowWarm)
+          .setAlpha(0.14)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setDepth(3.02)
+      }
+    }
+
     this.dressTrackForNight(halfW, shoulderHalf)
 
     // cosmetic dressing uses its own seeded RNG so it never disturbs the
@@ -1507,6 +1561,129 @@ export class RaceScene extends Phaser.Scene {
     const decorRng = createSeededRandom(this.raceSeed ^ 0x9e3779b9)
     this.scatterDecals(halfW, decorRng)
     this.placeFurniture(shoulderHalf, decorRng)
+
+    // venue-identity dressing gets its own seeded stream so adding/removing an
+    // environment can never shift the shared decor layout for a given seed
+    this.dressEnvironment(halfW, shoulderHalf, createSeededRandom(this.raceSeed ^ 0x51ab3e4d))
+  }
+
+  /**
+   * Environment-specific dressing from the track's serializable identity:
+   * a per-venue prop mix, boundary structures, surface decals, and accent
+   * light pools. Purely cosmetic — everything off-road sits beyond the
+   * tire-wall clearance (barriers stand at shoulderHalf + 24) and the on-road
+   * pieces are flat decals, so nothing here collides or reads as a route.
+   */
+  private dressEnvironment(halfW: number, shoulderHalf: number, rng: () => number) {
+    const env = this.track.environment
+    if (!env) return
+    const interior = signedLoopArea(this.centerline) > 0 ? 1 : -1
+
+    // an offset line folds back across the road at corners tighter than its
+    // offset — anything meant for the boundary must re-check its true distance
+    const offRoad = (p: { x: number; y: number }, min: number) =>
+      distanceToClosedPolyline(p, this.centerline) >= min
+
+    // restrained generic filler: the authored TrackDef.decorations landmarks
+    // carry the venue identity, so the seeded scatter is just a few barrel
+    // pallets per side — low-priority secondary variation, never the scenery
+    for (const side of [1, -1]) {
+      const line = offsetClosedPolyline(this.centerline, side * (shoulderHalf + 150))
+      const poses = scatterPointsAlong(line, 3, rng, { halfWidth: 40, lateralFrac: 0.5, minGap: 900 })
+        .filter((p) => offRoad(p, shoulderHalf + 60))
+      scatterImages(this, poses, ['set-barrel-pallet'], rng, {
+        depth: 3,
+        minScale: 0.5,
+        maxScale: 0.65,
+        jitter: Math.PI,
+      })
+    }
+
+    // boundary structures that follow the road line, rotated to the tangent
+    const structures: Record<TrackEnvironmentKind, { texture: string; side: number; spacing: number; scale: number }[]> = {
+      harbor: [
+        // quayside fender wall guards the water edge; chainlink on the yard side
+        { texture: 'set-fender-wall', side: interior, spacing: 320, scale: 0.5 },
+        { texture: 'set-chainlink', side: -interior, spacing: 1150, scale: 0.55 },
+      ],
+      refinery: [
+        // jersey barriers pen the process pads; chainlink around the perimeter
+        { texture: 'set-jersey-barrier', side: 1, spacing: 1250, scale: 0.5 },
+        { texture: 'set-chainlink', side: -1, spacing: 1400, scale: 0.55 },
+      ],
+      quarry: [
+        // guarded cliff edge above the excavation void
+        { texture: 'set-jersey-barrier', side: interior, spacing: 1050, scale: 0.5 },
+      ],
+    }
+    for (const s of structures[env.kind]) {
+      const line = offsetClosedPolyline(this.centerline, s.side * (shoulderHalf + 88))
+      for (const pose of spacedPosesAlong(line, s.spacing)) {
+        if (!offRoad(pose, shoulderHalf + 50)) continue
+        this.add.image(pose.x, pose.y, s.texture).setRotation(pose.angle).setScale(s.scale).setDepth(3)
+      }
+    }
+
+    // sodium floodlight banks along the outer boundary, each with a warm pool
+    const lightLine = offsetClosedPolyline(this.centerline, -interior * (shoulderHalf + 190))
+    for (const pose of spacedPosesAlong(lightLine, 1500)) {
+      if (!offRoad(pose, shoulderHalf + 120)) continue
+      this.add.image(pose.x, pose.y, 'set-floodlight-bank').setRotation(pose.angle).setScale(0.5).setDepth(3)
+      this.add
+        .image(pose.x, pose.y, 'glow-soft')
+        .setScale(1.3)
+        .setTint(env.glowWarm)
+        .setAlpha(0.22)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setDepth(3.05)
+    }
+
+    // venue surface decals: flat, non-colliding, biased toward the road
+    // margins. (The windblown-sand set is retired — the yellow intrusions
+    // read as paint spills at race zoom.)
+    const surfaceDecals: Record<TrackEnvironmentKind, { keys: string[]; count: number; minScale: number; maxScale: number }> = {
+      harbor: { keys: ['runoff-0', 'runoff-1', 'runoff-2', 'runoff-3', 'runoff-4', 'runoff-5', 'grate-0', 'grate-1', 'grate-2'], count: 14, minScale: 0.5, maxScale: 0.8 },
+      refinery: { keys: ['grate-0', 'grate-1', 'grate-2'], count: 8, minScale: 0.5, maxScale: 0.75 },
+      quarry: { keys: [], count: 0, minScale: 0.5, maxScale: 0.75 },
+    }
+    const decals = surfaceDecals[env.kind]
+    if (decals.keys.length > 0) {
+      const decalPoses = scatterPointsAlong(this.centerline, decals.count, rng, {
+        halfWidth: halfW,
+        lateralFrac: 0.85,
+        minGap: 380,
+      })
+      scatterImages(this, decalPoses, decals.keys, rng, {
+        depth: 1.85,
+        minScale: decals.minScale,
+        maxScale: decals.maxScale,
+        jitter: Math.PI,
+        alpha: 0.9,
+      })
+    }
+
+    // accent pools: harbour water shimmer lives on the loop's inside (the
+    // basin), quarry moonlit dust on the outer benches, refinery valve glow
+    // sparse on both sides
+    const accents: Record<TrackEnvironmentKind, { sides: number[]; scale: number; alpha: number; spacing: number }> = {
+      harbor: { sides: [interior], scale: 1.9, alpha: 0.14, spacing: 780 },
+      refinery: { sides: [1, -1], scale: 0.7, alpha: 0.28, spacing: 1150 },
+      quarry: { sides: [-interior], scale: 2.1, alpha: 0.1, spacing: 900 },
+    }
+    const accent = accents[env.kind]
+    for (const side of accent.sides) {
+      const line = offsetClosedPolyline(this.centerline, side * (shoulderHalf + 260))
+      for (const p of spacedPointsAlong(line, accent.spacing)) {
+        if (!offRoad(p, shoulderHalf + 150)) continue
+        this.add
+          .image(p.x, p.y, 'glow-soft')
+          .setScale(accent.scale)
+          .setTint(env.glowCool)
+          .setAlpha(accent.alpha)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setDepth(1.7)
+      }
+    }
   }
 
   /** Seeded flat decals (oil, skid, crack, patch) scattered on the track surface. */
@@ -1531,25 +1708,10 @@ export class RaceScene extends Phaser.Scene {
     })
   }
 
-  /** Seeded non-colliding furniture: boundary props + a start-line cluster. */
+  /** Seeded non-colliding furniture: just the start-line cluster — the
+   *  track-wide tyre/sandbag scatter is gone so the road ribbon and the
+   *  authored landmarks stay visually dominant. */
   private placeFurniture(shoulderHalf: number, rng: () => number) {
-    // tyre stacks + sandbags on the dirt just beyond the shoulder, both sides
-    const boundaryKeys = ['tyre-0', 'tyre-1', 'sandbag-0', 'sandbag-1']
-    for (const side of [1, -1]) {
-      const line = offsetClosedPolyline(this.centerline, side * (shoulderHalf + 70))
-      const poses = scatterPointsAlong(line, 4, rng, {
-        halfWidth: 0,
-        lateralFrac: 0,
-        minGap: 400,
-      })
-      scatterImages(this, poses, boundaryKeys, rng, {
-        depth: 3,
-        minScale: 0.45,
-        maxScale: 0.6,
-        jitter: 0.4,
-      })
-    }
-
     // start/finish cluster on the shoulder: a short row of cones + one barricade
     const gate = this.gates[0]
     const t = gate.tangent
@@ -1585,6 +1747,7 @@ export class RaceScene extends Phaser.Scene {
 
   /** Night-race dressing: cat-eye reflectors, corner chevrons, light poles. */
   private dressTrackForNight(halfW: number, shoulderHalf: number) {
+    const glowWarm = this.track.environment?.glowWarm ?? 0xffbb55
     // cat-eye reflectors along both track edges
     for (const side of [1, -1]) {
       const edge = offsetClosedPolyline(this.centerline, side * (halfW - 6))
@@ -1592,7 +1755,7 @@ export class RaceScene extends Phaser.Scene {
         this.add
           .image(p.x, p.y, 'glow-soft')
           .setScale(0.07)
-          .setTint(0xffbb55)
+          .setTint(glowWarm)
           .setAlpha(0.85)
           .setBlendMode(Phaser.BlendModes.ADD)
           .setDepth(1.6)
@@ -1605,7 +1768,7 @@ export class RaceScene extends Phaser.Scene {
       this.add
         .image(p.x, p.y, 'glow-soft')
         .setScale(1.6)
-        .setTint(0xffcf8a)
+        .setTint(glowWarm)
         .setAlpha(0.2)
         .setBlendMode(Phaser.BlendModes.ADD)
         .setDepth(1.7)
@@ -2324,6 +2487,20 @@ export class RaceScene extends Phaser.Scene {
       })
       this.cameras.cameras[1]?.ignore(gfx)
     }
+
+    // obstacle inspection overlay: red rings are the authoritative collision
+    // circles (env.obstacleCircles via each piece), amber boxes the sprite AABB
+    const obGfx = this.add.graphics().setDepth(50)
+    for (const piece of this.env.obstacles) {
+      obGfx.lineStyle(2, 0xff5f5f, 0.9)
+      for (const c of piece.circles) obGfx.strokeCircle(c.x, c.y, c.r)
+    }
+    obGfx.lineStyle(1, 0xf2a33c, 0.6)
+    for (const sprite of this.obstacleSprites) {
+      const b = sprite.getBounds()
+      obGfx.strokeRect(b.x, b.y, b.width, b.height)
+    }
+    this.cameras.cameras[1]?.ignore(obGfx)
 
     this.debugText = text(this, 16, 120, '', { size: 'micro', color: C.money })
     this.hudContainer.add(this.debugText)

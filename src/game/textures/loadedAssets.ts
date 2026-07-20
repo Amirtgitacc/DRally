@@ -74,12 +74,6 @@ export const LOADED_SCREEN_TEXTURES: LoadedTexture[] = [
   { key: 'bg-race-ops', url: 'assets/screens/race-operations.webp' },
   { key: 'bg-records', url: 'assets/screens/records-hall.webp' },
   { key: 'bg-champion', url: 'assets/screens/champion-victory-stage.webp' },
-  { key: 'bg-venue-dust-bowl-run', url: 'assets/screens/venue-dust-bowl-run.webp' },
-  { key: 'bg-venue-boneyard-loop', url: 'assets/screens/venue-boneyard-loop.webp' },
-  { key: 'bg-venue-rust-belt-circuit', url: 'assets/screens/venue-rust-belt-circuit.webp' },
-  { key: 'bg-venue-cinder-yards', url: 'assets/screens/venue-cinder-yards.webp' },
-  { key: 'bg-venue-serpents-throat', url: 'assets/screens/venue-serpents-throat.webp' },
-  { key: 'bg-venue-widows-coil', url: 'assets/screens/venue-widows-coil.webp' },
   { key: 'bg-mp', url: 'assets/screens/mp-quick-race.webp' },
   { key: 'bg-lobby', url: 'assets/screens/mp-lobby.webp' },
 ]
@@ -149,6 +143,60 @@ export const LOADED_POSTER_VARIANT_TEXTURES: LoadedTexture[] = [
  *  poster, but it also only has the 'base' livery, so the mapping holds. */
 export function posterTextureFor(carId: string, variantId: string): string {
   return variantId && variantId !== 'base' ? `car-poster-${carId}-${variantId}` : `car-poster-${carId}`
+}
+
+// Track set pieces and environment scatter: authored transparent top-down
+// sprites. The obstacle-* keys are referenced by TrackDef.setPieces
+// (collidable splitters authored per venue); the decor-* keys by
+// TrackDef.decorations (non-colliding venue landmarks); the set-* keys are
+// surviving structural dressing (walls, fences, overheads, lights); plus the
+// runoff/sand/grate decal cells.
+export const LOADED_ENVIRONMENT_TEXTURES: LoadedTexture[] = [
+  { key: 'obstacle-armoured-concrete-divider', url: 'assets/env/obstacles/armoured-concrete-divider.webp' },
+  { key: 'obstacle-strapped-tyre-bale', url: 'assets/env/obstacles/strapped-tyre-bale.webp' },
+  { key: 'obstacle-sealed-cargo-pallet', url: 'assets/env/obstacles/sealed-cargo-pallet.webp' },
+  { key: 'obstacle-low-pipe-manifold', url: 'assets/env/obstacles/low-pipe-manifold-island.webp' },
+  { key: 'obstacle-contained-rockfall', url: 'assets/env/obstacles/contained-rockfall-island.webp' },
+  { key: 'decor-blacktide-container-stack', url: 'assets/env/decor/blacktide-exchange/container-stack.webp' },
+  { key: 'decor-blacktide-mooring-cluster', url: 'assets/env/decor/blacktide-exchange/mooring-cluster.webp' },
+  { key: 'decor-blacktide-crane-drive-platform', url: 'assets/env/decor/blacktide-exchange/crane-drive-platform.webp' },
+  { key: 'decor-glassburn-pump-skid', url: 'assets/env/decor/glassburn-works/pump-skid.webp' },
+  { key: 'decor-glassburn-valve-tree', url: 'assets/env/decor/glassburn-works/valve-tree.webp' },
+  { key: 'decor-glassburn-heat-exchanger-bank', url: 'assets/env/decor/glassburn-works/heat-exchanger-bank.webp' },
+  { key: 'decor-ironveil-excavator', url: 'assets/env/decor/ironveil-ascent/excavator.webp' },
+  { key: 'decor-ironveil-conveyor-drive', url: 'assets/env/decor/ironveil-ascent/conveyor-drive.webp' },
+  { key: 'decor-ironveil-ore-hopper', url: 'assets/env/decor/ironveil-ascent/ore-hopper.webp' },
+  { key: 'set-fender-wall', url: 'assets/env/set/fender-wall.webp' },
+  { key: 'set-pipe-rack', url: 'assets/env/set/pipe-rack.webp' },
+  { key: 'set-floodlight-bank', url: 'assets/env/set/floodlight-bank.webp' },
+  { key: 'set-barrel-pallet', url: 'assets/env/set/barrel-pallet.webp' },
+  { key: 'set-chainlink', url: 'assets/env/set/chainlink.webp' },
+  { key: 'set-jersey-barrier', url: 'assets/env/set/jersey-barrier.webp' },
+  { key: 'runoff-0', url: 'assets/decals/runoff-0.webp' },
+  { key: 'runoff-1', url: 'assets/decals/runoff-1.webp' },
+  { key: 'runoff-2', url: 'assets/decals/runoff-2.webp' },
+  { key: 'runoff-3', url: 'assets/decals/runoff-3.webp' },
+  { key: 'runoff-4', url: 'assets/decals/runoff-4.webp' },
+  { key: 'runoff-5', url: 'assets/decals/runoff-5.webp' },
+  { key: 'grate-0', url: 'assets/decals/grate-0.webp' },
+  { key: 'grate-1', url: 'assets/decals/grate-1.webp' },
+  { key: 'grate-2', url: 'assets/decals/grate-2.webp' },
+]
+
+// Venue poster art: one authored portrait 2:3 poster per track. Shown by the
+// venues gallery and preview reel inside a portrait frame, never stretched to
+// fullscreen — the real centerline-derived track map stays alongside it.
+export const LOADED_TRACK_POSTER_TEXTURES: LoadedTexture[] = [
+  { key: 'track-poster-blacktide-exchange', url: 'assets/tracks/posters/blacktide-exchange.webp' },
+  { key: 'track-poster-glassburn-works', url: 'assets/tracks/posters/glassburn-works.webp' },
+  { key: 'track-poster-ironveil-ascent', url: 'assets/tracks/posters/ironveil-ascent.webp' },
+]
+
+/** Poster texture key for a track id, or null when no poster is registered
+ *  (unknown/legacy ids fail safely — callers fall back to plain framing). */
+export function trackPosterTextureFor(trackId: string): string | null {
+  const key = `track-poster-${trackId}`
+  return LOADED_TRACK_POSTER_TEXTURES.some((t) => t.key === key) ? key : null
 }
 
 // Garage/dealer poster art: one authored portrait per chassis, plus the boss

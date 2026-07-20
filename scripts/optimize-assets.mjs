@@ -4,7 +4,7 @@ import sharp from 'sharp'
 import { mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
-const SRC = 'cars/output/generated'
+const SRC = 'Cars/output/generated'
 const OUT = 'public/assets'
 
 // fit 'fill' = exact square (seamless surfaces); 'inside' = preserve aspect + alpha (sprites)
@@ -97,9 +97,49 @@ const JOBS = [
   { src: 'posters/leviathan-poster.png', out: 'cars/posters/leviathan.webp', w: 768, fit: 'inside', q: 82 },
   { src: 'posters/sovereign-poster.png', out: 'cars/posters/sovereign.webp', w: 768, fit: 'inside', q: 82 },
   { src: 'posters/boss-poster.png',      out: 'cars/posters/boss.webp',      w: 768, fit: 'inside', q: 82 },
+  // --- Track set pieces (structural/safety infrastructure that survived the
+  //     obstacle-art replacement; transparent top-down) ---
+  { src: 'modular_quayside_fender_wall.png',    out: 'env/set/fender-wall.webp',       w: 300, fit: 'inside', q: 85, trim: true },
+  { src: 'refinery_pipe_rack_overpass.png',     out: 'env/set/pipe-rack.webp',         w: 640, fit: 'inside', q: 85, trim: true },
+  // --- Environment scatter (per-venue off-road dressing) ---
+  { src: 'portable_sodium_floodlight_bank.png',  out: 'env/set/floodlight-bank.webp', w: 180, fit: 'inside', q: 85, trim: true },
+  { src: 'environment_barrel_pallet_cluster.png',out: 'env/set/barrel-pallet.webp',   w: 220, fit: 'inside', q: 85, trim: true },
+  { src: 'environment_chainlink_fence_segment.png', out: 'env/set/chainlink.webp',    w: 320, fit: 'inside', q: 85, trim: true },
+  { src: 'concrete_jersey_barrier_segment.png',  out: 'env/set/jersey-barrier.webp',  w: 280, fit: 'inside', q: 85, trim: true },
+  // --- Collidable obstacles (track_assets masters, 1024² transparent RGBA) ---
+  { src: 'track_assets/obstacles/obstacle_armoured_concrete_divider.png', out: 'env/obstacles/armoured-concrete-divider.webp', w: 512, fit: 'inside', q: 85, trim: true },
+  { src: 'track_assets/obstacles/obstacle_strapped_tyre_bale.png',        out: 'env/obstacles/strapped-tyre-bale.webp',        w: 448, fit: 'inside', q: 85, trim: true },
+  { src: 'track_assets/obstacles/obstacle_sealed_cargo_pallet.png',       out: 'env/obstacles/sealed-cargo-pallet.webp',       w: 448, fit: 'inside', q: 85, trim: true },
+  { src: 'track_assets/obstacles/obstacle_low_pipe_manifold_island.png',  out: 'env/obstacles/low-pipe-manifold-island.webp',  w: 512, fit: 'inside', q: 85, trim: true },
+  { src: 'track_assets/obstacles/obstacle_contained_rockfall_island.png', out: 'env/obstacles/contained-rockfall-island.webp', w: 512, fit: 'inside', q: 85, trim: true },
+  // --- Venue landmark decorations (track_assets masters, non-colliding) ---
+  { src: 'track_assets/decorations/blacktide_exchange/decor_blacktide_container_stack.png',      out: 'env/decor/blacktide-exchange/container-stack.webp',      w: 640, fit: 'inside', q: 85, trim: true },
+  { src: 'track_assets/decorations/blacktide_exchange/decor_blacktide_mooring_cluster.png',      out: 'env/decor/blacktide-exchange/mooring-cluster.webp',      w: 512, fit: 'inside', q: 85, trim: true },
+  { src: 'track_assets/decorations/blacktide_exchange/decor_blacktide_crane_drive_platform.png', out: 'env/decor/blacktide-exchange/crane-drive-platform.webp', w: 512, fit: 'inside', q: 85, trim: true },
+  { src: 'track_assets/decorations/glassburn_works/decor_glassburn_pump_skid.png',           out: 'env/decor/glassburn-works/pump-skid.webp',           w: 512, fit: 'inside', q: 85, trim: true },
+  { src: 'track_assets/decorations/glassburn_works/decor_glassburn_valve_tree.png',          out: 'env/decor/glassburn-works/valve-tree.webp',          w: 512, fit: 'inside', q: 85, trim: true },
+  { src: 'track_assets/decorations/glassburn_works/decor_glassburn_heat_exchanger_bank.png', out: 'env/decor/glassburn-works/heat-exchanger-bank.webp', w: 640, fit: 'inside', q: 85, trim: true },
+  { src: 'track_assets/decorations/ironveil_ascent/decor_ironveil_excavator.png',      out: 'env/decor/ironveil-ascent/excavator.webp',      w: 448, fit: 'inside', q: 85, trim: true },
+  { src: 'track_assets/decorations/ironveil_ascent/decor_ironveil_conveyor_drive.png', out: 'env/decor/ironveil-ascent/conveyor-drive.webp', w: 640, fit: 'inside', q: 85, trim: true },
+  { src: 'track_assets/decorations/ironveil_ascent/decor_ironveil_ore_hopper.png',     out: 'env/decor/ironveil-ascent/ore-hopper.webp',     w: 512, fit: 'inside', q: 85, trim: true },
+  // --- Venue decal sheets (3 cols x 2 rows, cell 512x512) ---
+  { src: 'rainwater_runoff_decal_set.png', out: 'decals/runoff-0.webp', w: 256, fit: 'inside', q: 85, extract: { left: 0,    top: 0,   width: 512, height: 512 }, trim: true },
+  { src: 'rainwater_runoff_decal_set.png', out: 'decals/runoff-1.webp', w: 256, fit: 'inside', q: 85, extract: { left: 512,  top: 0,   width: 512, height: 512 }, trim: true },
+  { src: 'rainwater_runoff_decal_set.png', out: 'decals/runoff-2.webp', w: 256, fit: 'inside', q: 85, extract: { left: 1024, top: 0,   width: 512, height: 512 }, trim: true },
+  { src: 'rainwater_runoff_decal_set.png', out: 'decals/runoff-3.webp', w: 256, fit: 'inside', q: 85, extract: { left: 0,    top: 512, width: 512, height: 512 }, trim: true },
+  { src: 'rainwater_runoff_decal_set.png', out: 'decals/runoff-4.webp', w: 256, fit: 'inside', q: 85, extract: { left: 512,  top: 512, width: 512, height: 512 }, trim: true },
+  { src: 'rainwater_runoff_decal_set.png', out: 'decals/runoff-5.webp', w: 256, fit: 'inside', q: 85, extract: { left: 1024, top: 512, width: 512, height: 512 }, trim: true },
+  { src: 'environment_drain_grate_decal_set.png', out: 'decals/grate-0.webp', w: 128, fit: 'inside', q: 85, extract: { left: 0,    top: 0,   width: 512, height: 512 }, trim: true },
+  { src: 'environment_drain_grate_decal_set.png', out: 'decals/grate-1.webp', w: 128, fit: 'inside', q: 85, extract: { left: 512,  top: 0,   width: 512, height: 512 }, trim: true },
+  { src: 'environment_drain_grate_decal_set.png', out: 'decals/grate-2.webp', w: 128, fit: 'inside', q: 85, extract: { left: 0,    top: 512, width: 512, height: 512 }, trim: true },
 ]
 
-for (const j of JOBS) {
+// Optional filter: `node scripts/optimize-assets.mjs <substring>` converts only
+// jobs whose output path contains the substring (avoids re-encoding the world).
+const only = process.argv[2]
+const RUN = only ? JOBS.filter((j) => j.out.includes(only)) : JOBS
+
+for (const j of RUN) {
   const dest = join(OUT, j.out)
   await mkdir(dirname(dest), { recursive: true })
   const resize = j.h
@@ -119,4 +159,4 @@ for (const j of JOBS) {
   await pipe.resize(resize).webp({ quality: j.q }).toFile(dest)
   console.log('wrote', dest)
 }
-console.log(`done: ${JOBS.length} assets`)
+console.log(`done: ${RUN.length} assets`)

@@ -19,6 +19,9 @@ export function buildTestEnv(overrides: Partial<RaceEnv> = {}): RaceEnv {
     racingLine,
     gates,
     barriers,
+    // hand-built env used by focused sim tests — no set pieces on purpose
+    obstacles: [],
+    obstacleCircles: [],
     gateSpacing: closedPolylineLength(centerline) / track.gateCount,
     trackWidth: track.width,
     laps: track.laps,

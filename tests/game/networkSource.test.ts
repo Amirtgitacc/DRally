@@ -3,7 +3,7 @@ import { NetworkSource } from '../../src/game/race/raceSource'
 import { toRaceSnapshot } from '../../src/core/net/snapshot'
 import { buildRaceEnv } from '../../src/core/race/raceEnvBuilder'
 import { createRaceState, type CarSetup } from '../../src/core/race/raceState'
-import { TEST_CIRCUIT } from '../../src/data/tracks/testCircuit'
+import { GLASSBURN_WORKS } from '../../src/data/tracks/glassburnWorks'
 import { effectiveCarSpec, NO_UPGRADES } from '../../src/core/vehicle/carSpec'
 import { carById } from '../../src/data/cars'
 
@@ -32,7 +32,7 @@ const roster = [
 ]
 
 function snapAt(simTimeMs: number, bx: number) {
-  const env = buildRaceEnv(TEST_CIRCUIT, { playerSpec: spec, weaponsEnabled: false, hasPlating: false, hasOverTurbo: false, raceEndMode: 'all-humans' })
+  const env = buildRaceEnv(GLASSBURN_WORKS, { playerSpec: spec, weaponsEnabled: false, hasPlating: false, hasOverTurbo: false, raceEndMode: 'all-humans' })
   const setups: CarSetup[] = roster.map((r) => ({ id: r.id, isPlayer: true, mass: 1000, damage: 0, ammo: 0, mines: 0, armorTier: 0, ai: null }))
   const s = createRaceState(env, setups, 1)
   s.simTimeMs = simTimeMs
@@ -47,7 +47,7 @@ function snapAt(simTimeMs: number, bx: number) {
 // car outside of countdown (see LocalPredictor's player-input gate), so tests
 // that actually exercise prediction need a racing-phase snapshot.
 function racingSnapAt(simTimeMs: number, bx: number) {
-  const env = buildRaceEnv(TEST_CIRCUIT, { playerSpec: spec, weaponsEnabled: false, hasPlating: false, hasOverTurbo: false, raceEndMode: 'all-humans' })
+  const env = buildRaceEnv(GLASSBURN_WORKS, { playerSpec: spec, weaponsEnabled: false, hasPlating: false, hasOverTurbo: false, raceEndMode: 'all-humans' })
   const setups: CarSetup[] = roster.map((r) => ({ id: r.id, isPlayer: true, mass: 1000, damage: 0, ammo: 0, mines: 0, armorTier: 0, ai: null }))
   const s = createRaceState(env, setups, 1)
   s.simTimeMs = simTimeMs
@@ -59,7 +59,7 @@ function racingSnapAt(simTimeMs: number, bx: number) {
 describe('NetworkSource', () => {
   it('renders car B interpolated behind the newest snapshot', () => {
     const net = fakeNet()
-    const src = new NetworkSource(net as any, { seed: 1, trackId: 'test-circuit', laps: 3, roster, youId: 'a' }, spec)
+    const src = new NetworkSource(net as any, { seed: 1, trackId: 'glassburn-works', laps: 3, roster, youId: 'a' }, spec)
     net.emit({ t: 'snapshot', snap: snapAt(0, 0), events: [], acks: { a: 0 } })
     net.emit({ t: 'snapshot', snap: snapAt(100, 100), events: [], acks: { a: 0 } })
     net.emit({ t: 'snapshot', snap: snapAt(200, 200), events: [], acks: { a: 0 } })
@@ -72,7 +72,7 @@ describe('NetworkSource', () => {
 
   it('advances the render clock by frame delta between snapshots (smooth motion)', () => {
     const net = fakeNet()
-    const src = new NetworkSource(net as any, { seed: 1, trackId: 'test-circuit', laps: 3, roster, youId: 'a' }, spec)
+    const src = new NetworkSource(net as any, { seed: 1, trackId: 'glassburn-works', laps: 3, roster, youId: 'a' }, spec)
     net.emit({ t: 'snapshot', snap: snapAt(0, 0), events: [], acks: { a: 0 } })
     net.emit({ t: 'snapshot', snap: snapAt(100, 100), events: [], acks: { a: 0 } })
     src.ingest(0, 0) // anchor the render clock
@@ -86,7 +86,7 @@ describe('NetworkSource', () => {
 
   it('holds at the newest snapshot when the buffer starves (no extrapolation)', () => {
     const net = fakeNet()
-    const src = new NetworkSource(net as any, { seed: 1, trackId: 'test-circuit', laps: 3, roster, youId: 'a' }, spec)
+    const src = new NetworkSource(net as any, { seed: 1, trackId: 'glassburn-works', laps: 3, roster, youId: 'a' }, spec)
     net.emit({ t: 'snapshot', snap: snapAt(0, 0), events: [], acks: { a: 0 } })
     net.emit({ t: 'snapshot', snap: snapAt(100, 100), events: [], acks: { a: 0 } })
     src.ingest(0, 0)
@@ -96,7 +96,7 @@ describe('NetworkSource', () => {
 
   it('skips ahead when the clock falls more than one interp window behind', () => {
     const net = fakeNet()
-    const src = new NetworkSource(net as any, { seed: 1, trackId: 'test-circuit', laps: 3, roster, youId: 'a' }, spec)
+    const src = new NetworkSource(net as any, { seed: 1, trackId: 'glassburn-works', laps: 3, roster, youId: 'a' }, spec)
     net.emit({ t: 'snapshot', snap: snapAt(0, 0), events: [], acks: { a: 0 } })
     net.emit({ t: 'snapshot', snap: snapAt(100, 100), events: [], acks: { a: 0 } })
     src.ingest(0, 0) // renderTime = 0
@@ -107,7 +107,7 @@ describe('NetworkSource', () => {
 
   it('drains each snapshot\'s events once', () => {
     const net = fakeNet()
-    const src = new NetworkSource(net as any, { seed: 1, trackId: 'test-circuit', laps: 3, roster, youId: 'a' }, spec)
+    const src = new NetworkSource(net as any, { seed: 1, trackId: 'glassburn-works', laps: 3, roster, youId: 'a' }, spec)
     // countdown/race-started are filtered (synthesized from state instead), so
     // use a cosmetic event to check pass-through drains exactly once
     net.emit({ t: 'snapshot', snap: snapAt(0, 0), events: [{ type: 'bullet-wall', x: 1, y: 2 }], acks: { a: 0 } })
@@ -118,7 +118,7 @@ describe('NetworkSource', () => {
 
   it('caps pendingEvents on overflow, keeping the newest (backgrounded tab)', () => {
     const net = fakeNet()
-    const src = new NetworkSource(net as any, { seed: 1, trackId: 'test-circuit', laps: 3, roster, youId: 'a' }, spec)
+    const src = new NetworkSource(net as any, { seed: 1, trackId: 'glassburn-works', laps: 3, roster, youId: 'a' }, spec)
     // Simulate a backgrounded tab: many snapshots arrive but the render loop
     // never drains. 2000 wall-hit events with a rising `impact` marker.
     for (let i = 0; i < 2000; i++) {
@@ -134,7 +134,7 @@ describe('NetworkSource', () => {
 
   it('synthesizes countdown beats from snapshot state when event snapshots were missed', () => {
     const net = fakeNet()
-    const src = new NetworkSource(net as any, { seed: 1, trackId: 'test-circuit', laps: 3, roster, youId: 'a' }, spec)
+    const src = new NetworkSource(net as any, { seed: 1, trackId: 'glassburn-works', laps: 3, roster, youId: 'a' }, spec)
     // Client attached late: the snapshots carrying the count=3 and count=2
     // events never arrived. First seen snapshot already has announced=2.
     const snap = snapAt(1100, 0)
@@ -147,7 +147,7 @@ describe('NetworkSource', () => {
 
   it('synthesizes race-started from the phase flip when the event snapshot was missed', () => {
     const net = fakeNet()
-    const src = new NetworkSource(net as any, { seed: 1, trackId: 'test-circuit', laps: 3, roster, youId: 'a' }, spec)
+    const src = new NetworkSource(net as any, { seed: 1, trackId: 'glassburn-works', laps: 3, roster, youId: 'a' }, spec)
     net.emit({ t: 'snapshot', snap: racingSnapAt(3100, 0), events: [], acks: { a: 0 } })
     src.ingest(0, 0)
     expect(src.drainEvents().some((e) => e.type === 'race-started')).toBe(true)
@@ -155,7 +155,7 @@ describe('NetworkSource', () => {
 
   it('does not double-fire beats when the server events did arrive', () => {
     const net = fakeNet()
-    const src = new NetworkSource(net as any, { seed: 1, trackId: 'test-circuit', laps: 3, roster, youId: 'a' }, spec)
+    const src = new NetworkSource(net as any, { seed: 1, trackId: 'glassburn-works', laps: 3, roster, youId: 'a' }, spec)
     const snap = snapAt(1100, 0)
     snap.countdownAnnounced = 2
     net.emit({ t: 'snapshot', snap, events: [{ type: 'countdown', count: 2 }], acks: { a: 0 } })
@@ -171,7 +171,7 @@ describe('NetworkSource', () => {
 
   it('sendLocalInput forwards an input message with a seq', () => {
     const net = fakeNet()
-    const src = new NetworkSource(net as any, { seed: 1, trackId: 'test-circuit', laps: 3, roster, youId: 'a' }, spec)
+    const src = new NetworkSource(net as any, { seed: 1, trackId: 'glassburn-works', laps: 3, roster, youId: 'a' }, spec)
     src.sendLocalInput({ input: { throttle: 1, brake: 0, steer: 0, handbrake: false }, fire: false, turbo: false, dropMine: false })
     const sent = net.sent.find((m) => m.t === 'input')
     expect(sent).toBeTruthy()
@@ -181,7 +181,7 @@ describe('NetworkSource', () => {
 
   it('drives the local car from prediction, not interpolation', () => {
     const net = fakeNet()
-    const src = new NetworkSource(net as any, { seed: 1, trackId: 'test-circuit', laps: 3, roster, youId: 'a' }, spec)
+    const src = new NetworkSource(net as any, { seed: 1, trackId: 'glassburn-works', laps: 3, roster, youId: 'a' }, spec)
     // racing phase: with the countdown gate (Fix 1), only a racing-phase
     // snapshot lets prediction actually drive the local car.
     net.emit({ t: 'snapshot', snap: racingSnapAt(0, 0), events: [], acks: { a: 0 } })
@@ -204,7 +204,7 @@ describe('NetworkSource', () => {
 
   it('does not predict movement during countdown (matches server input gate)', () => {
     const net = fakeNet()
-    const src = new NetworkSource(net as any, { seed: 1, trackId: 'test-circuit', laps: 3, roster, youId: 'a' }, spec)
+    const src = new NetworkSource(net as any, { seed: 1, trackId: 'glassburn-works', laps: 3, roster, youId: 'a' }, spec)
     // default snapAt snapshot is in 'countdown' phase
     net.emit({ t: 'snapshot', snap: snapAt(0, 0), events: [], acks: { a: 0 } })
     src.ingest(0, 0)
@@ -220,7 +220,7 @@ describe('NetworkSource', () => {
 
   it('dispose() detaches the message handler so later snapshots have no effect', () => {
     const net = fakeNet()
-    const src = new NetworkSource(net as any, { seed: 1, trackId: 'test-circuit', laps: 3, roster, youId: 'a' }, spec)
+    const src = new NetworkSource(net as any, { seed: 1, trackId: 'glassburn-works', laps: 3, roster, youId: 'a' }, spec)
     net.emit({ t: 'snapshot', snap: snapAt(0, 0), events: [], acks: { a: 0 } })
     net.emit({ t: 'snapshot', snap: snapAt(100, 100), events: [], acks: { a: 0 } })
     src.ingest(0, 0)

@@ -1,6 +1,6 @@
 import Phaser from 'phaser'
 import { catmullRomClosed } from '../../core/track/geometry'
-import type { TrackDef } from '../../data/tracks/testCircuit'
+import type { TrackDef } from '../../data/tracks/types'
 
 export interface TrackMapOptions {
   cx: number

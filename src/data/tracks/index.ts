@@ -1,27 +1,21 @@
 import type { RaceTier } from '../economy'
-import { TEST_CIRCUIT, type TrackDef } from './testCircuit'
-import { DUST_BOWL } from './dustBowl'
-import { SERPENTS_THROAT } from './serpentsThroat'
-import { BONEYARD_LOOP } from './boneyardLoop'
-import { CINDER_YARDS } from './cinderYards'
-import { WIDOWS_COIL } from './widowsCoil'
+import type { TrackDef } from './types'
+import { BLACKTIDE_EXCHANGE } from './blacktideExchange'
+import { GLASSBURN_WORKS } from './glassburnWorks'
+import { IRONVEIL_ASCENT } from './ironveilAscent'
+
+export type { TrackDef, TrackDecoration, TrackEnvironment, TrackEnvironmentKind } from './types'
+export { BLACKTIDE_EXCHANGE, GLASSBURN_WORKS, IRONVEIL_ASCENT }
 
 /** Venues per prize tier — each round's sign-up rolls one per tier. */
 export const TRACKS_BY_TIER: Record<RaceTier, TrackDef[]> = {
-  street: [DUST_BOWL, BONEYARD_LOOP],
-  pro: [TEST_CIRCUIT, CINDER_YARDS],
-  death: [SERPENTS_THROAT, WIDOWS_COIL],
+  street: [BLACKTIDE_EXCHANGE],
+  pro: [GLASSBURN_WORKS],
+  death: [IRONVEIL_ASCENT],
 }
 
 /** Every venue, in tier order — the venues gallery and debug tooling walk this. */
-export const ALL_TRACKS: TrackDef[] = [
-  DUST_BOWL,
-  BONEYARD_LOOP,
-  TEST_CIRCUIT,
-  CINDER_YARDS,
-  SERPENTS_THROAT,
-  WIDOWS_COIL,
-]
+export const ALL_TRACKS: TrackDef[] = [BLACKTIDE_EXCHANGE, GLASSBURN_WORKS, IRONVEIL_ASCENT]
 
 export function trackById(id: string): TrackDef {
   const t = ALL_TRACKS.find((t) => t.id === id)
@@ -35,4 +29,4 @@ export function rollTrack(tier: RaceTier, rand: () => number): TrackDef {
 }
 
 /** The final duel always runs on the same stage. */
-export const DUEL_TRACK = SERPENTS_THROAT
+export const DUEL_TRACK = IRONVEIL_ASCENT

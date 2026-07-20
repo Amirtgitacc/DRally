@@ -3,6 +3,7 @@ import { createProgress, type RaceProgress } from './progress'
 import { initialRngState, nextRandom } from './random'
 import { randomPickupLayout, type PickupType } from '../track/pickups'
 import type { Gate, Vec2 } from '../track/geometry'
+import type { ObstacleCircle, ResolvedSetPiece } from '../track/setPieces'
 import type { AiTuning } from '../ai/driver'
 import type { RaceTier } from '../../data/economy'
 import { PICKUPS } from '../../data/weapons'
@@ -64,6 +65,10 @@ export interface RaceEnv {
   racingLine: Vec2[]
   gates: Gate[]
   barriers: Vec2[]
+  /** authored set pieces (splitters, buffers, overhead spans) in world space */
+  obstacles: ResolvedSetPiece[]
+  /** every collision circle of every set piece — physics, pickups, rescue */
+  obstacleCircles: ObstacleCircle[]
   gateSpacing: number
   trackWidth: number
   laps: number
@@ -122,6 +127,7 @@ export function createRaceState(env: RaceEnv, setups: CarSetup[], seed: number):
       lateralOffsets: [...PICKUPS.lateralOffsets],
       clearRadiusAroundStart: PICKUPS.clearRadiusAroundStart,
       minDistance: PICKUPS.minDistance,
+      obstacles: env.obstacleCircles,
     },
     rng,
   )

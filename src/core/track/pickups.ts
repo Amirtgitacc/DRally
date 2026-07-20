@@ -31,7 +31,12 @@ export interface RandomPickupLayoutOptions {
   minDistance: number
   /** bounded search cost for each position */
   attempts?: number
+  /** static set-piece circles a pickup must never spawn inside */
+  obstacles?: { x: number; y: number; r: number }[]
 }
+
+/** Clearance a pickup keeps from a set piece's collision edge, px. */
+const PICKUP_OBSTACLE_CLEARANCE = 50
 
 export function layoutPickups(centerline: Vec2[], opts: PickupLayoutOptions): PickupSpot[] {
   const spots: PickupSpot[] = []
@@ -73,6 +78,8 @@ export function randomPickupSpot(
     const lateral = opts.lateralOffsets[Math.min(opts.lateralOffsets.length - 1, Math.floor(random() * opts.lateralOffsets.length))]
     const candidate = { x: p.x - tangent.y * lateral, y: p.y + tangent.x * lateral }
     if (Math.hypot(candidate.x - start.x, candidate.y - start.y) < opts.clearRadiusAroundStart) continue
+    // never spawn loot inside (or flush against) a set-piece obstacle
+    if (opts.obstacles?.some((o) => Math.hypot(candidate.x - o.x, candidate.y - o.y) < o.r + PICKUP_OBSTACLE_CLEARANCE)) continue
 
     const clearance = occupied.length === 0
       ? Infinity

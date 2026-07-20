@@ -77,6 +77,22 @@ export function offsetClosedPolyline(points: Vec2[], offset: number): Vec2[] {
   })
 }
 
+/**
+ * Shoelace area of a closed polyline in screen coordinates (y grows down):
+ * positive = the loop is driven clockwise on screen, negative = counter-
+ * clockwise. Also identifies the interior offset side for a driving loop —
+ * `offsetClosedPolyline(line, sign(area) * d)` moves toward the loop's inside.
+ */
+export function signedLoopArea(points: Vec2[]): number {
+  let sum = 0
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i]
+    const b = points[(i + 1) % points.length]
+    sum += a.x * b.y - b.x * a.y
+  }
+  return sum / 2
+}
+
 /** Total arc length around a closed polyline, px. */
 export function closedPolylineLength(points: Vec2[]): number {
   let total = 0

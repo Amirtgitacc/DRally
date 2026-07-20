@@ -4,7 +4,7 @@
 // the local car identically. No car-to-car collision, weapons, or gates here.
 import { isAirborne, justLanded, speed, stepCar, type CarInput } from '../vehicle/carPhysics'
 import { stepTurboMeter } from '../vehicle/turboMeter'
-import { needsRescue, rescuePose, updateStuckMs } from '../vehicle/rescue'
+import { clearRescuePose, needsRescue, rescuePose, updateStuckMs } from '../vehicle/rescue'
 import { RESCUE } from '../../data/rescue'
 import { distanceToClosedPolyline } from '../track/geometry'
 import { effectiveSpec } from './aiControl'
@@ -92,38 +92,58 @@ function updateStuckRescue(state: RaceState, env: RaceEnv, car: CarSim, dt: numb
 
   car.stuckMs = 0
   const gate = env.gates[nextGateIndex(car.progress) % env.gates.length]
-  const pose = rescuePose(gate.a, gate.b, gate.tangent)
+  const pose = clearRescuePose(
+    rescuePose(gate.a, gate.b, gate.tangent),
+    gate.a, gate.b, env.obstacleCircles, CAR_RADIUS + 6,
+  )
   car.state = { ...car.state, ...pose, z: 0, vz: 0, vx: 0, vy: 0 }
   car.prevPos = { x: pose.x, y: pose.y }
   events.push({ type: 'car-rescued', carId: car.id })
 }
 
 function resolveBarrierCollisions(state: RaceState, env: RaceEnv, car: CarSim, events: SimEvent[]): void {
-  const s = car.state
-  const minDist = CAR_RADIUS + TIRE_RADIUS
   for (const b of env.barriers) {
-    const dx = s.x - b.x
-    const dy = s.y - b.y
-    if (Math.abs(dx) > minDist || Math.abs(dy) > minDist) continue
-    const dist = Math.hypot(dx, dy)
-    if (dist > 0 && dist < minDist) {
-      const nx = dx / dist
-      const ny = dy / dist
-      s.x = b.x + nx * minDist
-      s.y = b.y + ny * minDist
-      const vn = s.vx * nx + s.vy * ny
-      if (vn < 0) {
-        s.vx -= 1.5 * vn * nx
-        s.vy -= 1.5 * vn * ny
-        s.vx *= 0.8
-        s.vy *= 0.8
-        const impact = Math.abs(vn)
-        if (impact > WALL_DAMAGE.threshold && !isAirborne(s)) {
-          damageCarSim(state, env, car, impactDamage(impact, WALL_DAMAGE), events)
-        }
-        if (impact > 160) {
-          events.push({ type: 'wall-hit', carId: car.id, impact })
-        }
+    collideWithCircle(state, env, car, b.x, b.y, TIRE_RADIUS, events)
+  }
+  // set-piece obstacles (container splitters, boulders…) use the same wall
+  // response with their own radii — one collision model, SP and MP identical
+  for (const c of env.obstacleCircles) {
+    collideWithCircle(state, env, car, c.x, c.y, c.r, events)
+  }
+}
+
+function collideWithCircle(
+  state: RaceState,
+  env: RaceEnv,
+  car: CarSim,
+  cx: number,
+  cy: number,
+  radius: number,
+  events: SimEvent[],
+): void {
+  const s = car.state
+  const minDist = CAR_RADIUS + radius
+  const dx = s.x - cx
+  const dy = s.y - cy
+  if (Math.abs(dx) > minDist || Math.abs(dy) > minDist) return
+  const dist = Math.hypot(dx, dy)
+  if (dist > 0 && dist < minDist) {
+    const nx = dx / dist
+    const ny = dy / dist
+    s.x = cx + nx * minDist
+    s.y = cy + ny * minDist
+    const vn = s.vx * nx + s.vy * ny
+    if (vn < 0) {
+      s.vx -= 1.5 * vn * nx
+      s.vy -= 1.5 * vn * ny
+      s.vx *= 0.8
+      s.vy *= 0.8
+      const impact = Math.abs(vn)
+      if (impact > WALL_DAMAGE.threshold && !isAirborne(s)) {
+        damageCarSim(state, env, car, impactDamage(impact, WALL_DAMAGE), events)
+      }
+      if (impact > 160) {
+        events.push({ type: 'wall-hit', carId: car.id, impact })
       }
     }
   }

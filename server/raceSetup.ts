@@ -5,7 +5,7 @@
 // single-player uses (no career/difficulty on the server — pace factor 1.0).
 import type { LobbyPlayer, RaceCarInfo } from '../src/core/net/protocol'
 import type { CarSetup } from '../src/core/race/raceState'
-import type { TrackDef } from '../src/data/tracks/testCircuit'
+import type { TrackDef } from '../src/data/tracks/types'
 import { carById, pickSeededVariant, STARTER_CAR } from '../src/data/cars'
 import { mpCarById } from '../src/data/mpCars'
 import { sanitizeVariantId } from '../src/core/net/roomState'

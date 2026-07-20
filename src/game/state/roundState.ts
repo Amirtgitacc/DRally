@@ -1,7 +1,7 @@
 // The race offer the player accepted at sign-up, consumed by RaceScene.
 // Kept in memory only — a fresh round is rolled at each sign-up screen.
 
-import type { TrackDef } from '../../data/tracks/testCircuit'
+import type { TrackDef } from '../../data/tracks/types'
 
 export interface RaceOffer {
   track: TrackDef

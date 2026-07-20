@@ -22,6 +22,8 @@ import {
   LOADED_MP_ONLY_TEXTURES,
   LOADED_POSTER_TEXTURES,
   LOADED_POSTER_VARIANT_TEXTURES,
+  LOADED_TRACK_POSTER_TEXTURES,
+  LOADED_ENVIRONMENT_TEXTURES,
 } from '../textures/loadedAssets'
 
 // Authored WebP art (BootScene.preload) covers cars, surfaces, and FX;
@@ -43,6 +45,8 @@ export class BootScene extends Phaser.Scene {
       ...LOADED_MP_ONLY_TEXTURES,
       ...LOADED_POSTER_TEXTURES,
       ...LOADED_POSTER_VARIANT_TEXTURES,
+      ...LOADED_TRACK_POSTER_TEXTURES,
+      ...LOADED_ENVIRONMENT_TEXTURES,
     ])
       this.load.image(t.key, t.url)
   }
