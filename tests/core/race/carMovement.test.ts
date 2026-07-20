@@ -33,4 +33,54 @@ describe('stepCarMovement', () => {
     expect(car.lastInput).toEqual(input)
     expect(typeof car.lastTurboActive).toBe('boolean')
   })
+
+  describe('trap loss of control', () => {
+    const drive = (s: ReturnType<typeof oneCar>, steer: number, steps: number) => {
+      for (let i = 0; i < steps; i++) {
+        stepCarMovement(s.state, s.env, s.car, { throttle: 1, brake: 0, steer, handbrake: false }, false, 1 / 60, [])
+        s.state.simTimeMs += 1000 / 60
+      }
+    }
+
+    it('keeps minor steering authority while trapped — reduced, not zero', () => {
+      const headingSpread = (trapped: boolean) => {
+        const a = oneCar()
+        const b = oneCar()
+        drive(a, 0, 30)
+        drive(b, 0, 30)
+        if (trapped) {
+          a.car.trapUntil = a.state.simTimeMs + 2000
+          b.car.trapUntil = b.state.simTimeMs + 2000
+        }
+        drive(a, 1, 30)
+        drive(b, -1, 30)
+        return Math.abs(a.car.state.heading - b.car.state.heading)
+      }
+      const trappedSpread = headingSpread(true)
+      const freeSpread = headingSpread(false)
+      expect(trappedSpread).toBeGreaterThan(0) // some control survives
+      expect(trappedSpread).toBeLessThan(freeSpread * 0.6) // but well below normal
+    })
+
+    it('yaws on its own while trapped even with steer 0', () => {
+      const s = oneCar()
+      drive(s, 0, 30)
+      const headingBefore = s.car.state.heading
+      s.car.trapUntil = s.state.simTimeMs + 2000
+      drive(s, 0, 30)
+      expect(s.car.state.heading).not.toBe(headingBefore)
+    })
+
+    it('returns control once the trap expires', () => {
+      const a = oneCar()
+      const b = oneCar()
+      drive(a, 0, 30)
+      drive(b, 0, 30)
+      a.car.trapUntil = a.state.simTimeMs - 1 // already expired
+      b.car.trapUntil = b.state.simTimeMs - 1
+      drive(a, 1, 30)
+      drive(b, -1, 30)
+      expect(a.car.state.heading).not.toBe(b.car.state.heading)
+    })
+  })
 })

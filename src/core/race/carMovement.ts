@@ -10,7 +10,7 @@ import { distanceToClosedPolyline } from '../track/geometry'
 import { effectiveSpec } from './aiControl'
 import { damageCarSim } from './combatStep'
 import { impactDamage } from '../combat/damage'
-import { MINE_BLAST, TURBO, WALL_DAMAGE } from '../../data/weapons'
+import { MINE_BLAST, PICKUPS, TURBO, WALL_DAMAGE } from '../../data/weapons'
 import { OVERCHARGED_TURBO } from '../../data/blackMarket'
 import { nextGateIndex } from './progress'
 import type { CarSim, RaceEnv, RaceState } from './raceState'
@@ -30,6 +30,21 @@ export function stepCarMovement(
   events: SimEvent[],
 ): void {
   const locked = state.phase === 'countdown'
+
+  // Booby trap: the wheel fights back. A deterministic yaw sway dominates the
+  // steering, a fraction of the player's input still gets through, and grip
+  // drops so the car slews on its own momentum until the trap expires. Driven
+  // off simTimeMs so the server sim and client predictor integrate identically.
+  const trapped = !car.wrecked && state.simTimeMs < car.trapUntil
+  if (trapped) {
+    const sway = Math.sin((state.simTimeMs * 2 * Math.PI) / PICKUPS.trapYawPeriodMs) * PICKUPS.trapSway
+    input = {
+      throttle: input.throttle,
+      brake: 0,
+      steer: Math.max(-1, Math.min(1, sway + input.steer * PICKUPS.trapSteerAuthority)),
+      handbrake: false,
+    }
+  }
 
   // Empty turbo stays locked while the button is held. Without that latch,
   // a zero tank alternated recharge/boost every frame and left the VFX on.
@@ -54,7 +69,9 @@ export function stepCarMovement(
 
   car.prevPos = { x: car.state.x, y: car.state.y }
   const before = car.state
-  car.state = stepCar(car.state, input, effectiveSpec(state, env, car, turboActive), dt, MINE_BLAST.gravity)
+  let spec = effectiveSpec(state, env, car, turboActive)
+  if (trapped) spec = { ...spec, grip: spec.grip * PICKUPS.trapGripScale }
+  car.state = stepCar(car.state, input, spec, dt, MINE_BLAST.gravity)
   if (justLanded(before, car.state)) {
     events.push({ type: 'car-landed', carId: car.id, x: car.state.x, y: car.state.y })
   }

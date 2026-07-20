@@ -176,7 +176,6 @@ export class RaceScene extends Phaser.Scene {
   private mineQueued = false
   private rivalsDoneToast?: Phaser.GameObjects.Text
 
-  private camRotation = 0
   private lookAheadX = 0
   private lookAheadY = 0
   /** cosmetics-only seeded RNG (debris scatter, flame flicker, streaks, scorch rotation) */
@@ -389,7 +388,7 @@ export class RaceScene extends Phaser.Scene {
     this.syncBulletViews()
     this.syncMineViews()
     this.syncPickupViews()
-    this.updateCamera(this.sim.simTimeMs)
+    this.updateCamera()
     this.updateHud(this.sim.simTimeMs)
   }
 
@@ -1007,9 +1006,11 @@ export class RaceScene extends Phaser.Scene {
 
   // ---------------------------------------------------------------- pickups
 
-  /** The skull trap art fills its frame more than the other icons — shrink it to match. */
+  /** The bullet and trap art are drawn bigger than their on-track footprint — shrink to fit. */
   private pickupBaseScale(type: PickupType): number {
-    return type === 'trap' ? 0.62 : 1
+    if (type === 'trap') return 0.4
+    if (type === 'ammo') return 0.5
+    return 1
   }
 
   /** Set the sprite to its type's base scale and (re)start its idle pulse tween. */
@@ -1981,7 +1982,7 @@ export class RaceScene extends Phaser.Scene {
     if (car.id === this.localCarId) this.tireSmoke.emitting = skidding
   }
 
-  private updateCamera(now: number) {
+  private updateCamera() {
     const player = this.myCar()
     const cam = this.cameras.main
     const speedRatio = Math.min(1, speed(player.state) / this.playerSpec.topSpeed)
@@ -2006,15 +2007,6 @@ export class RaceScene extends Phaser.Scene {
     this.updateSpeedStreaks(boosting, speedRatio, overcharged)
 
     audioBus.setEngine(speedRatio, player.lastTurboActive)
-
-    // booby-trap disorientation: the camera swims for a couple of seconds
-    if (now < player.trapUntil) {
-      this.camRotation = Math.sin(now * 0.008) * 0.07
-    } else if (this.camRotation !== 0) {
-      this.camRotation = Phaser.Math.Linear(this.camRotation, 0, 0.12)
-      if (Math.abs(this.camRotation) < 0.002) this.camRotation = 0
-    }
-    cam.setRotation(this.camRotation)
   }
 
   /** Streaks rushing past the edges of the frame while the turbo is lit. */

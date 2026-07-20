@@ -47,7 +47,7 @@ export interface CarSim {
   mass: number
   stuckMs: number
   armorTier: number
-  /** when this car's booby-trap disorientation ends (0 = not trapped) — only meaningful for human cars */
+  /** when this car's booby-trap loss of control ends (0 = not trapped) — only meaningful for human cars */
   trapUntil: number
   ai: CarAiSim | null
   /** what the car did on the last step — renderer reads this for brake lights, exhaust, skids */

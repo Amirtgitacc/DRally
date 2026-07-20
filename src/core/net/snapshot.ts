@@ -14,8 +14,8 @@ export interface CarSnapshot {
   mines: number
   progress: RaceProgress
   lapTimes: number[]
-  /** When this car's trap-pickup camera disorientation ends. Carried per car so
-   *  only the collector's client fires the effect online. */
+  /** When this car's trap-pickup loss of control ends. Carried per car so
+   *  only the collector loses the wheel online. */
   trapUntil: number
   lastInput: CarInput
   lastTurboActive: boolean

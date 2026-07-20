@@ -168,8 +168,17 @@ export const PICKUPS = {
   lateralOffsets: [-80, -40, 0, 40, 80],
   clearRadiusAroundStart: 450,
   minDistance: 360,
-  /** the skull-marked orb swims your camera for long enough to cost a corner */
-  trapDurationMs: 4500,
+  /** stepping on the trap wrests the wheel away: the car yaws on its own and
+   *  slides on reduced grip for this long — enough to cost a corner */
+  trapDurationMs: 2000,
+  /** full period of the involuntary steering sway while trapped */
+  trapYawPeriodMs: 900,
+  /** amplitude of that sway (fraction of full steer) */
+  trapSway: 0.6,
+  /** how much of the player's own steering still gets through while trapped */
+  trapSteerAuthority: 0.4,
+  /** trapped grip = normal grip × this — slippery, but not handbrake-loose */
+  trapGripScale: 0.45,
 }
 
 /** Guns stay cold for this long after GO so the field can spread out. */
