@@ -53,22 +53,27 @@ export class BootScene extends Phaser.Scene {
     const centerX = GAME_WIDTH / 2
     const barY = GAME_HEIGHT / 2 + 60
 
-    text(this, centerX, GAME_HEIGHT / 2 - 90, 'DEATHRALLY', {
-      size: 'hero',
+    // Exact working-title treatment: "DeathRally:" off-white + "Peykan Javanan"
+    // oxide, centred as a pair.
+    const titleY = GAME_HEIGHT / 2 - 90
+    const white = text(this, 0, titleY, 'DeathRally:', {
+      size: 'hero', face: 'display', weight: 700, letterSpacing: 1,
+      color: C.textPrimary, stroke: C.shadow, strokeThickness: 8, origin: [1, 0.5],
+    })
+    const orange = text(this, 0, titleY, ' Peykan Javanan', {
+      size: 'hero', face: 'display', weight: 700, letterSpacing: 1,
+      color: C.oxide, stroke: C.shadow, strokeThickness: 8, origin: [0, 0.5],
+    })
+    const splitX = centerX - (white.width + orange.width) / 2 + white.width
+    white.setX(splitX)
+    orange.setX(splitX)
+
+    const subtitle = text(this, centerX, GAME_HEIGHT / 2 - 20, '·  ORIGINAL COMBAT RACER  ·', {
+      size: 'caption',
       face: 'display',
       weight: 600,
       letterSpacing: 6,
-      color: C.oxide,
-      stroke: C.shadow,
-      strokeThickness: 8,
-      origin: [0.5, 0.5],
-    })
-    const subtitle = text(this, centerX, GAME_HEIGHT / 2 - 20, 'WORKING TITLE', {
-      size: 'caption',
-      face: 'display',
-      weight: 500,
-      letterSpacing: 6,
-      color: C.textMuted,
+      color: C.oxideDim,
       origin: [0.5, 0.5],
     })
     // Slow, low-contrast blink — reads as "still alive", not a flash/strobe.
@@ -118,6 +123,6 @@ export class BootScene extends Phaser.Scene {
     paintGlowTexture(this) // glow-soft: cat-eye reflectors + light pools, kept (separate from pole)
     paintChevronTexture(this)
     paintDebrisTexture(this)
-    this.scene.start('Menu')
+    this.scene.start('Root')
   }
 }

@@ -8,6 +8,7 @@ import '@fontsource/jetbrains-mono/700.css'
 import Phaser from 'phaser'
 import { DEBUG, GAME_WIDTH, GAME_HEIGHT } from './config/game'
 import { BootScene } from './game/scenes/BootScene'
+import { RootScene } from './game/scenes/RootScene'
 import { MenuScene } from './game/scenes/MenuScene'
 import { RaceScene } from './game/scenes/RaceScene'
 import { ResultsScene } from './game/scenes/ResultsScene'
@@ -77,6 +78,7 @@ async function boot() {
     },
     scene: [
       BootScene,
+      RootScene,
       MenuScene,
       NewCareerScene,
       GarageScene,

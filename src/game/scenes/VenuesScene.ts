@@ -1,165 +1,171 @@
 import Phaser from 'phaser'
-import { GAME_HEIGHT, GAME_WIDTH } from '../../config/game'
 import { ALL_TRACKS, type TrackDef } from '../../data/tracks'
 import { catmullRomClosed, closedPolylineLength } from '../../core/track/geometry'
 import { drawTrackMap } from '../ui/trackMap'
-import { C, TIER_COLOR, TIER_LABEL, hex } from '../ui/theme'
-import { backButton, fitImage, flavor, heading, sectionLabel, text } from '../ui/widgets'
+import { C, TIER_COLOR, TIER_LABEL } from '../ui/theme'
+import { text } from '../ui/widgets'
 import { sceneBackground } from '../ui/sceneBackground'
+import { card, carousel, screenTitle, backPlate, type CarouselHandle } from '../ui/mobile'
+import { deferredImage, type DeferredImageHandle } from '../ui/deferredImage'
 import { trackPosterTextureFor } from '../textures/loadedAssets'
-import { whenReady } from '../textures/deferredLoad'
 import { loadCareer } from '../state/saveGame'
 import { formatTime } from '../../core/race/format'
 
 /** Scale from track px to something that reads as a distance. */
 const PX_PER_MILE = 6000
 
-// Poster art is authored portrait 2:3 — it is framed, never cropped to cover.
-const POSTER = { cx: 400, cy: 505, w: 400, h: 600 }
-const MAP = { cx: 1245, cy: 470, w: 1130, h: 520 }
+// The venue art (portrait 2:3 poster) sells the place; the centerline-derived
+// map on the right is the truth of what actually gets driven. Both live inside
+// chamfered plates, chevrons in the gutters, a full-width info plate below.
+const POSTER = { cx: 550, cy: 508, w: 760, h: 684 }
+const MAP = { cx: 1350, cy: 508, w: 800, h: 684 }
+const POSTER_BOX = { w: 700, h: 600 }
+const MAP_DRAW = { cx: 1350, cy: 528, w: 700, h: 520 }
+const INFO = { cx: 1118, cy: 980, w: 1476, h: 104 }
 
 /** A gallery of every venue: the promo poster plus the layout you will drive. */
 export class VenuesScene extends Phaser.Scene {
-  private idx = 0
   private mapGfx!: Phaser.GameObjects.Graphics
-  private frameGfx!: Phaser.GameObjects.Graphics
-  private poster!: Phaser.GameObjects.Image
-  private posterCurrentKey = ''
-  private posterLabel: Phaser.GameObjects.Text | null = null
-  private nameText!: Phaser.GameObjects.Text
-  private metaText!: Phaser.GameObjects.Text
-  private dotsGfx!: Phaser.GameObjects.Graphics
+  private poster!: DeferredImageHandle
+  private info!: Phaser.GameObjects.Container
+  private wheel!: CarouselHandle
 
   constructor() {
     super('Venues')
   }
 
   create() {
-    this.idx = 0
-    const cx = GAME_WIDTH / 2
-
     sceneBackground(this, 'bg-race-ops', { veil: 0.52 })
-    heading(this, cx, 70, 'VENUES')
+    screenTitle(this, 'VENUES')
 
-    // portrait poster frame (left) + the real centerline-derived map (right):
-    // the art sells the venue, the map is the truth of what gets driven
-    this.frameGfx = this.add.graphics()
-    this.poster = this.add.image(POSTER.cx, POSTER.cy, '__DEFAULT').setVisible(false)
-    sectionLabel(this, POSTER.cx - POSTER.w / 2, POSTER.cy - POSTER.h / 2 - 34, 'VENUE POSTER', C.textMuted)
-    sectionLabel(this, MAP.cx - MAP.w / 2, POSTER.cy - POSTER.h / 2 - 34, 'CIRCUIT LAYOUT', C.textMuted)
+    // static plates — drawn once; only their contents change per venue
+    card(this, POSTER.cx, POSTER.cy, POSTER.w, POSTER.h)
+    card(this, MAP.cx, MAP.cy, MAP.w, MAP.h, 'CIRCUIT MAP')
+    card(this, INFO.cx, INFO.cy, INFO.w, INFO.h)
 
+    // poster streams in behind the map graphics; both sit above their plates
+    const firstKey = trackPosterTextureFor(ALL_TRACKS[0].id) ?? '__WHITE'
+    this.poster = deferredImage(this, POSTER.cx, POSTER.cy, firstKey, POSTER_BOX.w, POSTER_BOX.h)
     this.mapGfx = this.add.graphics()
-    this.dotsGfx = this.add.graphics()
+    this.info = this.add.container(0, 0)
 
-    ;[-1, 1].forEach((dir) => {
-      // arrows stay mono: Oswald has no glyph for ◄ / ► and would fall back mid-string
-      const arrow = text(this, cx + dir * 890, GAME_HEIGHT * 0.44, dir < 0 ? '◄' : '►', {
-        size: 'title',
-        color: C.oxide,
-        origin: [0.5, 0.5],
-      }).setInteractive({ useHandCursor: true })
-      arrow.on('pointerdown', () => this.browse(dir))
-      this.tweens.add({ targets: arrow, alpha: 0.35, duration: 900, yoyo: true, repeat: -1 })
+    // visible touch route back; scene keeps its own Esc handler below
+    backPlate(this, 'SINGLE PLAYER', () => this.scene.start('Menu'), { y: INFO.cy })
+
+    // chevrons + dots + swipe live in the carousel; it renders venue `i` for us
+    this.wheel = carousel(this, ALL_TRACKS.length, (i) => this.render(i), {
+      chevronY: POSTER.cy,
+      dotsY: 884,
+      startIndex: 0,
     })
-
-    this.nameText = text(this, cx, GAME_HEIGHT - 220, '', { size: 'heading', origin: [0.5, 0.5] })
-    this.metaText = text(this, cx, GAME_HEIGHT - 155, '', {
-      size: 'action',
-      color: C.textSecondary,
-      align: 'center',
-      lineSpacing: 8,
-      origin: [0.5, 0],
-    })
-
-    flavor(this, cx, GAME_HEIGHT - 60, '←/→ browse · Esc menu')
-
-    backButton(this, () => this.scene.start('Menu'))
 
     const kb = this.input.keyboard!
-    kb.on('keydown-LEFT', () => this.browse(-1))
-    kb.on('keydown-RIGHT', () => this.browse(1))
-    kb.on('keydown-ESC', () => this.scene.start('Menu'))
+    const onLeft = () => this.wheel.prev()
+    const onRight = () => this.wheel.next()
+    const onEsc = () => this.scene.start('Menu')
+    kb.on('keydown-LEFT', onLeft)
+    kb.on('keydown-RIGHT', onRight)
+    kb.on('keydown-ESC', onEsc)
     this.events.on('shutdown', () => {
-      kb.off('keydown-LEFT')
-      kb.off('keydown-RIGHT')
-      kb.off('keydown-ESC')
+      kb.off('keydown-LEFT', onLeft)
+      kb.off('keydown-RIGHT', onRight)
+      kb.off('keydown-ESC', onEsc)
     })
-
-    this.refresh()
   }
 
-  private browse(dir: number) {
-    this.idx = (this.idx + dir + ALL_TRACKS.length) % ALL_TRACKS.length
-    this.refresh()
-  }
-
-  private lapDistance(track: TrackDef): string {
+  private lapDistance(track: TrackDef): number {
     const line = catmullRomClosed(track.controls, track.samplesPerSegment)
-    return (closedPolylineLength(line) / PX_PER_MILE).toFixed(2)
+    return closedPolylineLength(line) / PX_PER_MILE
   }
 
-  private refresh() {
-    const track = ALL_TRACKS[this.idx]
-    const record = loadCareer().records[track.id]
-    const color = TIER_COLOR[track.tier]
+  /** Diagonal hazard stripes in the tier colour — a non-colour-alone tier cue. */
+  private hazardBar(g: Phaser.GameObjects.Graphics, cx: number, cy: number, w: number, color: number) {
+    const h = 12
+    const step = 14
+    g.fillStyle(C.surfaceSunken, 0.9)
+    g.fillRect(cx - w / 2, cy - h / 2, w, h)
+    for (let x = -w / 2; x < w / 2; x += step) {
+      g.fillStyle(color, 0.9)
+      g.beginPath()
+      g.moveTo(cx + x, cy + h / 2)
+      g.lineTo(cx + x + h, cy - h / 2)
+      g.lineTo(cx + x + h + 6, cy - h / 2)
+      g.lineTo(cx + x + 6, cy + h / 2)
+      g.closePath()
+      g.fillPath()
+    }
+    g.lineStyle(1, color, 0.7)
+    g.strokeRect(cx - w / 2, cy - h / 2, w, h)
+  }
 
-    // poster inside its tier-colored plate; contain-fit keeps the 2:3 ratio
-    this.frameGfx.clear()
-    this.frameGfx.fillStyle(C.surfaceSunken, 0.92)
-    this.frameGfx.fillRect(POSTER.cx - POSTER.w / 2 - 10, POSTER.cy - POSTER.h / 2 - 10, POSTER.w + 20, POSTER.h + 20)
-    this.frameGfx.lineStyle(3, color, 0.9)
-    this.frameGfx.strokeRect(POSTER.cx - POSTER.w / 2 - 10, POSTER.cy - POSTER.h / 2 - 10, POSTER.w + 20, POSTER.h + 20)
+  private render(i: number) {
+    const track = ALL_TRACKS[i]
+    const color = TIER_COLOR[track.tier]
+    const record = loadCareer().records[track.id]
+
+    // poster: swap the framed art; hide the image if a venue has no poster
     const posterKey = trackPosterTextureFor(track.id)
-    this.posterCurrentKey = posterKey ?? ''
-    this.posterLabel?.destroy()
-    this.posterLabel = null
-    if (posterKey && this.textures.exists(posterKey)) {
-      this.poster.setTexture(posterKey).setVisible(true)
-      fitImage(this.poster, POSTER.w, POSTER.h)
+    if (posterKey) {
+      this.poster.image.setVisible(true)
+      this.poster.setKey(posterKey, POSTER_BOX.w, POSTER_BOX.h)
     } else {
-      this.poster.setVisible(false)
-      if (posterKey) {
-        // Deferred art still streaming in — the tier-coloured frame above
-        // already reads as a placeholder; label it and swap in once ready.
-        this.posterLabel = text(this, POSTER.cx, POSTER.cy, 'LOADING ART', {
-          size: 'label', color: C.textMuted, origin: [0.5, 0.5],
-        })
-        whenReady([posterKey], () => {
-          // .active guards the scene having shut down before the art landed
-          if (!this.poster.active || this.posterCurrentKey !== posterKey) return
-          this.poster.setTexture(posterKey).setVisible(true)
-          fitImage(this.poster, POSTER.w, POSTER.h)
-          this.posterLabel?.destroy()
-          this.posterLabel = null
-        })
-      }
+      this.poster.image.setVisible(false)
     }
 
+    // circuit map: the same centerline the race is built from, tier-coloured
     this.mapGfx.clear()
     drawTrackMap(this.mapGfx, track, {
-      cx: MAP.cx,
-      cy: MAP.cy,
-      width: MAP.w,
-      height: MAP.h,
+      cx: MAP_DRAW.cx,
+      cy: MAP_DRAW.cy,
+      width: MAP_DRAW.w,
+      height: MAP_DRAW.h,
       color,
       lineWidth: 6,
       showStart: true,
       showSurface: true,
     })
 
-    this.nameText.setText(track.name).setColor(hex(color))
-    const lap = this.lapDistance(track)
-    this.metaText.setText(
-      [`${TIER_LABEL[track.tier]} TIER · ${track.laps} laps · ${lap} mi/lap · ${(Number(lap) * track.laps).toFixed(2)} mi total`, record ? `Record: lap ${record.bestLapMs ? formatTime(record.bestLapMs) : '—'} · race ${record.bestRaceMs ? formatTime(record.bestRaceMs) : '—'} · ${record.wins} wins` : 'No record yet.'].join('\n'),
-    )
+    // rebuild the bottom info plate contents for this venue
+    this.info.removeAll(true)
+    const g = this.add.graphics()
+    this.info.add(g)
 
-    // position dots — which venue you are looking at
-    this.dotsGfx.clear()
-    const dotY = GAME_HEIGHT - 82
-    const startX = GAME_WIDTH / 2 - ((ALL_TRACKS.length - 1) * 26) / 2
-    ALL_TRACKS.forEach((_, i) => {
-      this.dotsGfx.fillStyle(i === this.idx ? C.oxide : C.border, 1)
-      this.dotsGfx.fillCircle(startX + i * 26, dotY, i === this.idx ? 7 : 5)
-    })
+    const lap = this.lapDistance(track)
+    const total = lap * track.laps
+    const bestLap = record?.bestLapMs ? formatTime(record.bestLapMs) : null
+
+    const y = INFO.cy
+    // venue name — big, tier-coloured, sits to the right of the back plate
+    this.info.add(text(this, 400, y, track.name, {
+      size: 'heading', face: 'display', weight: 700, letterSpacing: 2,
+      color, stroke: C.shadow, strokeThickness: 5, origin: [0, 0.5],
+    }))
+
+    // tier chip: label + hazard stripe (colour is never the only signal)
+    const tierCx = 940
+    this.info.add(text(this, tierCx, y - 16, `${TIER_LABEL[track.tier]} TIER`, {
+      size: 'caption', face: 'display', weight: 600, letterSpacing: 2, color, origin: [0.5, 0.5],
+    }))
+    this.hazardBar(g, tierCx, y + 22, 128, color)
+
+    // stat columns: value over label, mono figures, dividers between
+    const cols: { cx: number; value: string; label: string; valueColor?: number }[] = [
+      { cx: 1130, value: `${track.laps}`, label: 'LAPS' },
+      { cx: 1330, value: `${lap.toFixed(2)} MI`, label: 'PER LAP' },
+      { cx: 1530, value: `${total.toFixed(2)} MI`, label: 'TOTAL' },
+      { cx: 1730, value: bestLap ?? 'NO TIME', label: 'BEST LAP', valueColor: bestLap ? C.money : C.textMuted },
+    ]
+    const dividers = [1035, 1230, 1430, 1630]
+    g.lineStyle(1, C.line, 0.8)
+    for (const dx of dividers) g.lineBetween(dx, y - 30, dx, y + 30)
+
+    for (const col of cols) {
+      this.info.add(text(this, col.cx, y - 16, col.value, {
+        size: 'body', face: 'mono', weight: 700, color: col.valueColor ?? C.textPrimary, origin: [0.5, 0.5],
+      }))
+      this.info.add(text(this, col.cx, y + 20, col.label, {
+        size: 'label', face: 'display', weight: 600, letterSpacing: 3, color: C.textMuted, origin: [0.5, 0.5],
+      }))
+    }
   }
 }

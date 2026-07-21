@@ -44,6 +44,20 @@ export const C = {
   border: 0x3a3a46,
   shadow: 0x000000,
 
+  /* --- mobile button / plate bevel language (see ui/mobile.ts) --- */
+  /** notched button body gradient (top -> bottom) */
+  buttonFace: 0x1b1813,
+  buttonFace2: 0x110f0b,
+  /** button body when selected/lifted */
+  buttonFaceSel: 0x241d13,
+  /** bright top-edge bevel hairline */
+  bevelLight: 0x4a453c,
+  /** riveted corner stud */
+  rivet: 0x2c2822,
+  rivetHi: 0x544d40,
+  /** oxide focus glow colour (same hue as oxide, named for intent) */
+  oxideGlow: 0xe07a3c,
+
   danger: 0xd23c2f,
   warn: 0xd0b435,
   ok: 0x3fd07f,

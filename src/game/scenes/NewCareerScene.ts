@@ -1,30 +1,40 @@
 import Phaser from 'phaser'
-import { GAME_HEIGHT, GAME_WIDTH } from '../../config/game'
 import { DEFAULT_PROFILE, type Difficulty, type DriverProfile } from '../../core/progression/career'
 import { STARTING_CASH } from '../../data/economy'
 import { STARTER_CAR } from '../../data/cars'
 import { hasSavedCareer, resetCareer } from '../state/saveGame'
 import { C, hex } from '../ui/theme'
-import { backButton, flavor, heading, panel, text, tile, type TileHandle, wireTiles } from '../ui/widgets'
+import { text } from '../ui/widgets'
 import { sceneBackground } from '../ui/sceneBackground'
 import { deferredImage } from '../ui/deferredImage'
 import { openNativeText } from '../ui/nativeInput'
 import { isTouchDevice } from '../input/device'
+import {
+  backPlate, card, confirmSheet, notchedButton, screenTitle, SAFE, TOUCH,
+  type ButtonHandle, type ConfirmHandle,
+} from '../ui/mobile'
 
 const LIVERIES = [0xf2a33c, 0x3fd07f, 0x4fc3f7, 0xd23c2f, 0xb86fe3, 0xe8e8f0]
 const PORTRAITS = ['visor', 'mohawk', 'respirator']
 const DIFFICULTIES: Difficulty[] = ['street', 'standard', 'hard']
 
+const ROW_LABELS = ['DRIVER NAME', 'PORTRAIT ID', 'WEAPONS', 'DIFFICULTY', 'START CAREER']
+
+// left preview-card geometry
+const PC_X = 400
+const PC_Y = 520
+
 export class NewCareerScene extends Phaser.Scene {
   private firstLaunch = false
   private replacing = false
   private confirmOverwrite = false
+  private confirm?: ConfirmHandle
   private selected = 0
   private name = DEFAULT_PROFILE.driverName
   private portrait = 0
   private weapons = true
   private difficulty = 1
-  private rows: TileHandle[] = []
+  private rows: ButtonHandle[] = []
   private info!: Phaser.GameObjects.Text
   private nameText!: Phaser.GameObjects.Text
   private portraitGfx!: Phaser.GameObjects.Graphics
@@ -39,44 +49,45 @@ export class NewCareerScene extends Phaser.Scene {
 
   create() {
     this.confirmOverwrite = false
+    this.confirm = undefined
     this.selected = 0
     this.rows = []
-    const cx = GAME_WIDTH / 2
-    sceneBackground(this, 'bg-profile', { veil: 0.34 })
-    heading(this, cx, 75, 'DRIVER PROFILE')
-    text(this, cx, 130, 'Build an identity for this career. Settings and controls are kept separately.', {
-      size: 'body', color: C.textSecondary, origin: [0.5, 0.5],
-    })
+    sceneBackground(this, 'bg-profile', { veil: 0.4 })
 
-    panel(this, 520, 500, 650, 690, { stroke: C.border, strokeAlpha: 1 })
+    screenTitle(this, 'DRIVER PROFILE', { x: SAFE.left, y: 96 })
+
+    // ---- left preview card: car + portrait badge + starter note ----
+    card(this, PC_X, PC_Y, 560, 620, undefined, { accent: C.oxideDim })
+    deferredImage(this, PC_X, PC_Y - 150, `car-hero-${STARTER_CAR.id}`, 420, 260)
     this.portraitGfx = this.add.graphics()
-    deferredImage(this, 520, 440, `car-hero-${STARTER_CAR.id}`, 300, 220)
-    this.nameText = text(this, 520, 590, '', { size: 'heading', origin: [0.5, 0.5] })
-    this.info = text(this, 520, 670, '', { size: 'body', color: C.textBody, align: 'center', lineSpacing: 9, origin: [0.5, 0] })
-
-    ;['DRIVER NAME', 'PORTRAIT ID', 'WEAPONS', 'DIFFICULTY', 'START CAREER'].forEach((label, i) => {
-      this.rows.push(tile(this, 1320, 265 + i * 105, 760, 76, label, { accent: i === 4 ? C.oxideDim : undefined }))
+    this.nameText = text(this, PC_X, PC_Y + 130, '', { size: 'heading', face: 'display', weight: 700, origin: [0.5, 0.5] })
+    this.info = text(this, PC_X, PC_Y + 180, '', {
+      size: 'bodySm', color: C.textBody, align: 'center', lineSpacing: 8, origin: [0.5, 0], wordWrapWidth: 500,
     })
 
-    // driver name entry has no on-screen keyboard here — tap only focuses that row.
-    // the other rows step their value forward on tap; START CAREER tap mirrors Enter.
-    wireTiles(
-      this.rows,
-      (i) => { if (!this.confirmOverwrite) { this.selected = i; this.refresh() } },
-      (i) => {
-        // during the overwrite prompt, keyboard only commits on an exact Y/Enter and
-        // ignores every other key — so only a tap on START CAREER (row 4) may commit;
-        // taps on rows 0-3 are ignored, exactly like non-Y/Enter keys.
-        if (this.confirmOverwrite) { if (i === 4) this.commit(); return }
-        this.selected = i
-        this.activateSelected()
-      },
-    )
-    // Escape does nothing on first launch (no career exists yet to go back to) —
-    // match that by only offering the tap affordance when there is somewhere to go.
-    if (!this.firstLaunch) backButton(this, () => this.escapeAction())
+    // ---- right form rows (0..3) + full-width START CAREER (4) ----
+    const rowX = 1300
+    const rowW = 1040
+    for (let i = 0; i < 4; i++) {
+      this.rows.push(notchedButton(this, rowX, 280 + i * 120, {
+        w: rowW, h: TOUCH.minH + 12, label: ROW_LABELS[i], value: '', valueColor: C.oxide, size: 'action', align: 'left',
+        onFocus: () => { if (!this.confirmOverwrite) { this.selected = i; this.refresh() } },
+        onActivate: () => { if (!this.confirmOverwrite) { this.selected = i; this.activateSelected() } },
+      }))
+    }
+    this.rows.push(notchedButton(this, rowX, 812, {
+      w: rowW, h: 108, label: 'START CAREER', size: 'title', align: 'center', variant: 'primary',
+      onActivate: () => { if (!this.confirmOverwrite) { this.selected = 4; this.requestCommit() } },
+      onFocus: () => { if (!this.confirmOverwrite) { this.selected = 4; this.refresh() } },
+    }))
 
-    flavor(this, cx, GAME_HEIGHT - 52, 'Type to edit name · ←/→ change · ↑/↓ navigate · Enter confirm · Esc back')
+    text(this, rowX, 900, `Starter car · $${STARTING_CASH.toLocaleString('en-US')} starting cash`, {
+      size: 'bodySm', face: 'mono', color: C.textSecondary, origin: [0.5, 0.5],
+    })
+
+    // back only when replacing an existing career (first launch must complete)
+    if (!this.firstLaunch) backPlate(this, 'SINGLE PLAYER', () => this.escapeAction(), { x: SAFE.left + 150 })
+
     const kb = this.input.keyboard!
     const onKey = (event: KeyboardEvent) => this.handleKey(event)
     kb.on('keydown', onKey)
@@ -84,13 +95,12 @@ export class NewCareerScene extends Phaser.Scene {
       kb.off('keydown', onKey)
       this.disposeNativeInput?.()
       this.disposeNativeInput = undefined
+      this.confirm?.destroy()
     })
     this.refresh()
   }
 
   private handleKey(event: KeyboardEvent) {
-    // while the native (OS) keyboard owns name entry, ignore physical keys so
-    // characters aren't counted twice (once via the input, once here).
     if (this.disposeNativeInput) return
     if (this.confirmOverwrite) {
       if (event.code === 'KeyY' || event.code === 'Enter') this.commit()
@@ -108,17 +118,11 @@ export class NewCareerScene extends Phaser.Scene {
     this.refresh()
   }
 
-  /** Exactly what Escape does today: cancel an overwrite prompt, or (outside first launch) leave. */
   private escapeAction() {
-    if (this.confirmOverwrite) { this.confirmOverwrite = false; this.refresh(); return }
+    if (this.confirmOverwrite) { this.dismissConfirm(); return }
     if (!this.firstLaunch) this.scene.start('Menu')
   }
 
-  /**
-   * What tapping a selected row does when NOT in the overwrite prompt (that case is
-   * handled by the wireTiles onActivate against the tapped index). START CAREER mirrors
-   * Enter; other rows step their value forward. Never reached from the keyboard path.
-   */
   private activateSelected() {
     if (isTouchDevice() && this.selected === 0) {
       this.disposeNativeInput?.()
@@ -143,8 +147,29 @@ export class NewCareerScene extends Phaser.Scene {
 
   private requestCommit() {
     if (!this.name.trim()) return
-    if (this.replacing) { this.confirmOverwrite = true; this.refresh(); return }
+    if (this.replacing) { this.openConfirm(); return }
     this.commit()
+  }
+
+  private openConfirm() {
+    this.confirmOverwrite = true
+    this.refresh()
+    this.confirm = confirmSheet(this, {
+      title: 'OVERWRITE EXISTING CAREER?',
+      body: 'This permanently replaces your current career progress, economy, damage and records. Settings are kept.',
+      cancelLabel: 'CANCEL',
+      confirmLabel: 'OVERWRITE',
+      danger: true,
+      onCancel: () => this.dismissConfirm(),
+      onConfirm: () => this.commit(),
+    })
+  }
+
+  private dismissConfirm() {
+    this.confirm?.destroy()
+    this.confirm = undefined
+    this.confirmOverwrite = false
+    this.refresh()
   }
 
   private commit() {
@@ -161,33 +186,42 @@ export class NewCareerScene extends Phaser.Scene {
     this.nameText.setText(this.name || 'TYPE A NAME').setColor(hex(this.name ? C.oxide : C.textDisabled))
     const difficulty = DIFFICULTIES[this.difficulty]
     this.info.setText([
-      `Portrait: ${PORTRAITS[this.portrait].toUpperCase()}`,
-      `${STARTER_CAR.name} · $${STARTING_CASH} starting cash`,
-      this.weapons ? 'Combat and black market enabled.' : 'Clean racing: weapons and black market disabled.',
-      difficulty === 'street' ? 'Street: forgiving rival pace.' : difficulty === 'hard' ? 'Hard: faster, less forgiving rivals.' : 'Standard: intended career balance.',
-      this.confirmOverwrite ? '\nOVERWRITE EXISTING CAREER? Enter/Y confirm · Esc/N cancel' : '',
-    ].filter(Boolean).join('\n'))
-    const labels = ['DRIVER NAME', 'PORTRAIT ID', 'WEAPONS', 'DIFFICULTY', 'START CAREER']
-    const values = [this.name || 'TYPE…', PORTRAITS[this.portrait].toUpperCase(), this.weapons ? 'ENABLED' : 'DISABLED', difficulty.toUpperCase(), this.confirmOverwrite ? 'CONFIRM OVERWRITE?' : 'START CAREER']
-    this.rows.forEach((row, i) => { row.label.setText(`${labels[i]}\n${values[i]}`); row.setState(i === this.selected, i !== 4 || !!this.name.trim()) })
+      `${STARTER_CAR.name}`,
+      this.weapons ? 'Combat + black market enabled.' : 'Clean racing: weapons off.',
+      difficulty === 'street' ? 'Street: forgiving rival pace.' : difficulty === 'hard' ? 'Hard: faster, less forgiving rivals.' : 'Standard: intended balance.',
+    ].join('\n'))
+
+    const values = [
+      this.name || 'TYPE…',
+      PORTRAITS[this.portrait].toUpperCase(),
+      this.weapons ? 'ENABLED' : 'DISABLED',
+      difficulty.toUpperCase(),
+    ]
+    for (let i = 0; i < 4; i++) {
+      this.rows[i].setValue(`${values[i]}   ${i === 0 ? '' : '‹ ›'}`, i === 2 ? (this.weapons ? C.money : C.textMuted) : C.oxide)
+      this.rows[i].setState({ selected: i === this.selected, enabled: true })
+    }
+    this.rows[4].setState({ selected: this.selected === 4, enabled: !!this.name.trim() })
   }
 
   private drawPortrait() {
     const gfx = this.portraitGfx
     const color = C.oxide
+    const cx = PC_X
+    const top = PC_Y - 10
     gfx.clear()
-    gfx.fillStyle(0x14141c, 1).fillRoundedRect(440, 175, 160, 130, 10)
-    gfx.lineStyle(3, color, 0.8).strokeRoundedRect(440, 175, 160, 130, 10)
-    gfx.fillStyle(0x272733, 1).fillCircle(520, 225, 36)
-    gfx.fillStyle(0x272733, 1).fillRoundedRect(475, 260, 90, 35, 12)
+    gfx.fillStyle(0x14141c, 1).fillRoundedRect(cx - 80, top, 160, 130, 10)
+    gfx.lineStyle(3, color, 0.8).strokeRoundedRect(cx - 80, top, 160, 130, 10)
+    gfx.fillStyle(0x272733, 1).fillCircle(cx, top + 50, 36)
+    gfx.fillStyle(0x272733, 1).fillRoundedRect(cx - 45, top + 85, 90, 35, 12)
     if (PORTRAITS[this.portrait] === 'visor') {
-      gfx.fillStyle(color, 1).fillRoundedRect(486, 214, 68, 17, 5)
+      gfx.fillStyle(color, 1).fillRoundedRect(cx - 34, top + 39, 68, 17, 5)
     } else if (PORTRAITS[this.portrait] === 'mohawk') {
-      gfx.fillStyle(color, 1).fillTriangle(495, 197, 520, 174, 545, 197)
-      gfx.fillStyle(0x09090d, 1).fillRect(493, 216, 18, 7).fillRect(529, 216, 18, 7)
+      gfx.fillStyle(color, 1).fillTriangle(cx - 25, top + 22, cx, top - 1, cx + 25, top + 22)
+      gfx.fillStyle(0x09090d, 1).fillRect(cx - 27, top + 41, 18, 7).fillRect(cx + 9, top + 41, 18, 7)
     } else {
-      gfx.fillStyle(0x09090d, 1).fillRoundedRect(490, 218, 60, 25, 8)
-      gfx.lineStyle(4, color, 1).lineBetween(500, 244, 486, 272).lineBetween(540, 244, 554, 272)
+      gfx.fillStyle(0x09090d, 1).fillRoundedRect(cx - 30, top + 43, 60, 25, 8)
+      gfx.lineStyle(4, color, 1).lineBetween(cx - 20, top + 69, cx - 34, top + 97).lineBetween(cx + 20, top + 69, cx + 34, top + 97)
     }
   }
 }

@@ -6,12 +6,16 @@ import { isValidRoomCode, normalizeRoomCode } from '../../core/net/roomCode'
 import { NetClient } from '../net/netClient'
 import type { ServerMsg } from '../../core/net/protocol'
 import { C, hex } from '../ui/theme'
-import { backButton, fitImage, flavor, heading, tile, text, type TileHandle, wireTiles } from '../ui/widgets'
+import { fitImage, text } from '../ui/widgets'
 import { sceneBackground } from '../ui/sceneBackground'
 import { artToCanvas } from '../ui/backgroundTransform'
 import { posterTextureFor } from '../textures/loadedAssets'
 import { openNativeText } from '../ui/nativeInput'
 import { isTouchDevice } from '../input/device'
+import * as glyph from '../ui/glyphs'
+import {
+  backPlate, notchedButton, screenTitle, SAFE, TOUCH, type ButtonHandle,
+} from '../ui/mobile'
 
 const NAME_KEY = 'deathrally-mp-name'
 const CAR_KEY = 'deathrally-mp-car'
@@ -35,9 +39,12 @@ const JOIN_ROW = 5
 // space through the background's cover transform at create time.
 const POSTER_FRAME = { cx: 1224, cy: 486, w: 300, h: 505 }
 
-// The template's clean menu zone is centre-left; the form column sits there so
-// it never runs under the poster frame.
-const FORM_CX = 820
+// Left form column geometry (kept clear of the baked poster frame on the right).
+const FORM_W = 820
+const FORM_CX = SAFE.left + FORM_W / 2
+
+// Field-row glyphs (labels always accompany them, so meaning never rests on the icon).
+const ROW_GLYPHS = [glyph.skull, glyph.tire, glyph.spray, glyph.pin]
 
 /**
  * Career-independent entry point for online quick-race: pick a driver name and
@@ -51,9 +58,10 @@ export class MultiplayerScene extends Phaser.Scene {
   private liveryIndex = 0
   private code = ''
   private busy = false
-  private rows: TileHandle[] = []
+  private rows: ButtonHandle[] = []
   private statusText!: Phaser.GameObjects.Text
   private helperText!: Phaser.GameObjects.Text
+  private previewLabel!: Phaser.GameObjects.Text
   private carArt!: Phaser.GameObjects.Image
   private posterMaxW = 0
   private posterMaxH = 0
@@ -101,31 +109,62 @@ export class MultiplayerScene extends Phaser.Scene {
     this.code = ''
 
     const cx = FORM_CX
-    const bg = sceneBackground(this, 'bg-mp', { veil: 0.3 })
+    const bg = sceneBackground(this, 'bg-mp', { veil: 0.42 })
 
-    heading(this, cx, 100, 'MULTIPLAYER · QUICK RACE')
-    text(this, cx, 155, 'Career progress is untouched — this is a standalone quick race.', {
-      size: 'body', color: C.textSecondary, origin: [0.5, 0.5],
+    // ---- title + standalone-mode note ----
+    screenTitle(this, 'MULTIPLAYER · QUICK RACE', { x: SAFE.left, y: 108 })
+    text(this, SAFE.left, 176, '⚠  CAREER PROGRESS IS UNTOUCHED', {
+      size: 'caption', face: 'display', weight: 600, letterSpacing: 3, color: C.oxide, origin: [0, 0.5],
     })
 
-    this.rows.push(tile(this, cx, 270, 900, 90, '', { size: 'action' }))
-    this.rows.push(tile(this, cx, 380, 900, 90, '', { size: 'action' }))
-    this.rows.push(tile(this, cx, 490, 900, 90, '', { size: 'action' }))
-    this.rows.push(tile(this, cx, 600, 900, 90, '', { size: 'action' }))
-    this.rows.push(tile(this, cx, 710, 900, 90, '', { accent: C.oxideDim }))
-    this.rows.push(tile(this, cx, 840, 900, 90, ''))
+    // ---- field rows (0..3): label left, value right, with a leading glyph ----
+    const rowH = TOUCH.minH + 8
+    const rowY = [300, 412, 524, 636]
+    const rowLabels = ['DRIVER NAME', 'CAR', 'LIVERY', 'ROOM CODE']
+    for (let i = 0; i < 4; i++) {
+      this.rows.push(notchedButton(this, cx, rowY[i], {
+        w: FORM_W, h: rowH, label: rowLabels[i], value: '', valueColor: C.textPrimary,
+        glyph: ROW_GLYPHS[i], size: 'action', align: 'left',
+        onFocus: () => { this.selected = i; this.refresh() },
+        onActivate: () => { this.selected = i; this.activateSelected() },
+      }))
+    }
 
-    this.helperText = text(this, cx, 775, '', { size: 'caption', color: C.textSecondary, origin: [0.5, 0.5] })
+    // caption under ROOM CODE (dynamic CREATE-mode note lives here)
+    this.helperText = text(this, cx, 700, '', {
+      size: 'caption', color: C.textSecondary, origin: [0.5, 0.5],
+    })
 
-    // the selected livery's poster, inside the frame baked into the template art
+    // ---- two equally-prominent primary actions: CREATE ROOM · JOIN ROOM ----
+    const actW = (FORM_W - 20) / 2
+    const actH = 104
+    const actY = 792
+    this.rows.push(notchedButton(this, cx - actW / 2 - 10, actY, {
+      w: actW, h: actH, label: 'CREATE ROOM', size: 'title', align: 'center', variant: 'primary',
+      onFocus: () => { this.selected = CREATE_ROW; this.refresh() },
+      onActivate: () => { this.selected = CREATE_ROW; this.activateSelected() },
+    }))
+    this.rows.push(notchedButton(this, cx + actW / 2 + 10, actY, {
+      w: actW, h: actH, label: 'JOIN ROOM', size: 'title', align: 'center', variant: 'primary',
+      onFocus: () => { this.selected = JOIN_ROW; this.refresh() },
+      onActivate: () => { this.selected = JOIN_ROW; this.activateSelected() },
+    }))
+
+    // status / error line, under the actions
+    this.statusText = text(this, cx, 880, '', {
+      size: 'body', color: C.danger, origin: [0.5, 0.5], wordWrapWidth: FORM_W, align: 'center',
+    })
+
+    // ---- car poster, inside the frame baked into the template art ----
     const t = bg.transform()
     const frameCenter = artToCanvas(t, POSTER_FRAME.cx, POSTER_FRAME.cy)
     this.posterMaxW = POSTER_FRAME.w * t.scale
     this.posterMaxH = POSTER_FRAME.h * t.scale
     this.carArt = this.add.image(frameCenter.x, frameCenter.y, posterTextureFor(this.currentCar().id, this.livery))
     fitImage(this.carArt, this.posterMaxW, this.posterMaxH)
-
-    this.statusText = text(this, cx, 920, '', { size: 'body', color: C.danger, origin: [0.5, 0.5], wordWrapWidth: 900, align: 'center' })
+    this.previewLabel = text(this, frameCenter.x, frameCenter.y + this.posterMaxH / 2 + 26, '', {
+      size: 'bodySm', face: 'mono', color: C.textSecondary, origin: [0.5, 0.5],
+    })
 
     // deep link: prefill + focus JOIN when the URL carries a valid ?room= code
     const roomParam = new URLSearchParams(window.location.search).get('room')
@@ -137,14 +176,11 @@ export class MultiplayerScene extends Phaser.Scene {
       }
     }
 
-    wireTiles(
-      this.rows,
-      (i) => { this.selected = i; this.refresh() },
-      (i) => { this.selected = i; this.activateSelected() },
-    )
-    backButton(this, () => this.backToMenu())
+    backPlate(this, 'MAIN', () => this.backToMenu())
 
-    flavor(this, cx, GAME_HEIGHT - 52, 'Type to edit name/code · ←/→ change car/livery · ↑/↓ navigate · Enter select · Esc back')
+    text(this, cx, GAME_HEIGHT - 30, 'Type to edit name/code · ←/→ change car/livery · ↑/↓ navigate · Enter select · Esc back', {
+      size: 'caption', color: C.textMuted, origin: [0.5, 0.5],
+    })
 
     const kb = this.input.keyboard!
     const onKey = (event: KeyboardEvent) => this.handleKey(event)
@@ -304,7 +340,9 @@ export class MultiplayerScene extends Phaser.Scene {
   private backToMenu() {
     this.pendingNet?.close()
     this.pendingNet = undefined
-    this.scene.start('Menu')
+    // Multiplayer is a Root-level branch now (Root → Multiplayer), so MAIN
+    // returns to Root — not the Single Player hub, which requires a career.
+    this.scene.start('Root')
   }
 
   private setStatus(message: string) {
@@ -317,28 +355,35 @@ export class MultiplayerScene extends Phaser.Scene {
     const variant = variants[this.liveryIndex] ?? variants[0]
     const canCycleLivery = variants.length > 1
 
-    this.rows[NAME_ROW].label.setText(`DRIVER NAME\n${this.name || 'TYPE A NAME'}`)
-    this.rows[CAR_ROW].label.setText(`CAR\n◄ ${car.name} ►`)
-    this.rows[LIVERY_ROW].label.setText(
-      canCycleLivery ? `LIVERY\n◄ ${variant.label} ►` : `LIVERY\n${variant.label}`,
-    )
-    this.rows[CODE_ROW].label.setText(`ROOM CODE — TO JOIN A FRIEND\n${this.code || 'e.g. TIGER-42'}`)
-    this.rows[CREATE_ROW].label.setText(this.busy ? 'CONNECTING…' : 'CREATE ROOM')
-    this.rows[JOIN_ROW].label.setText(this.busy ? 'CONNECTING…' : 'JOIN ROOM')
+    // field-row values (label stays static; value carries the current choice)
+    const nameSet = this.name.length > 0
+    this.rows[NAME_ROW].setValue(nameSet ? this.name : 'TYPE A NAME', nameSet ? C.textPrimary : C.textMuted)
+    this.rows[CAR_ROW].setValue(`‹  ${car.name}  ›`, C.oxide)
+    this.rows[LIVERY_ROW].setValue(canCycleLivery ? `‹  ${variant.label}  ›` : variant.label, canCycleLivery ? C.oxide : C.textSecondary)
+    const codeSet = this.code.length > 0
+    const codeMuted = this.selected === CREATE_ROW || !codeSet
+    this.rows[CODE_ROW].setValue(codeSet ? this.code : 'e.g. TIGER-42', codeMuted ? C.textMuted : C.textPrimary)
+
+    this.rows[CREATE_ROW].setLabel(this.busy ? 'CONNECTING…' : 'CREATE ROOM')
+    this.rows[JOIN_ROW].setLabel(this.busy ? 'CONNECTING…' : 'JOIN ROOM')
 
     this.rows.forEach((row, i) => {
       const enabled =
         i === CREATE_ROW || i === JOIN_ROW ? !this.busy : i === LIVERY_ROW ? canCycleLivery : true
-      row.setState(i === this.selected, enabled)
+      row.setState({ selected: i === this.selected, enabled })
     })
 
-    // the typed code is only ever read by JOIN — grey it out so it never
-    // reads as an input CREATE ROOM will pick up.
-    if (this.selected === CREATE_ROW) this.rows[CODE_ROW].label.setColor(hex(C.textMuted))
-    this.helperText.setText(this.selected === CREATE_ROW ? 'a fresh code will be generated for you' : '')
+    // the typed code is only ever read by JOIN — annotate CREATE so the code
+    // never reads as an input CREATE ROOM will pick up.
+    this.helperText.setText(
+      this.selected === CREATE_ROW
+        ? 'CREATE generates a fresh room code for you'
+        : 'ROOM CODE joins a friend’s room — needed only for JOIN',
+    )
 
     this.carArt.setTexture(posterTextureFor(car.id, this.livery))
     fitImage(this.carArt, this.posterMaxW, this.posterMaxH)
+    this.previewLabel.setText(`${car.name.toUpperCase()} · ${variant.label.toUpperCase()}`)
 
     this.statusText.setColor(hex(C.danger))
   }

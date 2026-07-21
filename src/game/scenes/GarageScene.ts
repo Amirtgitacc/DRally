@@ -1,134 +1,63 @@
 import Phaser from 'phaser'
-import { GAME_HEIGHT, GAME_WIDTH } from '../../config/game'
 import { CAR_CATALOG, carById } from '../../data/cars'
-import { REPAIR_STEP_PERCENT, type UpgradeKind } from '../../data/economy'
+import { type UpgradeKind } from '../../data/economy'
 import { buyUpgrade, repairStep, repairStepCost, upgradeCost } from '../../core/economy/garage'
-import { fittedDeltas, upgradeLabel } from '../../core/economy/upgradeEffects'
 import { effectiveCarSpec } from '../../core/vehicle/carSpec'
+import { playerRank } from '../../core/progression/ladder'
 import type { CareerState } from '../../core/progression/career'
 import { loadCareer, saveCareer } from '../state/saveGame'
 import { C, hex } from '../ui/theme'
-import {
-  backButton,
-  flavor,
-  hazardBar,
-  heading,
-  hintBar,
-  panel,
-  pips,
-  rule,
-  sectionLabel,
-  statBar,
-  text,
-  tile,
-  type TileHandle,
-  wireTiles,
-} from '../ui/widgets'
+import { text } from '../ui/widgets'
 import { sceneBackground } from '../ui/sceneBackground'
 import { deferredImage, type DeferredImageHandle } from '../ui/deferredImage'
+import {
+  backPlate, card, notchedButton, screenTitle, statusStrip, SAFE,
+  type ButtonHandle, type StatusStripHandle,
+} from '../ui/mobile'
+import * as glyph from '../ui/glyphs'
 
 const MPH_PER_PX = 0.14
 
-/**
- * Layout spine. The scene used to scatter magic offsets around `cx`; these are
- * the two axes everything actually hangs off.
- */
-const LX = 620 // left column: car, name, bars, info all centre here
-const PANEL_X = 1670
-const PANEL_Y = 420 // was 400 — recenters the taller content
-const PANEL_W = 400
-const PANEL_H = 520 // was 480 — fits stats + divider + 3 pip rows with margin
-const PANEL_LEFT = PANEL_X - PANEL_W / 2 + 50
-
-const BAR_W = 340
-const BAR_X = LX - BAR_W / 2 // bar track centres on the car above it
-
-/** Middle column: what you drive, and what you're carrying into the next race. */
-const MID_X = 1150
-const CARD_W = 520
-const CARD_LEFT = MID_X - CARD_W / 2 + 30
-const CARD_RIGHT = MID_X + CARD_W / 2 - 30
-const LOADOUT_TOP = 570
-const LOADOUT_STEP = 34
-const BAR_TOP = 520
-const BAR_STEP = 35
-
-const PIP_TOP = 560 // was 500 — clear the 9-line stats block above it
-const PIP_STEP = 40
-
-const TILE_Y = 880
-const TILE_H = 96
-const TILE_W = 180
-const RACE_W = 240
-const LIVERY_W = 260
-const TILE_GAP = 12
-const GROUP_GAP = 40
-
-/** `group` drives the gaps in the tile row: buying, then navigating, then racing. */
+/** The bottom action dock. `group` drives row placement + emphasis. */
 interface Tile {
   id: 'repair' | 'engine' | 'tires' | 'armor' | 'market' | 'buycar' | 'livery' | 'race'
   label: string
-  group: 'buy' | 'nav' | 'go'
+  glyph: glyph.Glyph
+  row: 0 | 1
 }
 
 const TILES: Tile[] = [
-  { id: 'repair', label: 'REPAIR', group: 'buy' },
-  { id: 'engine', label: 'ENGINE', group: 'buy' },
-  { id: 'tires', label: 'TIRES', group: 'buy' },
-  { id: 'armor', label: 'ARMOR', group: 'buy' },
-  { id: 'market', label: 'MARKET', group: 'nav' },
-  { id: 'buycar', label: 'BUY CAR', group: 'nav' },
-  { id: 'livery', label: 'LIVERY', group: 'nav' },
-  { id: 'race', label: 'RACE', group: 'go' },
+  { id: 'repair', label: 'REPAIR', glyph: glyph.wrench, row: 0 },
+  { id: 'engine', label: 'ENGINE', glyph: glyph.engine, row: 0 },
+  { id: 'tires', label: 'TIRES', glyph: glyph.tire, row: 0 },
+  { id: 'armor', label: 'ARMOR', glyph: glyph.shield, row: 0 },
+  { id: 'market', label: 'MARKET', glyph: glyph.cart, row: 1 },
+  { id: 'buycar', label: 'BUY CAR', glyph: glyph.cart, row: 1 },
+  { id: 'livery', label: 'LIVERY', glyph: glyph.spray, row: 1 },
+  { id: 'race', label: 'RACE', glyph: glyph.flag, row: 1 },
 ]
 
-/** Lay the row out once: widths differ, and groups are separated by a wider gap. */
-function tileLayout(): Array<{ x: number; w: number }> {
-  const widths: number[] = TILES.map((t) => (t.id === 'race' ? RACE_W : t.id === 'livery' ? LIVERY_W : TILE_W))
-  const gaps: number[] = TILES.map((t, i) =>
-    i === TILES.length - 1 ? 0 : TILES[i + 1].group !== t.group ? GROUP_GAP : TILE_GAP,
-  )
-  const total = widths.reduce((a, b) => a + b, 0) + gaps.reduce((a, b) => a + b, 0)
-
-  let cursor = (GAME_WIDTH - total) / 2
-  return widths.map((w, i) => {
-    const x = cursor + w / 2
-    cursor += w + gaps[i]
-    return { x, w }
-  })
-}
-
-/** Race-affecting gear, always on screen — it used to hide inside the MARKET tile caption. */
-const LOADOUT_ROWS = ['MINES', 'RAM PLATING', 'OVERCHARGE', 'SABOTAGE', 'LOANSHARK'] as const
-
-const FLAVOR = [
-  'The mechanic wipes his hands on your invoice.',
-  'Everything here is street legal somewhere.',
-  'Warranty void the moment you leave the garage. And also before that.',
-  'Fresh paint hides old sins.',
-]
-
-/** The three stat bars, and where each reads from the effective car spec. */
 const BAR_STATS = ['topSpeed', 'accel', 'grip'] as const
 type BarStat = (typeof BAR_STATS)[number]
+const BAR_LABEL: Record<BarStat, string> = { topSpeed: 'SPEED', accel: 'ACCEL', grip: 'GRIP' }
+
+// left stat-card geometry
+const LC_X = 270
+const LC_Y = 470
+const LC_W = 440
+const LC_H = 396
 
 export class GarageScene extends Phaser.Scene {
   private career!: CareerState
   private selected = 0
 
   private carImageHandle!: DeferredImageHandle
-  private carNameText!: Phaser.GameObjects.Text
-  private infoText!: Phaser.GameObjects.Text
-  private statsText!: Phaser.GameObjects.Text
-  private pipsGfx!: Phaser.GameObjects.Graphics
-  private compareGfx!: Phaser.GameObjects.Graphics
-  private tiles: TileHandle[] = []
-  private fittedTexts: Phaser.GameObjects.Text[] = []
-  private blurbText!: Phaser.GameObjects.Text
-  private massText!: Phaser.GameObjects.Text
-  private capsText!: Phaser.GameObjects.Text
+  private buttons: ButtonHandle[] = []
+  private statBarGfx!: Phaser.GameObjects.Graphics
+  private status!: StatusStripHandle
   private loadoutValues: Phaser.GameObjects.Text[] = []
-  /** animated bar fills, tweened toward the real ratios after a purchase */
+  private chassisText!: Phaser.GameObjects.Text
+  private carNameText!: Phaser.GameObjects.Text
   private barFill: Record<BarStat, number> = { topSpeed: 0, accel: 0, grip: 0 }
 
   constructor() {
@@ -137,130 +66,123 @@ export class GarageScene extends Phaser.Scene {
 
   create() {
     this.career = loadCareer()
-    sceneBackground(this, 'bg-garage', { veil: 0.32 })
-    this.selected = 0
-    this.tiles = []
-    this.fittedTexts = []
+    this.selected = TILES.findIndex((t) => t.id === 'race')
+    this.buttons = []
     this.loadoutValues = []
 
-    const cx = GAME_WIDTH / 2
+    sceneBackground(this, 'bg-garage', { veil: 0.34 })
 
-    heading(this, cx, 70, 'THE GARAGE')
-    hazardBar(this, cx - 240, 108, 480)
-
-    // car display — the left column's anchor
-    this.carImageHandle = deferredImage(this, LX, 320, `car-hero-${this.career.carId}`, 520, 300)
-    this.carNameText = text(this, LX, 470, '', { size: 'subtitle', origin: [0.5, 0.5] })
-
-    // your car's stat bars, with the exact gain each fitted upgrade bought you
-    this.compareGfx = this.add.graphics()
-    const statLabels = ['SPEED', 'ACCEL', 'GRIP']
-    statLabels.forEach((label, row) => {
-      const y = BAR_TOP + row * BAR_STEP
-      text(this, BAR_X - 90, y - 4, label, { size: 'label', color: C.textSecondary })
-      this.fittedTexts.push(text(this, BAR_X + BAR_W + 20, y - 4, '', { size: 'label', color: C.money }))
+    screenTitle(this, 'THE GARAGE', { x: SAFE.left, y: 96 })
+    const rankLabel = this.career.champion ? 'CHAMPION' : `RANK #${playerRank(this.career.ladder, this.career.points)}`
+    this.status = statusStrip(this, this.career.profile.driverName.toUpperCase(), rankLabel, this.career.cash, {
+      onSettings: () => this.scene.start('Settings', { from: 'Garage' }),
     })
 
-    // info box, directly under the bars it describes. The wrap width is bounded
-    // by the CHASSIS card's left edge — 660 ran text underneath it.
-    this.infoText = text(this, LX, 650, '', {
-      size: 'body',
-      color: C.textBody,
-      align: 'center',
-      wordWrapWidth: 520,
-      origin: [0.5, 0],
+    // hero car, floating centre
+    this.carImageHandle = deferredImage(this, 940, 430, `car-hero-${this.career.carId}`, 640, 400)
+
+    // left stat card: name + segmented SPEED/ACCEL/GRIP bars
+    card(this, LC_X, LC_Y, LC_W, LC_H, undefined, { accent: C.oxideDim })
+    this.carNameText = text(this, LC_X - LC_W / 2 + 26, LC_Y - LC_H / 2 + 34, '', {
+      size: 'heading', face: 'display', weight: 700, letterSpacing: 1, color: C.textPrimary, origin: [0, 0.5],
     })
-
-    // ---- middle column: chassis dossier ----
-    panel(this, MID_X, 330, CARD_W, 300, { stroke: C.border, strokeAlpha: 1 })
-    sectionLabel(this, CARD_LEFT, 205, 'CHASSIS')
-    this.blurbText = text(this, CARD_LEFT, 248, '', {
-      size: 'caption',
-      color: C.textBody,
-      wordWrapWidth: CARD_W - 60,
-      lineSpacing: 6,
-    })
-    rule(this, CARD_LEFT, CARD_RIGHT, 358)
-    text(this, CARD_LEFT, 375, 'MASS', { size: 'label', color: C.textSecondary })
-    this.massText = text(this, CARD_LEFT + 180, 375, '', { size: 'label' })
-    text(this, CARD_LEFT, 407, 'UPGRADE CAPS', { size: 'label', color: C.textSecondary })
-    this.capsText = text(this, CARD_LEFT + 180, 407, '', { size: 'label' })
-
-    // ---- middle column: what you carry into the next race ----
-    panel(this, MID_X, 630, CARD_W, 260, { stroke: C.border, strokeAlpha: 1 })
-    sectionLabel(this, CARD_LEFT, 525, 'LOADOUT')
-    LOADOUT_ROWS.forEach((label, row) => {
-      const y = LOADOUT_TOP + row * LOADOUT_STEP
-      text(this, CARD_LEFT, y, label, { size: 'label', color: C.textSecondary })
-      this.loadoutValues.push(text(this, CARD_LEFT + 180, y, '', { size: 'label' }))
-    })
-
-    // right "character sheet" panel — pips now live inside it
-    panel(this, PANEL_X, PANEL_Y, PANEL_W, PANEL_H)
-    this.statsText = text(this, PANEL_LEFT, 200, '', { size: 'body', lineSpacing: 10 })
-    this.pipsGfx = this.add.graphics()
-
-    rule(this, PANEL_LEFT, PANEL_X + PANEL_W / 2 - 50, PIP_TOP - 26)
-
-    // pip row labels. These live in create(), not refresh(): scene `data`
-    // survives a scene restart, so a "create once" guard there would skip
-    // them on every visit after the first.
-    ;(['engine', 'tires', 'armor'] as UpgradeKind[]).forEach((kind, row) => {
-      text(this, PANEL_LEFT, PIP_TOP + row * PIP_STEP - 2, kind.toUpperCase(), {
-        size: 'bodySm',
-        color: C.textSecondary,
+    this.statBarGfx = this.add.graphics()
+    // stat-row labels, created once (drawStatBars only repaints the segments)
+    const baseY = LC_Y - LC_H / 2 + 130
+    BAR_STATS.forEach((stat, row) => {
+      text(this, LC_X - LC_W / 2 + 26, baseY + row * 62, BAR_LABEL[stat], {
+        size: 'label', face: 'display', weight: 600, letterSpacing: 1, color: C.textSecondary, origin: [0, 0.5],
       })
     })
 
-    // separates "what you own" from "what you do about it"
-    rule(this, 260, GAME_WIDTH - 260, 790)
-
-    const slots = tileLayout()
-    TILES.forEach((def, i) => {
-      const { x, w } = slots[i]
-      const primary = def.group === 'go'
-      const handle = tile(this, x, TILE_Y, w, TILE_H, def.label, {
-        accent: primary ? C.oxideDim : undefined,
-        face: primary ? 'display' : 'mono',
-        weight: primary ? 600 : undefined,
-        letterSpacing: primary ? 4 : undefined,
-        size: primary ? 'subtitle' : def.id === 'livery' ? 'bodySm' : 'action',
-      })
-      // livery labels ("Obsidian Crimson Fortress") run long — wrap inside the wider tile
-      if (def.id === 'livery') handle.label.setWordWrapWidth(w - 30, true)
-      this.tiles.push(handle)
+    // right column — chassis + loadout cards
+    card(this, 1636, 300, 420, 260, 'CHASSIS', { accent: C.oxideDim })
+    this.chassisText = text(this, 1636 - 210 + 26, 300 + 8, '', {
+      size: 'bodySm', face: 'mono', color: C.textBody, lineSpacing: 10, origin: [0, 0.5], wordWrapWidth: 360,
     })
 
-    wireTiles(
-      this.tiles,
-      (i) => { this.selected = i; this.refresh() },
-      (i) => { this.selected = i; this.activate() },
-    )
-    backButton(this, () => this.scene.start('Menu'))
+    card(this, 1636, 604, 420, 300, 'LOADOUT', { accent: C.oxideDim })
+    const loadoutRows = ['MINES', 'RAM PLATING', 'OVERCHARGE', 'SABOTAGE', 'LOANSHARK']
+    loadoutRows.forEach((label, i) => {
+      const ly = 604 - 150 + 74 + i * 44
+      text(this, 1636 - 210 + 26, ly, label, { size: 'label', face: 'display', weight: 600, letterSpacing: 1, color: C.textSecondary, origin: [0, 0.5] })
+      this.loadoutValues.push(text(this, 1636 + 210 - 26, ly, '', { size: 'bodySm', face: 'mono', origin: [1, 0.5] }))
+    })
 
-    flavor(this, cx, GAME_HEIGHT - 60, Phaser.Math.RND.pick(FLAVOR))
+    // ---- bottom action dock (two rows) ----
+    this.buildDock()
 
-    hintBar(this, '←/→ select · Enter confirm · Esc menu')
+    backPlate(this, 'SINGLE PLAYER', () => this.scene.start('Menu'), { x: SAFE.left + 150, y: 920 })
 
     const kb = this.input.keyboard!
-    kb.on('keydown-LEFT', () => this.moveSelection(-1))
-    kb.on('keydown-RIGHT', () => this.moveSelection(1))
-    kb.on('keydown-ENTER', () => this.activate())
-    kb.on('keydown-ESC', () => this.scene.start('Menu'))
-    this.events.on('shutdown', () => {
-      kb.off('keydown-LEFT')
-      kb.off('keydown-RIGHT')
-      kb.off('keydown-ENTER')
-      kb.off('keydown-ESC')
+    const left = () => this.moveSelection(-1)
+    const right = () => this.moveSelection(1)
+    const up = () => this.moveRow(-1)
+    const down = () => this.moveRow(1)
+    const enter = () => this.activate()
+    const esc = () => this.scene.start('Menu')
+    kb.on('keydown-LEFT', left); kb.on('keydown-RIGHT', right)
+    kb.on('keydown-UP', up); kb.on('keydown-DOWN', down)
+    kb.on('keydown-ENTER', enter); kb.on('keydown-ESC', esc)
+    this.events.once('shutdown', () => {
+      kb.off('keydown-LEFT', left); kb.off('keydown-RIGHT', right)
+      kb.off('keydown-UP', up); kb.off('keydown-DOWN', down)
+      kb.off('keydown-ENTER', enter); kb.off('keydown-ESC', esc)
     })
 
-    // bars start full so the first paint is not an animation from zero
     this.barFill = this.targetBarFills()
     this.refresh()
   }
 
+  private buildDock() {
+    // row 0: four upgrade actions, equal width, full safe span
+    const r0w = (SAFE.width - 3 * 24) / 4
+    for (let i = 0; i < 4; i++) {
+      const t = TILES[i]
+      const x = SAFE.left + r0w / 2 + i * (r0w + 24)
+      this.buttons.push(notchedButton(this, x, 800, {
+        w: r0w, h: 96, label: t.label, glyph: t.glyph, size: 'action', align: 'left', value: '',
+        onFocus: () => { this.selected = i; this.refresh() },
+        onActivate: () => { this.selected = i; this.activate() },
+      }))
+    }
+    // row 1: back(handled separately) + MARKET, BUY CAR, LIVERY, RACE(dominant)
+    // back plate occupies the far-left slot; the four actions fill the rest.
+    const backW = 300
+    const raceW = 470
+    const midW = 300
+    const gap = 24
+    let cursor = SAFE.left + backW + gap
+    const widths = [midW, midW, midW, raceW]
+    for (let j = 0; j < 4; j++) {
+      const idx = 4 + j
+      const t = TILES[idx]
+      const w = widths[j]
+      const x = cursor + w / 2
+      cursor += w + gap
+      this.buttons.push(notchedButton(this, x, 920, {
+        w, h: 96, label: t.label, glyph: t.glyph, size: t.id === 'race' ? 'title' : 'action',
+        align: t.id === 'race' ? 'center' : 'left', variant: t.id === 'race' ? 'primary' : 'secondary',
+        value: t.id === 'livery' ? '' : undefined,
+        onFocus: () => { this.selected = idx; this.refresh() },
+        onActivate: () => { this.selected = idx; this.activate() },
+      }))
+    }
+  }
+
   private moveSelection(dir: number) {
     this.selected = (this.selected + dir + TILES.length) % TILES.length
+    this.refresh()
+  }
+
+  /** Up/down jumps between the two dock rows, keeping horizontal position. */
+  private moveRow(dir: number) {
+    const cur = TILES[this.selected]
+    const targetRow = Phaser.Math.Clamp(cur.row + dir, 0, 1) as 0 | 1
+    if (targetRow === cur.row) return
+    const rowStart = targetRow === 0 ? 0 : 4
+    const colInRow = targetRow === 0 ? Math.min(this.selected, 3) : Math.min(this.selected - 0, 3)
+    this.selected = rowStart + Phaser.Math.Clamp(colInRow, 0, 3)
     this.refresh()
   }
 
@@ -299,12 +221,12 @@ export class GarageScene extends Phaser.Scene {
     if (next) {
       this.career = next
       saveCareer(this.career)
+      this.status.setCash(this.career.cash)
       this.animateBars()
       this.refresh()
     }
   }
 
-  /** Where each bar should sit for the car as it stands right now. */
   private targetBarFills(): Record<BarStat, number> {
     const spec = effectiveCarSpec(carById(this.career.carId), this.career.upgrades)
     return {
@@ -314,28 +236,16 @@ export class GarageScene extends Phaser.Scene {
     }
   }
 
-  /** Slide the bars to their new value so an upgrade is something you SEE. */
   private animateBars() {
     const target = this.targetBarFills()
     for (const stat of BAR_STATS) {
       this.tweens.addCounter({
-        from: this.barFill[stat],
-        to: target[stat],
-        duration: 450,
-        ease: 'cubic.out',
-        onUpdate: (tween) => {
-          this.barFill[stat] = tween.getValue() ?? target[stat]
-          this.drawBars()
-        },
+        from: this.barFill[stat], to: target[stat], duration: 450, ease: 'cubic.out',
+        onUpdate: (tween) => { this.barFill[stat] = tween.getValue() ?? target[stat]; this.drawStatBars() },
       })
     }
   }
 
-  /**
-   * Catalog stats live in a narrow band, so spread min..max across the bar
-   * (with a floor so the cheapest car isn't an empty bar). Fully upgraded
-   * cars can exceed the catalog max, so the ratio is clamped at 1.
-   */
   private ratio(stat: BarStat, value: number): number {
     const values = CAR_CATALOG.map((car) => car[stat])
     const min = Math.min(...values)
@@ -343,145 +253,96 @@ export class GarageScene extends Phaser.Scene {
     return Phaser.Math.Clamp(0.08 + 0.92 * ((value - min) / (max - min)), 0, 1)
   }
 
-  private tileCaption(def: Tile): { cost: string; info: string; enabled: boolean } {
+  /** Per-tile cost + affordability, straight off the data table. */
+  private tileState(def: Tile): { value: string; valueColor: number; enabled: boolean } {
     const c = this.career
     switch (def.id) {
       case 'repair': {
-        if (c.damage <= 0) return { cost: '', info: 'No damage. The bodywork gleams, suspiciously.', enabled: false }
+        if (c.damage <= 0) return { value: 'OK', valueColor: C.textMuted, enabled: false }
         const cost = repairStepCost(c.damage)
-        return {
-          cost: `$${cost}`,
-          info: `Fix ${Math.min(REPAIR_STEP_PERCENT, c.damage)}% of damage for $${cost}. Damage carries into the next race.`,
-          enabled: c.cash >= cost,
-        }
+        return { value: `$${cost}`, valueColor: c.cash >= cost ? C.money : C.danger, enabled: c.cash >= cost }
       }
       case 'engine':
       case 'tires':
       case 'armor': {
         const kind = def.id as UpgradeKind
         const cost = upgradeCost(c, kind)
-        const cap = carById(c.carId).upgradeCaps[kind]
-        if (cost === null) {
-          const fitted = fittedDeltas(kind, c.upgrades[kind])
-            .map((d) => `${d.stat} ${d.text}`)
-            .join(' · ')
-          return { cost: 'MAX', info: `Maxed out at tier ${cap}. Fitted: ${fitted}`, enabled: false }
-        }
-        // the exact effect, computed from the data table — never a stale string
-        return {
-          cost: `$${cost}`,
-          info: `${upgradeLabel(kind, c.upgrades[kind])}\n(tier ${c.upgrades[kind] + 1} of ${cap}) · $${cost}`,
-          enabled: c.cash >= cost,
-        }
+        if (cost === null) return { value: 'MAX', valueColor: C.textMuted, enabled: false }
+        return { value: `$${cost}`, valueColor: c.cash >= cost ? C.money : C.danger, enabled: c.cash >= cost }
       }
-      // what you're carrying now lives permanently in the LOADOUT card, so the
-      // caption only has to sell the shop.
       case 'market':
-        return {
-          cost: '',
-          info: c.profile.weaponsEnabled ? 'The black market: mines, plating, overcharged fuel, sabotage — and a loanshark.' : 'Unavailable in a weapons-off career.',
-          enabled: c.profile.weaponsEnabled,
-        }
+        return { value: '', valueColor: C.money, enabled: c.profile.weaponsEnabled }
       case 'buycar':
-        return {
-          cost: '',
-          info: 'The dealer: browse all six chassis side by side against the one you drive.',
-          enabled: true,
-        }
+        return { value: '', valueColor: C.money, enabled: true }
       case 'livery': {
         const car = carById(c.carId)
-        const cyclable = car.variants.length > 1
-        return {
-          cost: '',
-          info: cyclable
-            ? 'Cosmetic paint job — no effect on stats. Enter cycles the livery.'
-            : 'Only one livery available for this chassis.',
-          enabled: cyclable,
-        }
+        return { value: '', valueColor: C.money, enabled: car.variants.length > 1 }
       }
       case 'race':
-        return { cost: '', info: 'Head to race sign-up: three races on offer, pick your risk tier.', enabled: true }
+        return { value: '', valueColor: C.money, enabled: true }
     }
   }
 
   private refresh() {
     const c = this.career
     const showing = carById(c.carId)
-    this.carImageHandle.setKey(`car-hero-${showing.id}`, 520, 300)
-    this.carNameText.setText(`${showing.name}  (yours)`)
+    this.carImageHandle.setKey(`car-hero-${showing.id}`, 640, 400)
+    this.carNameText.setText(showing.name.toUpperCase())
 
-    TILES.forEach((def, i) => {
+    this.buttons.forEach((btn, i) => {
+      const def = TILES[i]
+      const st = this.tileState(def)
       if (def.id === 'livery') {
-        const variants = showing.variants
         const currentKey = c.liveries[c.carId] ?? 'base'
-        const label = variants.find((v) => v.key === currentKey)?.label ?? variants[0]?.label ?? 'Factory'
-        this.tiles[i].label.setText(`LIVERY\n${label}`)
-        this.tiles[i].setState(i === this.selected, variants.length > 1)
-        return
+        const label = showing.variants.find((v) => v.key === currentKey)?.label ?? 'Factory'
+        btn.setValue(label.length > 12 ? label.slice(0, 12) : label, C.textSecondary)
+      } else {
+        btn.setValue(st.value, st.valueColor)
       }
-      const { cost, enabled } = this.tileCaption(def)
-      this.tiles[i].label.setText(cost ? `${def.label}\n${cost}` : def.label)
-      this.tiles[i].setState(i === this.selected, enabled)
+      btn.setState({ selected: i === this.selected, enabled: st.enabled })
     })
 
-    this.infoText.setText(this.tileCaption(TILES[this.selected]).info)
-
-    this.drawBars()
-
-    // what each fitted upgrade actually bought, straight off the data table
-    const fittedFor: Record<BarStat, UpgradeKind> = { topSpeed: 'engine', accel: 'engine', grip: 'tires' }
-    const statOf: Record<BarStat, string> = { topSpeed: 'TOP SPEED', accel: 'ACCEL', grip: 'GRIP' }
-    BAR_STATS.forEach((stat, row) => {
-      const delta = fittedDeltas(fittedFor[stat], c.upgrades[fittedFor[stat]]).find((d) => d.stat === statOf[stat])
-      this.fittedTexts[row].setText(delta ? delta.text : '')
-    })
+    this.drawStatBars()
 
     // chassis dossier
-    this.blurbText.setText(showing.blurb)
-    this.massText.setText(`${showing.mass.toFixed(2)}×`)
     const caps = showing.upgradeCaps
-    this.capsText.setText(`ENG ${caps.engine} · TIR ${caps.tires} · ARM ${caps.armor}`)
+    const spec = effectiveCarSpec(showing, c.upgrades)
+    this.chassisText.setText([
+      `MASS    ${showing.mass.toFixed(2)}×`,
+      `TOP     ${Math.round(spec.topSpeed * MPH_PER_PX)} MPH`,
+      `DAMAGE  ${c.damage}%`,
+      `ENGINE  ${c.upgrades.engine}/${caps.engine}`,
+      `TIRES   ${c.upgrades.tires}/${caps.tires}`,
+      `ARMOR   ${c.upgrades.armor}/${caps.armor}`,
+    ].join('\n'))
 
-    // loadout: gear you are carrying, and the debt you are carrying with it
+    // loadout
     const rows: Array<[string, number]> = [
-      c.mines > 0 ? [`${c.mines}`, C.ammo] : ['—', C.textDisabled],
-      c.ramPlating ? ['FITTED', C.money] : ['—', C.textDisabled],
-      c.overTurbo ? ['FITTED', C.warn] : ['—', C.textDisabled],
-      c.sabotage ? ['ARMED', C.danger] : ['—', C.textDisabled],
-      c.loan ? [`$${c.loan.owed} · ${c.loan.racesLeft} races`, C.danger] : ['CLEAN', C.textDisabled],
+      c.mines > 0 ? [`${c.mines}`, C.ammo] : ['NONE', C.textMuted],
+      c.ramPlating ? ['FITTED', C.money] : ['NONE', C.textMuted],
+      c.overTurbo ? ['FITTED', C.warn] : ['NONE', C.textMuted],
+      c.sabotage ? ['ARMED', C.danger] : ['NONE', C.textMuted],
+      c.loan ? [`$${c.loan.owed}·${c.loan.racesLeft}R`, C.danger] : ['CLEAN', C.textMuted],
     ]
-    rows.forEach(([label, color], i) => {
-      this.loadoutValues[i].setText(label).setColor(hex(color))
-    })
-
-    const spec = effectiveCarSpec(carById(c.carId), c.upgrades)
-    this.statsText.setText(
-      [
-        `DRIVER    ${c.profile.driverName}`,
-        `CASH      $${c.cash}`,
-        `CAR       ${carById(c.carId).name}`,
-        `TOP SPEED ${Math.round(spec.topSpeed * MPH_PER_PX)} mph`,
-        `DAMAGE    ${c.damage}%`,
-        ``,
-        `POINTS    ${c.points}`,
-        `RACES     ${c.racesRun}`,
-        `WINS      ${c.wins}`,
-      ].join('\n'),
-    )
-
-    // upgrade pips: owned vs cap for the owned car
-    this.pipsGfx.clear()
-    ;(['engine', 'tires', 'armor'] as UpgradeKind[]).forEach((kind, row) => {
-      const cap = carById(c.carId).upgradeCaps[kind]
-      pips(this.pipsGfx, PANEL_LEFT + 160, PIP_TOP + row * PIP_STEP, c.upgrades[kind], cap)
-    })
+    rows.forEach(([label, color], i) => this.loadoutValues[i].setText(label).setColor(hex(color)))
   }
 
-  /** Bars for the car as it stands, drawn from the animated fill values. */
-  private drawBars() {
-    this.compareGfx.clear()
+  private drawStatBars() {
+    const g = this.statBarGfx
+    g.clear()
+    const barX = LC_X - LC_W / 2 + 130
+    const barW = LC_W - 130 - 40
+    const baseY = LC_Y - LC_H / 2 + 130
+    const n = 8
+    const gap = 5
+    const segW = (barW - gap * (n - 1)) / n
     BAR_STATS.forEach((stat, row) => {
-      statBar(this.compareGfx, BAR_X, BAR_TOP + row * BAR_STEP, BAR_W, 12, this.barFill[stat], C.oxide)
+      const y = baseY + row * 62
+      const filled = Math.round(this.barFill[stat] * n)
+      for (let i = 0; i < n; i++) {
+        g.fillStyle(i < filled ? C.oxide : C.surfaceTrack, i < filled ? 1 : 0.7)
+        g.fillRect(barX + i * (segW + gap), y - 9, segW, 18)
+      }
     })
   }
 }

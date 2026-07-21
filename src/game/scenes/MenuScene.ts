@@ -1,181 +1,163 @@
 import Phaser from 'phaser'
-import { GAME_HEIGHT, GAME_WIDTH } from '../../config/game'
 import { playerRank } from '../../core/progression/ladder'
 import { carById } from '../../data/cars'
 import { audioBus } from '../systems/audio'
 import { hasSavedCareer, readCareer } from '../state/saveGame'
 import { loadSettings } from '../state/settings'
-import { C, hex } from '../ui/theme'
-import { flavor, text } from '../ui/widgets'
+import { C } from '../ui/theme'
+import { text } from '../ui/widgets'
 import { sceneBackground } from '../ui/sceneBackground'
-import { BackgroundTransform, artToCanvas } from '../ui/backgroundTransform'
 import { ensureDeferredLoadStarted } from '../textures/deferredLoadScene'
+import { backPlate, card, coverBakedMenuArt, notchedButton, screenTitle, type ButtonHandle } from '../ui/mobile'
+import * as glyph from '../ui/glyphs'
 
-interface MenuItem {
+interface HubItem {
   label: string
   scene: string
   data?: object
-  needsCareer?: boolean
+  glyph?: (g: Phaser.GameObjects.Graphics, s: number) => void
+  primary?: boolean
+  /** grid column: 0 left, 1 right; credits spans full width */
+  full?: boolean
 }
 
-// The bg-menu art bakes the title, hero car and eight empty menu plates plus a
-// lower-left career plate. These are ART-SPACE coordinates (measured directly
-// against menu-peykan-background.webp), mapped through the background's cover
-// transform at runtime so the live labels/focus rects can never drift from the
-// baked plates — values stay live. The plates are hand-authored, so their pitch
-// is intentionally uneven rather than a fixed stride.
-const PLATE_ART_X = 1580
-const PLATE_ART_W = 590
-const PLATE_ART_H = 76
-const PLATE_ART_Y = [224, 323, 412, 505, 595, 688, 779, 874]
-/** Lower-left career plate (art-space x). */
-const CAREER_ART_X = 275
-
-interface MenuHandle {
-  focus: Phaser.GameObjects.Rectangle
-  label: Phaser.GameObjects.Text
-  setState(selected: boolean, enabled: boolean): void
-}
-
-const ITEMS: MenuItem[] = [
-  { label: 'CONTINUE CAREER', scene: 'Garage', needsCareer: true },
+// Reading order drives keyboard nav; layout is a two-column grid + a full-width
+// Credits row. Multiplayer and Settings intentionally live on Root, not here.
+const ITEMS: HubItem[] = [
+  { label: 'CONTINUE\nCAREER', scene: 'Garage', glyph: glyph.flag, primary: true },
   { label: 'NEW CAREER', scene: 'Profile', data: { replace: true } },
-  { label: 'VENUES', scene: 'Venues' },
-  { label: 'CHAMPIONSHIP LADDER', scene: 'Ranking', needsCareer: true },
-  { label: 'HALL OF FAME', scene: 'HallOfFame', needsCareer: true },
-  { label: 'SETTINGS / CONTROLS', scene: 'Settings' },
-  { label: 'CREDITS', scene: 'Credits' },
-  { label: 'MULTIPLAYER', scene: 'Multiplayer' },
+  { label: 'VENUES', scene: 'Venues', glyph: glyph.pin },
+  { label: 'CHAMPIONSHIP\nLADDER', scene: 'Ranking', data: { from: 'menu' }, glyph: glyph.ladder },
+  { label: 'HALL OF FAME', scene: 'HallOfFame', glyph: glyph.trophy },
+  { label: 'CIRCUIT\nPREVIEW', scene: 'Preview', glyph: glyph.circuit },
+  { label: 'CREDITS', scene: 'Credits', glyph: glyph.film, full: true },
 ]
 
 export class MenuScene extends Phaser.Scene {
   private selected = 0
-  private handles: MenuHandle[] = []
-  private saved = false
-  private bgTransform: BackgroundTransform = { scale: 1, offsetX: 0, offsetY: 0 }
+  private buttons: ButtonHandle[] = []
 
   constructor() {
     super('Menu')
   }
 
   create() {
-    // Kick off the one background load of every DEFERRED texture the moment
-    // Menu is reachable — including the first-launch redirect to Profile
-    // just below, which itself needs deferred hero/background art. Runs on a
-    // persistent worker scene (never on this one): MenuScene's own loader
-    // would be aborted by Phaser the instant scene.start() shuts Menu down.
-    // Never blocks input; no-ops on every later visit to Menu.
     ensureDeferredLoadStarted(this)
-
     audioBus.applySettings(loadSettings())
+
     const career = readCareer()
-    this.saved = hasSavedCareer() && career !== null
-    if (!this.saved || !career) {
+    // Root routes first-launch to Profile; this is a defensive guard only.
+    if (!hasSavedCareer() || !career) {
       this.scene.start('Profile', { firstLaunch: true })
       return
     }
+
     this.selected = 0
-    this.handles = []
-    const cx = GAME_WIDTH / 2
+    this.buttons = []
 
-    // The art already carries the title, hero car and empty plates — no live copies.
-    // Grab its cover transform so every overlay maps from the same art-space the
-    // plates were baked in (art is 1920×1080 today → identity, but this stays
-    // correct if the source art is ever re-authored at a different size).
-    const bg = sceneBackground(this, 'bg-menu', { veil: 0 })
-    this.bgTransform = bg.transform()
+    sceneBackground(this, 'bg-menu', { veil: 0.42 })
+    coverBakedMenuArt(this)
 
-    // faint drifting haze for life; kept above the art, below all UI
-    this.add
-      .particles(0, 0, 'smoke', {
-        x: { min: 0, max: GAME_WIDTH }, y: { min: 0, max: GAME_HEIGHT },
-        speedX: { min: 8, max: 30 }, speedY: { min: -4, max: 4 },
-        scale: { start: 1.6, end: 2.6 }, alpha: { start: 0.04, end: 0 },
-        lifespan: 9000, frequency: 400, tint: 0x2a2a3a,
+    screenTitle(this, 'SINGLE PLAYER', { x: 64, y: 96 })
+
+    const rankLabel = career.champion ? 'CHAMPION' : `RANK #${playerRank(career.ladder, career.points)}`
+    this.buildIdentityCard(career.profile.driverName, rankLabel, carById(career.carId).name, career.cash, career.points, career.wins, career.racesRun)
+
+    // two-column grid
+    const colX = [1130, 1580]
+    const rowY = [388, 528, 668]
+    const bw = 430
+    const bh = 122
+    ITEMS.forEach((item, i) => {
+      let x: number, y: number, w: number
+      if (item.full) {
+        x = (colX[0] + colX[1]) / 2
+        y = 806
+        w = colX[1] - colX[0] + bw
+      } else {
+        x = colX[i % 2]
+        y = rowY[Math.floor(i / 2)]
+        w = bw
+      }
+      const btn = notchedButton(this, x, y, {
+        w, h: bh, label: item.label, size: 'subtitle', align: item.full ? 'center' : 'left',
+        glyph: item.glyph, variant: item.primary ? 'primary' : 'secondary',
+        onFocus: () => { this.selected = i; this.refresh() },
+        onActivate: () => { this.selected = i; this.activate() },
       })
-      .setDepth(-50)
-
-    // live player identity, seated inside the lower-left career plate
-    const rank = career.champion ? 'CHAMPION' : `Rank #${playerRank(career.ladder, career.points)}`
-    const nameAt = artToCanvas(this.bgTransform, CAREER_ART_X, 742)
-    const statsAt = artToCanvas(this.bgTransform, CAREER_ART_X, 800)
-    text(this, nameAt.x, nameAt.y, career.profile.driverName, {
-      size: 'subtitle', origin: [0.5, 0], color: career.champion ? C.gold : C.oxide,
-    })
-    text(this, statsAt.x, statsAt.y, [
-      `${rank} · ${carById(career.carId).name}`,
-      `$${career.cash} · ${career.points} pts`,
-      `${career.wins} wins / ${career.racesRun} starts`,
-    ].join('\n'), {
-      size: 'body', align: 'center', lineSpacing: 10, origin: [0.5, 0], color: C.textBody,
+      this.buttons.push(btn)
     })
 
-    // live labels + focus over the eight empty right-side plates (no opaque tiles)
-    ITEMS.forEach((item, i) => this.handles.push(this.makePlate(i, item.label)))
-
-    flavor(this, cx, GAME_HEIGHT - 42, '↑/↓ navigate · Enter select · V venues · L ladder · N new career · M multiplayer')
+    backPlate(this, 'MAIN', () => this.scene.start('Root'))
 
     const kb = this.input.keyboard!
-    const up = () => this.move(-1)
-    const down = () => this.move(1)
+    const left = () => this.move(-1)
+    const right = () => this.move(1)
+    const up = () => this.move(-2)
+    const down = () => this.move(2)
     const enter = () => this.activate()
-    const venues = () => this.scene.start('Venues')
-    const ladder = () => this.scene.start('Ranking')
-    const fresh = () => this.scene.start('Profile', { replace: true })
-    const multi = () => this.scene.start('Multiplayer')
-    kb.once('keydown', () => audioBus.unlock())
-    this.input.once('pointerdown', () => audioBus.unlock())
+    const back = () => this.scene.start('Root')
+    kb.on('keydown-LEFT', left)
+    kb.on('keydown-RIGHT', right)
     kb.on('keydown-UP', up)
     kb.on('keydown-DOWN', down)
     kb.on('keydown-ENTER', enter)
-    kb.on('keydown-V', venues)
-    kb.on('keydown-L', ladder)
-    kb.on('keydown-N', fresh)
-    kb.on('keydown-M', multi)
+    kb.on('keydown-ESC', back)
     this.events.once('shutdown', () => {
-      kb.off('keydown-UP', up); kb.off('keydown-DOWN', down); kb.off('keydown-ENTER', enter)
-      kb.off('keydown-V', venues); kb.off('keydown-L', ladder); kb.off('keydown-N', fresh); kb.off('keydown-M', multi)
+      kb.off('keydown-LEFT', left); kb.off('keydown-RIGHT', right)
+      kb.off('keydown-UP', up); kb.off('keydown-DOWN', down)
+      kb.off('keydown-ENTER', enter); kb.off('keydown-ESC', back)
     })
+
     this.refresh()
   }
 
-  /** One menu row: a transparent, plate-aligned focus rect plus a live label. */
-  private makePlate(i: number, label: string): MenuHandle {
-    // Map the authored art-space plate onto canvas space through the background's
-    // cover transform, so rect + label sit exactly over the baked plate.
-    const { x, y } = artToCanvas(this.bgTransform, PLATE_ART_X, PLATE_ART_Y[i])
-    const w = PLATE_ART_W * this.bgTransform.scale
-    const h = PLATE_ART_H * this.bgTransform.scale
-    // fillAlpha 0 keeps the authored plate visible; the rect is still hit-testable
-    const focus = this.add
-      .rectangle(x, y, w, h, C.oxide, 0)
-      .setInteractive({ useHandCursor: true })
-    focus.on('pointerover', () => { this.selected = i; this.refresh() })
-    focus.on('pointerup', () => { this.selected = i; this.activate() })
-    const labelText = text(this, x, y, label, { size: 'action', origin: [0.5, 0.5], align: 'center' })
-    return {
-      focus,
-      label: labelText,
-      setState(selected: boolean, enabled: boolean) {
-        focus.setStrokeStyle(selected ? 3 : 0, C.oxide, 1)
-        focus.setFillStyle(C.oxide, selected ? 0.14 : 0)
-        labelText.setColor(hex(enabled ? (selected ? C.oxide : C.textPrimary) : C.textDisabled))
-      },
-    }
+  private buildIdentityCard(
+    name: string, rankLabel: string, carName: string,
+    cash: number, points: number, wins: number, starts: number,
+  ) {
+    const cx = 1370
+    const cy = 116
+    const w = 960
+    const h = 152
+    card(this, cx, cy, w, h, undefined, { accent: C.oxideDim })
+
+    // driver badge
+    const badgeG = this.add.graphics({ x: cx - w / 2 + 64, y: cy })
+    badgeG.lineStyle(2, C.oxide, 0.8); badgeG.strokeRoundedRect(-40, -50, 80, 100, 8)
+    glyph.skull(badgeG, 56)
+
+    // column A — identity
+    const ax = cx - w / 2 + 128
+    text(this, ax, cy - 40, name.toUpperCase(), { size: 'heading', face: 'display', weight: 700, color: C.oxide, origin: [0, 0.5] })
+    text(this, ax, cy + 2, rankLabel, { size: 'body', face: 'display', weight: 600, letterSpacing: 2, color: C.textSecondary, origin: [0, 0.5] })
+    text(this, ax, cy + 44, carName.toUpperCase(), { size: 'body', face: 'display', weight: 600, letterSpacing: 1, color: C.oxide, origin: [0, 0.5] })
+
+    // column B — economy/record
+    const bx = cx + 120
+    const rows: Array<[string, string, number]> = [
+      [`$${cash.toLocaleString('en-US')}`, '$', C.money],
+      [`${points} PTS`, '★', C.textPrimary],
+      [`${wins} WINS / ${starts} STARTS`, '⌂', C.textPrimary],
+    ]
+    rows.forEach(([value, mark, color], i) => {
+      const ry = cy - 40 + i * 40
+      text(this, bx, ry, mark, { size: 'body', face: 'mono', color: C.oxideDim, origin: [0.5, 0.5] })
+      text(this, bx + 30, ry, value, { size: 'body', face: 'mono', weight: 700, color, origin: [0, 0.5] })
+    })
   }
 
   private move(delta: number) {
-    this.selected = (this.selected + delta + ITEMS.length) % ITEMS.length
+    this.selected = Phaser.Math.Clamp(this.selected + delta, 0, ITEMS.length - 1)
     this.refresh()
   }
 
   private refresh() {
-    ITEMS.forEach((item, i) => this.handles[i].setState(i === this.selected, !item.needsCareer || this.saved))
+    this.buttons.forEach((b, i) => b.setState({ selected: i === this.selected, enabled: true }))
   }
 
   private activate() {
     const item = ITEMS[this.selected]
-    if (item.needsCareer && !this.saved) return
     this.scene.start(item.scene, item.data)
   }
 }

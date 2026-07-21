@@ -6,21 +6,25 @@ import { MAX_PLAYERS, type LobbyPlayer, type LobbySnapshot, type ServerMsg } fro
 import { NetClient } from '../net/netClient'
 import { isTouchDevice } from '../input/device'
 import { C, hex } from '../ui/theme'
-import { backButton, fitImage, flavor, heading, keyGuideBar, text, tile, type KeyGuideHandle, type KeyGuideItem, type TileHandle } from '../ui/widgets'
+import { flavor, keyGuideBar, text, type KeyGuideHandle, type KeyGuideItem } from '../ui/widgets'
+import { SAFE, backPlate, card, drawPlate, notchedButton, type ButtonHandle } from '../ui/mobile'
 import { sceneBackground } from '../ui/sceneBackground'
-import { artToCanvas } from '../ui/backgroundTransform'
-import { posterTextureFor } from '../textures/loadedAssets'
+import { deferredImage, type DeferredImageHandle } from '../ui/deferredImage'
 
-// The bg-lobby template bakes an empty steel notice board into its centre; the
-// player-card grid is drawn on it. Art-space rect of the board's inner surface
-// (bg-lobby is authored at 1536×1024), mapped through the cover transform.
-const BOARD = { cx: 767, cy: 480, w: 835, h: 500 }
+// 2×2 roster grid of large touch cards, laid over the steel notice board baked
+// into bg-lobby. Each cell is big enough for a thumbnail + readout + touch
+// controls at phone scale.
+const CARD_W = 820
+const CARD_H = 220
+const THUMB_MAX_W = 250
+const THUMB_MAX_H = 165
 
-const CARD_W = 240
-const CARD_H = 470
-const CARD_GAP = 22
-const POSTER_MAX_W = 205
-const POSTER_MAX_H = 290
+/** Top-down roof sprite key for a chassis + livery, matching the roster/race
+ *  convention: base livery → `car-top-<id>`, else `car-top-<id>-<variant>`
+ *  (see protocol RaceCarInfo.variantId). */
+function topTextureFor(carId: string, variantId: string): string {
+  return variantId && variantId !== 'base' ? `car-top-${carId}-${variantId}` : `car-top-${carId}`
+}
 
 /**
  * Give a small touch affordance (an arrow glyph, a status pill) a tap target
@@ -50,8 +54,12 @@ function padInteractive(
 /** One roster slot: a fixed frame whose contents are repainted from the
  *  current LobbySnapshot on every render — objects are reused, never leaked. */
 interface PlayerCard {
+  /** chamfered plate body, repainted per state (isYou / empty) so the border
+   *  can recolour without recreating the plate. */
+  body: Phaser.GameObjects.Graphics
+  /** invisible full-card hit rect — the add/remove-AI tap surface. */
   frame: Phaser.GameObjects.Rectangle
-  poster: Phaser.GameObjects.Image
+  poster: DeferredImageHandle
   name: Phaser.GameObjects.Text
   car: Phaser.GameObjects.Text
   ready: Phaser.GameObjects.Text
@@ -89,7 +97,7 @@ export class LobbyScene extends Phaser.Scene {
   /** desktop: keyboard chip strip. touch: short replacement hint — see create(). */
   private keyGuide?: KeyGuideHandle
   private touchHint?: Phaser.GameObjects.Text
-  private startTile!: TileHandle
+  private startTile!: ButtonHandle
   private copiedLabel!: Phaser.GameObjects.Text
   private disconnectTimer?: Phaser.Time.TimerEvent
   private onNetMessage!: (msg: ServerMsg) => void
@@ -112,75 +120,94 @@ export class LobbyScene extends Phaser.Scene {
     this.touch = isTouchDevice()
 
     const cx = GAME_WIDTH / 2
-    const bg = sceneBackground(this, 'bg-lobby', { veil: 0.25 })
+    sceneBackground(this, 'bg-lobby', { veil: 0.4 })
 
-    heading(this, cx, 110, `ROOM ${this.lobby.code}`)
+    // --- Header band: BACK · ROOM CODE · COPY CODE -------------------------
+    const headY = 96
+    backPlate(this, 'MULTIPLAYER', () => this.leave(), { x: SAFE.left + 160, y: headY, w: 320 })
 
-    const copyTile = tile(this, cx + 430, 110, 190, 56, 'COPY CODE', { size: 'bodySm' })
-    copyTile.rect.setInteractive({ useHandCursor: true })
-    copyTile.rect.on('pointerup', () => this.copyRoomCode())
-    this.copiedLabel = text(this, cx + 430, 150, '', {
+    card(this, cx, headY, 520, 88)
+    text(this, cx, headY, `ROOM  ${this.lobby.code}`, {
+      size: 'title', face: 'display', weight: 700, letterSpacing: 3,
+      color: C.textPrimary, stroke: C.shadow, strokeThickness: 6, origin: [0.5, 0.5],
+    })
+
+    notchedButton(this, SAFE.right - 155, headY, {
+      w: 290, h: 88, label: 'COPY CODE', size: 'action', onActivate: () => this.copyRoomCode(),
+    })
+    this.copiedLabel = text(this, SAFE.right - 155, headY + 60, '', {
       size: 'caption', color: C.ok, origin: [0.5, 0.5],
     })
 
-    // the board baked into the template art, in canvas space
-    const t = bg.transform()
-    const board = artToCanvas(t, BOARD.cx, BOARD.cy)
-    const boardH = BOARD.h * t.scale
-
-    this.trackText = text(this, board.x, board.y - boardH / 2 + 45, '', {
-      size: 'bodySm', color: C.textSecondary, origin: [0.5, 0.5],
+    // --- Track selector: host-only chevrons flank a TRACK · NAME readout ----
+    const trackY = 222
+    card(this, cx, trackY, 1520, 96, undefined, { accent: C.oxideDim })
+    this.trackText = text(this, cx, trackY, '', {
+      size: 'subtitle', face: 'display', weight: 600, letterSpacing: 2,
+      color: C.textPrimary, origin: [0.5, 0.5],
     })
     // Host-only tap arrows for track cycling (mirrors [ / ] / T). Hidden
     // entirely for non-hosts each render — see render()/renderTrackControls().
-    this.trackLeft = text(this, board.x - 260, this.trackText.y, '‹', { size: 'action', color: C.oxide, origin: [0.5, 0.5] })
-    this.trackRight = text(this, board.x + 260, this.trackText.y, '›', { size: 'action', color: C.oxide, origin: [0.5, 0.5] })
+    this.trackLeft = text(this, cx - 700, trackY, '‹', { size: 'title', color: C.oxide, origin: [0.5, 0.5] })
+    this.trackRight = text(this, cx + 700, trackY, '›', { size: 'title', color: C.oxide, origin: [0.5, 0.5] })
 
-    const cardCy = board.y + 40
+    // --- 2×2 roster grid ----------------------------------------------------
+    const colDX = 425
+    const rowY = [430, 680]
     for (let i = 0; i < MAX_PLAYERS; i++) {
-      const cardCx = board.x + (i - (MAX_PLAYERS - 1) / 2) * (CARD_W + CARD_GAP)
-      const frame = this.add
-        .rectangle(cardCx, cardCy, CARD_W, CARD_H, C.surfaceTile, 0.55)
-        .setStrokeStyle(2, C.border, 1)
-      const poster = this.add.image(cardCx, cardCy - 75, 'car-poster-jackal').setVisible(false)
-      const name = text(this, cardCx, cardCy + 90, '', {
-        size: 'bodySm', origin: [0.5, 0.5], align: 'center', wordWrapWidth: CARD_W - 20,
+      const cardCx = cx + (i % 2 === 0 ? -colDX : colDX)
+      const cardCy = rowY[Math.floor(i / 2)]
+      const textX = cardCx - 60
+
+      const body = this.add.graphics().setPosition(cardCx, cardCy)
+      this.paintCardBody(body, C.line, false)
+
+      // invisible full-card hit rect (kept for the add/remove-AI wiring).
+      const frame = this.add.rectangle(cardCx, cardCy, CARD_W, CARD_H, 0x000000, 0)
+
+      // slot index plate marker, top-left.
+      text(this, cardCx - CARD_W / 2 + 30, cardCy - CARD_H / 2 + 26, `${i + 1}`, {
+        size: 'body', face: 'mono', color: C.textMuted, origin: [0.5, 0.5],
       })
-      const car = text(this, cardCx, cardCy + 124, '', {
-        size: 'caption', color: C.textSecondary, origin: [0.5, 0.5], align: 'center', wordWrapWidth: CARD_W - 20,
+
+      const poster = deferredImage(this, cardCx - 250, cardCy, 'car-top-jackal', THUMB_MAX_W, THUMB_MAX_H)
+      poster.image.setVisible(false)
+
+      const name = text(this, textX, cardCy - 60, '', {
+        size: 'body', face: 'display', weight: 600, letterSpacing: 1, origin: [0, 0.5], wordWrapWidth: CARD_W / 2 + 40,
       })
-      // Own-card-only change-car arrows, flanking the car readout. Padding
-      // bleeds upward into the (non-interactive) name/poster area so the tap
-      // target clears ~100 canvas px tall without reaching the ready pill
-      // below — see renderOwnControls().
-      const carLeft = text(this, cardCx - 70, cardCy + 124, '‹', { size: 'action', color: C.oxide, origin: [0.5, 0.5] }).setVisible(false)
-      const carRight = text(this, cardCx + 70, cardCy + 124, '›', { size: 'action', color: C.oxide, origin: [0.5, 0.5] }).setVisible(false)
+      const car = text(this, textX, cardCy - 8, '', {
+        size: 'bodySm', face: 'mono', color: C.textSecondary, origin: [0, 0.5], wordWrapWidth: CARD_W / 2 + 40,
+      })
+      // Own-card-only change-car arrows, flanking the car thumbnail. Padding
+      // bleeds up into the (inert) slot-marker/thumbnail space so the tap
+      // target clears well past 88px without reaching the ready pill — see
+      // renderOwnControls().
+      const carLeft = text(this, cardCx - 390, cardCy, '‹', { size: 'title', color: C.oxide, origin: [0.5, 0.5] }).setVisible(false)
+      const carRight = text(this, cardCx - 110, cardCy, '›', { size: 'title', color: C.oxide, origin: [0.5, 0.5] }).setVisible(false)
       // Own-card-only ready-toggle pill, drawn behind the `ready` text below
-      // so the status readout stays on top of the button chrome. Sits 18px
-      // lower than the original +162 so a two-line livery readout in `car`
-      // (name + variant, see renderPlayerCard) clears the pill instead of
-      // being clipped behind it.
+      // so the status readout stays on top of the button chrome.
       const readyBtn = this.add
-        .rectangle(cardCx, cardCy + 180, 170, 44, C.surfaceTile, 0.85)
+        .rectangle(cardCx + 30, cardCy + 48, 230, 56, C.surfaceTile, 0.85)
         .setStrokeStyle(2, C.oxide, 1)
         .setVisible(false)
-      const ready = text(this, cardCx, cardCy + 180, '', { size: 'bodySm', origin: [0.5, 0.5] })
-      const note = text(this, cardCx, cardCy + 210, '', {
-        size: 'caption', color: C.textMuted, origin: [0.5, 0.5],
+      const ready = text(this, textX, cardCy + 48, '', { size: 'bodySm', face: 'display', weight: 600, letterSpacing: 1, origin: [0, 0.5] })
+      const note = text(this, textX, cardCy + 86, '', {
+        size: 'caption', color: C.textMuted, origin: [0, 0.5],
       })
-      const slot = text(this, cardCx, cardCy, '', { size: 'action', origin: [0.5, 0.5] })
-      this.cards.push({ frame, poster, name, car, ready, note, slot, carLeft, carRight, readyBtn })
+      const slot = text(this, cardCx + 40, cardCy, '', { size: 'action', face: 'display', weight: 600, letterSpacing: 2, origin: [0.5, 0.5] })
+      this.cards.push({ body, frame, poster, name, car, ready, note, slot, carLeft, carRight, readyBtn })
     }
 
     this.statusText = text(this, cx, 850, '', {
       size: 'body', color: C.danger, origin: [0.5, 0.5], wordWrapWidth: 1200, align: 'center',
     })
 
-    this.startTile = tile(this, cx, 950, 700, 80, '', { size: 'action' })
-    this.startTile.rect.setInteractive({ useHandCursor: true })
-    this.startTile.rect.on('pointerup', () => this.tryStart())
+    this.startTile = notchedButton(this, cx, 952, {
+      w: 900, h: 96, label: 'START RACE', size: 'title', variant: 'primary', onActivate: () => this.tryStart(),
+    })
 
-    flavor(this, cx, GAME_HEIGHT - 28, 'Career progress is untouched — this is a standalone quick race.')
+    flavor(this, cx, GAME_HEIGHT - 26, 'Career progress is untouched — this is a standalone quick race.')
 
     // Touch has no keyboard chips to show — a short hint replaces the strip;
     // desktop keeps the chip bar exactly as before.
@@ -189,7 +216,6 @@ export class LobbyScene extends Phaser.Scene {
     } else {
       this.keyGuide = keyGuideBar(this)
     }
-    backButton(this, () => this.leave())
 
     const kb = this.input.keyboard!
     const onKey = (event: KeyboardEvent) => this.handleKey(event)
@@ -211,6 +237,20 @@ export class LobbyScene extends Phaser.Scene {
     })
 
     this.render()
+  }
+
+  /** Repaint a card's chamfered plate body for its current state. */
+  private paintCardBody(body: Phaser.GameObjects.Graphics, border: number, emphasize: boolean) {
+    drawPlate(body, CARD_W, CARD_H, {
+      face: C.surfacePlate,
+      faceAlpha: emphasize ? 0.96 : 0.9,
+      border,
+      borderWidth: emphasize ? 3 : 2,
+      chamfer: 16,
+      rivets: true,
+      glow: emphasize ? 2 : 0,
+      glowColor: C.oxide,
+    })
   }
 
   private handleKey(event: KeyboardEvent) {
@@ -344,7 +384,9 @@ export class LobbyScene extends Phaser.Scene {
   private goToMenu() {
     if (this.transitioning) return
     this.transitioning = true
-    this.scene.start('Menu')
+    // Leaving/disconnecting a lobby returns to Multiplayer setup (its parent),
+    // per the new nav — not the Single Player hub.
+    this.scene.start('Multiplayer')
   }
 
   private setStatus(message: string) {
@@ -360,17 +402,20 @@ export class LobbyScene extends Phaser.Scene {
     const carName = spec?.name ?? p.carId
     const liveryLabel = spec?.variants.find((v) => v.key === p.variantId)?.label
 
-    card.poster.setTexture(posterTextureFor(p.carId, p.variantId)).setVisible(true)
-    fitImage(card.poster, POSTER_MAX_W, POSTER_MAX_H)
+    card.poster.setKey(topTextureFor(p.carId, p.variantId), THUMB_MAX_W, THUMB_MAX_H)
+    card.poster.image.setVisible(true)
 
-    const star = p.id === this.lobby.hostId ? '★ ' : ''
-    const tag = p.isAi ? ' [AI]' : ''
-    card.name.setText(`${star}${p.name}${isYou ? ' (you)' : ''}${tag}`)
+    // host/you/AI tags, pulled straight from live roster state.
+    const tags: string[] = []
+    if (isYou) tags.push('YOU')
+    if (p.id === this.lobby.hostId) tags.push('HOST')
+    if (p.isAi) tags.push('AI')
+    card.name.setText(tags.length ? `${p.name}  ·  ${tags.join(' · ')}` : p.name)
     card.name.setColor(hex(isYou ? C.oxide : C.textPrimary))
-    card.car.setText(liveryLabel ? `${carName}\n${liveryLabel}` : carName)
+    card.car.setText(liveryLabel ? `${carName} · ${liveryLabel}` : carName)
     card.ready.setText(p.ready ? '✓ READY' : '✗ NOT READY')
     card.ready.setColor(hex(p.ready ? C.ok : C.textMuted))
-    card.frame.setStrokeStyle(2, isYou ? C.oxide : C.border, 1)
+    this.paintCardBody(card.body, isYou ? C.oxide : C.border, isYou)
 
     if (isHostViewer && p.isAi) {
       card.note.setText('tap to remove (X)')
@@ -383,9 +428,9 @@ export class LobbyScene extends Phaser.Scene {
 
   /** Repaint one roster card for an empty slot. */
   private renderEmptyCard(card: PlayerCard, isHostViewer: boolean, isFirstOpen: boolean) {
-    card.frame.setStrokeStyle(2, C.border, 0.5)
+    this.paintCardBody(card.body, C.line, false)
     if (isHostViewer && isFirstOpen) {
-      card.slot.setText('+ ADD AI  (A)')
+      card.slot.setText('+  ADD AI')
       card.slot.setColor(hex(C.oxide))
       card.frame.setInteractive({ useHandCursor: true })
       card.frame.on('pointerup', () => {
@@ -424,19 +469,15 @@ export class LobbyScene extends Phaser.Scene {
     card.readyBtn.setVisible(true)
     card.readyBtn.setStrokeStyle(2, p.ready ? C.ok : C.oxide, 1)
 
-    // Bleeds up into the inert name/poster space, not down toward the ready
-    // pill — see the padInteractive() doc comment.
-    padInteractive(card.carLeft, { left: 42, right: 42, top: 70 })
-    padInteractive(card.carRight, { left: 42, right: 42, top: 70 })
+    // Bleeds up into the inert slot-marker/thumbnail space, not toward the
+    // ready pill — see the padInteractive() doc comment.
+    padInteractive(card.carLeft, { left: 42, right: 42, top: 70, bottom: 20 })
+    padInteractive(card.carRight, { left: 42, right: 42, top: 70, bottom: 20 })
     card.carLeft.on('pointerup', () => this.changeCar(p, -1))
     card.carRight.on('pointerup', () => this.changeCar(p, 1))
 
-    // Bleeds down past the card's own bottom edge into empty board space,
-    // not up toward the car-change arrows above. Bottom pad trimmed by the
-    // same 18px the pill itself moved down, so the padded hit zone reaches
-    // exactly as far as it did before (unchanged clearance from anything
-    // below the card row).
-    padInteractive(card.readyBtn, { left: 10, right: 10, bottom: 68 })
+    // Comfortable pill hit zone around the READY status readout.
+    padInteractive(card.readyBtn, { left: 10, right: 10, top: 16, bottom: 16 })
     card.readyBtn.on('pointerup', () => this.net.send({ t: 'ready', ready: !p.ready }))
   }
 
@@ -461,15 +502,14 @@ export class LobbyScene extends Phaser.Scene {
   private render() {
     const isHost = this.lobby.hostId === this.youId
     const track = trackById(this.lobby.trackId)
-    const trackHint = isHost && !this.touch ? '   ( [ / ]  or T to change )' : ''
-    this.trackText.setText(`TRACK: ${track.name}${trackHint}`)
+    this.trackText.setText(`TRACK · ${track.name}`)
     this.renderTrackControls(isHost)
 
     for (let i = 0; i < MAX_PLAYERS; i++) {
       const card = this.cards[i]
       card.frame.removeAllListeners('pointerup')
       card.frame.disableInteractive()
-      card.poster.setVisible(false)
+      card.poster.image.setVisible(false)
       card.name.setText('')
       card.car.setText('')
       card.ready.setText('')
@@ -483,11 +523,11 @@ export class LobbyScene extends Phaser.Scene {
     }
 
     const canStart = this.canStart()
-    this.startTile.setState(false, canStart)
+    this.startTile.setState({ selected: false, enabled: canStart })
     if (isHost) {
-      this.startTile.label.setText(canStart ? 'START RACE' : 'Waiting for all players…')
+      this.startTile.setLabel(canStart ? 'START RACE' : 'Waiting for all players…')
     } else {
-      this.startTile.label.setText('Waiting for host…')
+      this.startTile.setLabel('Waiting for host…')
     }
 
     if (this.touch) {

@@ -4,7 +4,8 @@ import { ACTION_LABELS, readableCode } from '../input/bindings'
 import { GAME_ACTIONS } from '../input/inputTypes'
 import { loadSettings } from '../state/settings'
 import { C } from '../ui/theme'
-import { heading, modal, text, tile, type TileHandle, wireTiles } from '../ui/widgets'
+import { text } from '../ui/widgets'
+import { card, confirmSheet, notchedButton, type ButtonHandle, type ConfirmHandle } from '../ui/mobile'
 import type { RaceScene } from './RaceScene'
 
 interface PauseData {
@@ -22,48 +23,55 @@ export class RacePauseScene extends Phaser.Scene {
   private selected = 0
   private help = false
   private confirming = false
-  private handles: TileHandle[] = []
-  private helpText!: Phaser.GameObjects.Text
-  private warning!: Phaser.GameObjects.Text
+  private confirm?: ConfirmHandle
+  private buttons: ButtonHandle[] = []
+  private contextText!: Phaser.GameObjects.Text
+  private contextTitle!: Phaser.GameObjects.Text
 
   constructor() { super('RacePause') }
   init(data: PauseData) { this.pauseData = data }
 
   create() {
-    this.selected = 0; this.help = false; this.confirming = false; this.handles = []
-    this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.72)
-    modal(this, GAME_WIDTH / 2, GAME_HEIGHT / 2, 1050, 800)
-    heading(this, GAME_WIDTH / 2, 190, 'RACE PAUSED')
-    text(this, GAME_WIDTH / 2, 250, `${this.pauseData.trackName} · lap ${this.pauseData.lap}/${this.pauseData.laps} · position ${this.pauseData.position || '—'} · weapons ${this.pauseData.weaponsFree ? 'free' : 'locked'}`, {
-      size: 'body', color: C.textSecondary, origin: [0.5, 0.5],
-    })
-    ITEMS.forEach((label, i) => this.handles.push(tile(this, 620, 390 + i * 105, 500, 74, label, { select: i === 2 ? C.danger : C.oxide })))
-    this.helpText = text(this, 1050, 350, '', { size: 'bodySm', color: C.textBody, lineSpacing: 8 })
-    this.warning = text(this, GAME_WIDTH / 2, 790, '', { size: 'body', color: C.danger, align: 'center', origin: [0.5, 0.5] })
+    this.selected = 0; this.help = false; this.confirming = false; this.confirm = undefined; this.buttons = []
+    const cx = GAME_WIDTH / 2
+    const cy = GAME_HEIGHT / 2
 
-    // tap entry points call the exact same functions the keyboard path calls below.
-    // while the abandon confirm is up, retapping ABANDON/RESUME mirrors keyboard Y/N.
-    wireTiles(
-      this.handles,
-      (i) => { if (!this.confirming) { this.selected = i; this.refresh() } },
-      (i) => {
-        if (this.confirming) {
-          if (i === 2) this.confirmAbandon()
-          else if (i === 0) this.cancelAbandon()
-          this.refresh()
-          return
-        }
-        if (this.help) { this.closeHelp(); this.refresh(); return }
-        this.selected = i
-        this.activateSelected()
-        this.refresh()
-      },
-    )
+    this.add.rectangle(cx, cy, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.74)
+    card(this, cx, cy, 1320, 660, undefined, { accent: C.oxide })
+
+    text(this, cx, cy - 250, 'RACE PAUSED', {
+      size: 'title', face: 'display', weight: 700, letterSpacing: 3, color: C.oxide, origin: [0.5, 0.5], stroke: C.shadow, strokeThickness: 6,
+    })
+    const d = this.pauseData
+    text(this, cx, cy - 190, `${d.trackName}  ·  LAP ${d.lap}/${d.laps}  ·  POSITION ${d.position || '—'}  ·  WEAPONS ${d.weaponsFree ? 'FREE' : 'LOCKED'}`, {
+      size: 'bodySm', face: 'mono', color: C.textSecondary, origin: [0.5, 0.5],
+    })
+
+    // left column — three stacked actions
+    const bx = cx - 330
+    ITEMS.forEach((label, i) => {
+      const btn = notchedButton(this, bx, cy - 70 + i * 120, {
+        w: 540, h: 100, label, size: 'action', align: 'center',
+        variant: i === 2 ? 'danger' : i === 0 ? 'primary' : 'secondary',
+        onFocus: () => { if (!this.confirming) { this.selected = i; this.refresh() } },
+        onActivate: () => { if (!this.confirming) { this.selected = i; this.activateSelected() } },
+      })
+      this.buttons.push(btn)
+    })
+
+    // right column — objective / controls context panel (kept below the status line)
+    card(this, cx + 350, cy + 75, 560, 400, undefined, { accent: C.oxideDim })
+    this.contextTitle = text(this, cx + 350 - 250, cy + 75 - 155, 'OBJECTIVE', {
+      size: 'caption', face: 'display', weight: 600, letterSpacing: 4, color: C.oxide, origin: [0, 0.5],
+    })
+    this.contextText = text(this, cx + 350 - 250, cy + 75 - 115, '', {
+      size: 'bodySm', face: 'mono', color: C.textBody, lineSpacing: 10, origin: [0, 0], wordWrapWidth: 500,
+    })
 
     const kb = this.input.keyboard!
     const onKey = (event: KeyboardEvent) => this.handleKey(event)
     kb.on('keydown', onKey)
-    this.events.once('shutdown', () => kb.off('keydown', onKey))
+    this.events.once('shutdown', () => { kb.off('keydown', onKey); this.confirm?.destroy() })
     this.refresh()
   }
 
@@ -71,7 +79,7 @@ export class RacePauseScene extends Phaser.Scene {
     if (this.confirming) {
       if (event.code === 'KeyY' || event.code === 'Enter') this.confirmAbandon()
       else if (event.code === 'KeyN' || event.code === 'Escape') this.cancelAbandon()
-      this.refresh(); return
+      return
     }
     if (this.help && (event.code === 'Escape' || event.code === 'Enter')) { this.closeHelp(); this.refresh(); return }
     if (event.code === 'Escape') { this.resumeRace(); return }
@@ -87,27 +95,48 @@ export class RacePauseScene extends Phaser.Scene {
     this.scene.stop()
   }
 
-  /** What Enter does for the currently-selected row — shared by keyboard and tap. */
+  /** What Enter/tap does for the currently-selected row — shared by keyboard and tap. */
   private activateSelected() {
     if (this.selected === 0) { this.resumeRace(); return }
-    if (this.selected === 1) this.help = true
-    if (this.selected === 2) this.confirming = true
+    if (this.selected === 1) { this.help = !this.help; this.refresh(); return }
+    if (this.selected === 2) this.openAbandon()
   }
 
   private closeHelp() { this.help = false }
+
+  private openAbandon() {
+    this.confirming = true
+    this.confirm = confirmSheet(this, {
+      title: 'ABANDON THIS RACE?',
+      body: 'Committed DNF: no prize, points, or pickup cash. Damage persists, starts and loan time advance, and one-race gear is consumed.',
+      cancelLabel: 'CANCEL',
+      confirmLabel: 'CONFIRM DNF',
+      danger: true,
+      onCancel: () => this.cancelAbandon(),
+      onConfirm: () => this.confirmAbandon(),
+    })
+    this.refresh()
+  }
 
   private confirmAbandon() {
     ;(this.scene.get('Race') as RaceScene).abandonRace()
     this.scene.stop()
   }
 
-  private cancelAbandon() { this.confirming = false }
+  private cancelAbandon() {
+    this.confirm?.destroy()
+    this.confirm = undefined
+    this.confirming = false
+    this.refresh()
+  }
 
   private refresh() {
-    this.handles.forEach((handle, i) => handle.setState(i === this.selected, true))
+    this.buttons.forEach((b, i) => b.setState({ selected: i === this.selected, enabled: true }))
     const settings = loadSettings()
-    const lines = GAME_ACTIONS.map((action) => `${ACTION_LABELS[action].padEnd(18)} ${settings.bindings[action].map(readableCode).join(' / ')}`)
-    this.helpText.setText(this.help ? ['CONTROLS', '', ...lines, '', 'Damage persists between races.', 'Turbo recharges when released.', 'Weapons unlock shortly after the start.', 'Pickups can repair, reload, or trap you.'].join('\n') : ['OBJECTIVE', '', 'Finish every lap before the field.', 'Wrecked cars score no prize.', '', 'Select CONTROLS / HELP for bindings.'].join('\n'))
-    this.warning.setText(this.confirming ? 'ABANDON THIS RACE?\nDNF: no prize or points; damage and loan time persist; one-race gear is consumed.\nEnter/Y confirm · Esc/N cancel' : '')
+    const lines = GAME_ACTIONS.map((action) => `${ACTION_LABELS[action].padEnd(16)} ${settings.bindings[action].map(readableCode).join(' / ')}`)
+    this.contextTitle.setText(this.help ? 'CONTROLS' : 'OBJECTIVE')
+    this.contextText.setText(this.help
+      ? [...lines, '', 'Damage persists between races.', 'Turbo recharges when released.', 'Weapons unlock shortly after the start.'].join('\n')
+      : ['FINISH EVERY LAP BEFORE THE FIELD.', '', 'Wrecked cars score no prize.', '', 'Select CONTROLS / HELP for bindings.'].join('\n'))
   }
 }

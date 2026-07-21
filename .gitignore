@@ -25,3 +25,9 @@ Screenshot*.png
 # Screenshot and video captures (local, do not commit)
 .mp-shots/
 output/
+
+# Mobile UI redesign reference PNGs (research only, never ship)
+/design/
+
+# Claude Code local session state
+/.claude/
