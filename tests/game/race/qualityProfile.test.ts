@@ -22,14 +22,16 @@ describe('resolveQuality', () => {
 })
 
 describe('QUALITY_PROFILE', () => {
-  it('high keeps bloom on and particles at full rate', () => {
+  it('high keeps bloom on, particles at full rate, and persistent skid marks', () => {
     expect(QUALITY_PROFILE.high.bloom).toBe(true)
     expect(QUALITY_PROFILE.high.particleScale).toBe(1)
+    expect(QUALITY_PROFILE.high.skidMarks).toBe(true)
   })
 
-  it('low drops bloom and halves particle rate (never zeroes it)', () => {
+  it('low drops bloom, halves particle rate (never zeroes it), and skips skid marks', () => {
     expect(QUALITY_PROFILE.low.bloom).toBe(false)
     expect(QUALITY_PROFILE.low.particleScale).toBe(0.5)
     expect(QUALITY_PROFILE.low.particleScale).toBeGreaterThan(0)
+    expect(QUALITY_PROFILE.low.skidMarks).toBe(false)
   })
 })

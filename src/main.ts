@@ -58,6 +58,41 @@ async function fontsReady() {
   }
 }
 
+/**
+ * Mobile browsers (notably iOS/Chrome tabs) report stale viewport dimensions
+ * right after an orientation change and can silently drop the WebGL context
+ * when the tab is backgrounded or the device rotates mid-race — leaving a blank
+ * canvas on the way back. Force a scale refresh (immediately and after the
+ * viewport settles) and re-arm rendering when the context is restored.
+ */
+function initCanvasResilience(game: Phaser.Game): void {
+  const refresh = () => { try { game.scale.refresh() } catch { /* pre-boot resize */ } }
+
+  const onOrientation = () => {
+    refresh()
+    window.setTimeout(refresh, 250)
+    window.setTimeout(refresh, 600)
+  }
+  window.addEventListener('orientationchange', onOrientation)
+
+  // Bring the canvas back when the tab returns to the foreground.
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) onOrientation() })
+
+  const canvas = game.canvas
+  if (canvas) {
+    // Allowing the default on 'webglcontextlost' would make the loss permanent;
+    // preventDefault lets the browser fire 'webglcontextrestored' afterwards.
+    canvas.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault()
+      console.warn('[gfx] WebGL context lost — awaiting restore')
+    }, false)
+    canvas.addEventListener('webglcontextrestored', () => {
+      console.warn('[gfx] WebGL context restored')
+      refresh()
+    }, false)
+  }
+}
+
 async function boot() {
   await fontsReady()
 
@@ -105,6 +140,7 @@ async function boot() {
   // (`__game.scene.start('Race')`) instead of walking the menus.
   if (DEBUG) (window as unknown as Record<string, unknown>).__game = game
 
+  initCanvasResilience(game)
   initOrientation()
   initFullscreenOnGesture()
 }

@@ -15,11 +15,19 @@ export interface QualityProfile {
   bloom: boolean
   /** Multiplier applied to particle emitter quantities/frequencies (exhaust, smoke, sparks, trails). */
   particleScale: number
+  /**
+   * Persistent tire-streak marks stamped into a full-track RenderTexture.
+   * Off on 'low': each per-frame RenderTexture.beginDraw switches the render
+   * target, and on tile-based mobile GPUs that framebuffer switch costs a flat
+   * per-frame tax that tanks FPS while cornering. The live tire-smoke puff is a
+   * particle (kept), so drifting still reads without the persistent streaks.
+   */
+  skidMarks: boolean
 }
 
 export const QUALITY_PROFILE: Record<ResolvedQuality, QualityProfile> = {
-  high: { bloom: true, particleScale: 1 },
-  low: { bloom: false, particleScale: 0.5 },
+  high: { bloom: true, particleScale: 1, skidMarks: true },
+  low: { bloom: false, particleScale: 0.5, skidMarks: false },
 }
 
 /** 'auto' defers to the device: touch devices (typically weaker/mobile GPUs) get 'low'. */

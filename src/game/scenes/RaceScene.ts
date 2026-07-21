@@ -198,6 +198,8 @@ export class RaceScene extends Phaser.Scene {
   /** presentation-only render quality, resolved once in create(); never touches sim state */
   private quality: ResolvedQuality = 'high'
   private particleScale = 1
+  /** Persistent RenderTexture tire streaks — off on 'low' (mobile GPU fill). */
+  private skidMarks = true
 
   private lookAheadX = 0
   private lookAheadY = 0
@@ -214,6 +216,11 @@ export class RaceScene extends Phaser.Scene {
   private skidRT!: Phaser.GameObjects.RenderTexture
   private skidStamp!: Phaser.GameObjects.Image
   private scorchStamp!: Phaser.GameObjects.Image
+  // Skid stamps collected during the per-car pass, then flushed in a SINGLE
+  // beginDraw/endDraw batch each frame. Drawing each stamp with skidRT.draw()
+  // forces its own WebGL framebuffer bind + pipeline flush — cheap on desktop
+  // but a hard FPS hit on mobile once several cars are cornering at once.
+  private pendingSkids: Array<{ x: number; y: number; rot: number }> = []
   private tireSmoke!: Phaser.GameObjects.Particles.ParticleEmitter
   private explosionSmoke!: Phaser.GameObjects.Particles.ParticleEmitter
   private hitSparks!: Phaser.GameObjects.Particles.ParticleEmitter
@@ -292,6 +299,7 @@ export class RaceScene extends Phaser.Scene {
     // settings change during a race takes effect on the next race, not live
     this.quality = resolveQuality(this.settings.quality, isTouchDevice())
     this.particleScale = QUALITY_PROFILE[this.quality].particleScale
+    this.skidMarks = QUALITY_PROFILE[this.quality].skidMarks
 
     if (this.mode === 'network') {
       this.setupNetworkRace()
@@ -417,6 +425,7 @@ export class RaceScene extends Phaser.Scene {
       this.syncCarVisuals(car, view)
       this.updateCarEffects(car, view)
     }
+    this.flushSkids()
     this.syncBulletViews()
     this.syncMineViews()
     this.syncPickupViews()
@@ -1549,6 +1558,7 @@ export class RaceScene extends Phaser.Scene {
     this.drawStartLine()
 
     this.skidRT = this.add.renderTexture(0, 0, w, h).setOrigin(0).setDepth(2)
+    this.pendingSkids.length = 0
     this.skidStamp = this.add.image(0, 0, 'skid-stamp').setVisible(false)
     this.scorchStamp = this.add.image(0, 0, 'scorch').setVisible(false)
 
@@ -2020,17 +2030,36 @@ export class RaceScene extends Phaser.Scene {
       (Math.abs(lateralSpeed(car.state)) > 90 || (input.handbrake && speed(car.state) > 150))
     if (skidding) {
       const rearX = -25
-      for (const side of [-13, 13]) {
-        const wx = car.state.x + rearX * cos - side * sin
-        const wy = car.state.y + rearX * sin + side * cos
-        this.skidStamp.setPosition(wx, wy).setRotation(car.state.heading).setAlpha(0.4)
-        this.skidRT.draw(this.skidStamp)
+      // Persistent streaks stamp into a RenderTexture (per-frame framebuffer
+      // switch) — skipped on 'low' where it tanks mobile FPS; the tire-smoke
+      // puff below still conveys the drift.
+      if (this.skidMarks) {
+        for (const side of [-13, 13]) {
+          const wx = car.state.x + rearX * cos - side * sin
+          const wy = car.state.y + rearX * sin + side * cos
+          // Deferred: batched once per frame in flushSkids(), not drawn here.
+          this.pendingSkids.push({ x: wx, y: wy, rot: car.state.heading })
+        }
       }
       if (car.id === this.localCarId) {
         this.tireSmoke.setPosition(car.state.x + rearX * cos, car.state.y + rearX * sin)
       }
     }
     if (car.id === this.localCarId) this.tireSmoke.emitting = skidding
+  }
+
+  /** Stamp every skid mark collected this frame in one WebGL batch: a single
+   *  framebuffer bind for all cars/tires instead of one per draw. This is the
+   *  fix for the cornering FPS drop on mobile. */
+  private flushSkids() {
+    if (this.pendingSkids.length === 0) return
+    this.skidRT.beginDraw()
+    for (const s of this.pendingSkids) {
+      this.skidStamp.setPosition(s.x, s.y).setRotation(s.rot).setAlpha(0.4)
+      this.skidRT.batchDraw(this.skidStamp, s.x, s.y)
+    }
+    this.skidRT.endDraw()
+    this.pendingSkids.length = 0
   }
 
   private updateCamera() {

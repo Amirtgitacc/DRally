@@ -13,6 +13,7 @@ import {
   paintGlowTexture,
 } from '../textures/lightTextures'
 import { CORE_TEXTURES } from '../textures/deferredLoad'
+import { ensureDeferredLoadStarted } from '../textures/deferredLoadScene'
 import { GAME_HEIGHT, GAME_WIDTH } from '../../config/game'
 import { C } from '../ui/theme'
 import { panel, text } from '../ui/widgets'
@@ -123,6 +124,10 @@ export class BootScene extends Phaser.Scene {
     paintGlowTexture(this) // glow-soft: cat-eye reflectors + light pools, kept (separate from pole)
     paintChevronTexture(this)
     paintDebrisTexture(this)
+    // Kick off deferred art streaming here (not in MenuScene) so every entry
+    // path — including Root → Settings / Multiplayer, which never touch the
+    // Single Player hub — gets its backgrounds and posters. Idempotent.
+    ensureDeferredLoadStarted(this)
     this.scene.start('Root')
   }
 }

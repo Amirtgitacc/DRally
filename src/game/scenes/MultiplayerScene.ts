@@ -162,8 +162,8 @@ export class MultiplayerScene extends Phaser.Scene {
     this.posterMaxH = POSTER_FRAME.h * t.scale
     this.carArt = this.add.image(frameCenter.x, frameCenter.y, posterTextureFor(this.currentCar().id, this.livery))
     fitImage(this.carArt, this.posterMaxW, this.posterMaxH)
-    this.previewLabel = text(this, frameCenter.x, frameCenter.y + this.posterMaxH / 2 + 26, '', {
-      size: 'bodySm', face: 'mono', color: C.textSecondary, origin: [0.5, 0.5],
+    this.previewLabel = text(this, frameCenter.x, frameCenter.y + this.posterMaxH / 2 + 34, '', {
+      size: 'action', face: 'display', weight: 700, letterSpacing: 2, color: C.oxide, origin: [0.5, 0.5],
     })
 
     // deep link: prefill + focus JOIN when the URL carries a valid ?room= code
@@ -178,8 +178,13 @@ export class MultiplayerScene extends Phaser.Scene {
 
     backPlate(this, 'MAIN', () => this.backToMenu())
 
-    text(this, cx, GAME_HEIGHT - 30, 'Type to edit name/code · ←/→ change car/livery · ↑/↓ navigate · Enter select · Esc back', {
-      size: 'caption', color: C.textMuted, origin: [0.5, 0.5],
+    // Touch and keyboard need different guidance — the keyboard hint is noise on
+    // a phone, and it was rendered too small to read there anyway.
+    const hint = isTouchDevice()
+      ? 'Tap a field to edit  ·  tap the car to change it  ·  tap CREATE or JOIN'
+      : 'Type to edit name/code  ·  ←/→ change car/livery  ·  ↑/↓ navigate  ·  Enter select  ·  Esc back'
+    text(this, cx, GAME_HEIGHT - 34, hint, {
+      size: 'body', face: 'mono', color: C.textSecondary, origin: [0.5, 0.5], wordWrapWidth: FORM_W + 40, align: 'center',
     })
 
     const kb = this.input.keyboard!

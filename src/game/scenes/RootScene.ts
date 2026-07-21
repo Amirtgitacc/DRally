@@ -5,6 +5,7 @@ import { loadSettings, saveSettings } from '../state/settings'
 import { C, hex } from '../ui/theme'
 import { text } from '../ui/widgets'
 import { sceneBackground } from '../ui/sceneBackground'
+import { isTouchDevice } from '../input/device'
 import { coverBakedMenuArt, notchedButton, SAFE, type ButtonHandle } from '../ui/mobile'
 
 interface RootItem {
@@ -30,7 +31,9 @@ const ITEMS: RootItem[] = [
  * one level down in the Single Player hub.
  */
 export class RootScene extends Phaser.Scene {
-  private selected = 0
+  // -1 = nothing highlighted (the default look): every option reads neutral
+  // white until the pointer hovers one (desktop) or the keyboard moves onto it.
+  private selected = -1
   private buttons: ButtonHandle[] = []
   private muteIcon!: Phaser.GameObjects.Text
 
@@ -40,7 +43,7 @@ export class RootScene extends Phaser.Scene {
 
   create() {
     audioBus.applySettings(loadSettings())
-    this.selected = 0
+    this.selected = -1
     this.buttons = []
 
     // menu-peykan-background.webp bakes the OLD "PROJECT DEATHRALLY /
@@ -60,7 +63,7 @@ export class RootScene extends Phaser.Scene {
     const gap = bh + 32
     ITEMS.forEach((item, i) => {
       const btn = notchedButton(this, bx, startY + i * gap, {
-        w: bw, h: bh, label: item.label, size: 'title', variant: i === 0 ? 'primary' : 'secondary',
+        w: bw, h: bh, label: item.label, size: 'title', variant: 'secondary',
         onFocus: () => { this.selected = i; this.refresh() },
         onActivate: () => { this.selected = i; this.activate() },
       })
@@ -68,6 +71,7 @@ export class RootScene extends Phaser.Scene {
     })
 
     this.buildMute()
+    this.buildFullscreenHint()
 
     const kb = this.input.keyboard!
     const up = () => this.move(-1)
@@ -138,7 +142,11 @@ export class RootScene extends Phaser.Scene {
   }
 
   private move(delta: number) {
-    this.selected = (this.selected + delta + ITEMS.length) % ITEMS.length
+    // From the neutral "nothing selected" state, the first key press lands on
+    // the top (down) or bottom (up) option rather than wrapping oddly.
+    this.selected = this.selected === -1
+      ? (delta > 0 ? 0 : ITEMS.length - 1)
+      : (this.selected + delta + ITEMS.length) % ITEMS.length
     this.refresh()
   }
 
@@ -147,6 +155,18 @@ export class RootScene extends Phaser.Scene {
   }
 
   private activate() {
+    // Enter with nothing highlighted yet: highlight the first option instead of
+    // firing an undefined entry.
+    if (this.selected < 0) { this.selected = 0; this.refresh(); return }
     ITEMS[this.selected].activate(this)
+  }
+
+  /** Touch-only nudge: iOS browsers can't go true-fullscreen, so the only way
+   *  to lose the address bar is to install the page. Desktop never sees this. */
+  private buildFullscreenHint() {
+    if (!isTouchDevice()) return
+    text(this, 1240, 1030, 'Add to Home Screen for fullscreen', {
+      size: 'caption', face: 'mono', color: C.textMuted, origin: [0.5, 0.5],
+    })
   }
 }
