@@ -16,7 +16,7 @@ import { backPlate, card, notchedButton, screenTitle, SAFE } from '../ui/mobile'
 function controlLines(weaponsEnabled: boolean): string[] {
   if (isTouchDevice()) {
     return [
-      'PAD STEERS · AUTO ACCELERATE',
+      'AIM DIAL TO DRIVE · PUSH = SPEED',
       weaponsEnabled ? 'BRK · HB · TURBO · FIRE · MINE' : 'BRK · HB · TURBO (no weapons)',
     ]
   }

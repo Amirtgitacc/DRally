@@ -229,6 +229,10 @@ export class RaceScene extends Phaser.Scene {
   private hudContainer!: Phaser.GameObjects.Container
   /** race HUD font/plate scale — 1 on desktop, TOUCH_HUD_SCALE on touch devices; see hudScale.ts */
   private hudScaleFactor = 1
+  /** touch HUD variant: controls in the corners, stats bottom-centre + on buttons */
+  private isTouchHud = false
+  /** bottom-centre hull readout, touch layout only */
+  private touchHullText?: Phaser.GameObjects.Text
   private hudBars!: Phaser.GameObjects.Graphics
   /** red border flash when the player takes a hit */
   private edgeFlash!: Phaser.GameObjects.Image
@@ -1500,11 +1504,31 @@ export class RaceScene extends Phaser.Scene {
   // ---------------------------------------------------------------- input glue
 
   private readPlayerInput(): CarInput {
+    const im = this.inputManager
+    const stick = im.touchStick()
+    // Point-to-go touch stick: aim the thumb where the car should head. Steering
+    // is proportional to the angle between the car's heading and the stick
+    // direction (both measured cos/sin from +x), throttle to the push distance.
+    if (stick.active) {
+      const brake = im.down('brake') ? 1 : 0
+      const handbrake = im.down('handbrake')
+      const mag = Math.min(1, Math.hypot(stick.x, stick.y))
+      const DEAD = 0.16
+      if (mag < DEAD) return { throttle: 0, brake, steer: 0, handbrake }
+      const target = Math.atan2(stick.y, stick.x)
+      const err = Math.atan2(
+        Math.sin(target - this.myCar().state.heading),
+        Math.cos(target - this.myCar().state.heading),
+      )
+      const steer = Math.max(-1, Math.min(1, err / (Math.PI / 4)))
+      const throttle = (mag - DEAD) / (1 - DEAD)
+      return { throttle, brake, steer, handbrake }
+    }
     return {
-      throttle: this.inputManager.down('accelerate') ? 1 : 0,
-      brake: this.inputManager.down('brake') ? 1 : 0,
-      steer: (this.inputManager.down('steerRight') ? 1 : 0) - (this.inputManager.down('steerLeft') ? 1 : 0),
-      handbrake: this.inputManager.down('handbrake'),
+      throttle: im.down('accelerate') ? 1 : 0,
+      brake: im.down('brake') ? 1 : 0,
+      steer: (im.down('steerRight') ? 1 : 0) - (im.down('steerLeft') ? 1 : 0),
+      handbrake: im.down('handbrake'),
     }
   }
 
@@ -2070,7 +2094,7 @@ export class RaceScene extends Phaser.Scene {
     const overcharged = this.hasOverTurbo
 
     // boost pulls the camera back and shakes the frame
-    const targetZoom = 1.05 - 0.17 * speedRatio - (boosting ? TURBO_FX.zoomOut : 0)
+    const targetZoom = 1.35 - 0.17 * speedRatio - (boosting ? TURBO_FX.zoomOut : 0)
     cam.setZoom(Phaser.Math.Linear(cam.zoom, targetZoom, 0.04))
 
     // look-ahead: shift the camera toward where the car is going
@@ -2116,7 +2140,7 @@ export class RaceScene extends Phaser.Scene {
     const cam = this.cameras.main
     cam.setBounds(0, 0, this.track.world.w, this.track.world.h)
     cam.startFollow(this.myView().sprite, true, 0.08, 0.08)
-    cam.setZoom(1.05)
+    cam.setZoom(1.35)
     if (this.game.renderer.type === Phaser.WEBGL) {
       // vignette is cheap and part of the visual identity — keep it at every quality level
       cam.postFX.addVignette(0.5, 0.5, 1.0, 0.18)
@@ -2194,7 +2218,9 @@ export class RaceScene extends Phaser.Scene {
     // hudScale.ts resolves the factor once here: 1 on desktop (every `* S`
     // below is then a no-op, so desktop pixels are unchanged), TOUCH_HUD_SCALE
     // on touch. See hudScale.ts for why only some clusters also reposition.
-    const S = hudScale(isTouchDevice())
+    const isTouch = isTouchDevice()
+    this.isTouchHud = isTouch
+    const S = hudScale(isTouch)
     this.hudScaleFactor = S
 
     // full-frame overlays, under the readouts: boost streaks, then damage flash
@@ -2206,11 +2232,12 @@ export class RaceScene extends Phaser.Scene {
       .setAlpha(0)
 
     const plates = this.add.graphics()
-    // status (bottom-left): rows keep their 36px pitch and the plate keeps
-    // its top edge (854), but the row grid — bar column and value anchor —
-    // scales horizontally, so the plate widens with it (capped clear of the
-    // touch brake button; see hudScale.ts statusPlateWidth). 390 wide at S=1.
-    plate(plates, STATUS_PLATE_X, this.scale.height - 226, statusPlateWidth(S), 210)
+    // status (bottom-left, desktop only): rows keep their 36px pitch and the
+    // plate keeps its top edge (854), but the row grid — bar column and value
+    // anchor — scales horizontally, so the plate widens with it. On touch this
+    // whole cluster is gone: hull+speed move bottom-centre and ammo/turbo/mines
+    // counts live on the buttons.
+    if (!isTouch) plate(plates, STATUS_PLATE_X, this.scale.height - 226, statusPlateWidth(S), 210)
     // standings (top-right): scaled, since standings rows can be as wide as
     // "1. DRIVERNAME 100%" and were already tight against the plate edge at
     // 1x — grows from its screen-edge anchor via anchorRight/anchorBottom,
@@ -2218,27 +2245,31 @@ export class RaceScene extends Phaser.Scene {
     plate(plates, anchorRight(this.scale.width, 320, S), 160 * S, 306 * S, 138 * S)
 
     const hintCopy = isTouchDevice()
-      ? 'Steer pad + hold buttons to drive · II pause · MUTE mute'
+      ? 'Aim dial to drive · hold buttons · II pause · MUTE mute'
       : 'Configured controls active · Esc pause/help · M mute'
     const hint = hintBar(this, hintCopy)
     hint.setFontSize(TYPE.caption * S)
 
-    const statusRows = ['HULL', 'AMMO', this.hasOverTurbo ? 'OVERCHARGE' : 'TURBO', 'MINES']
-    statusRows.forEach((label, i) => {
-      const y = this.scale.height - 202 + i * 36
-      const labelText = text(this, 28, y, label, {
-        size: 'micro', color: i === 2 && this.hasOverTurbo ? C.warn : C.textSecondary,
+    // desktop status rows (HULL/AMMO/TURBO/MINES). Touch shows these differently
+    // (hull bottom-centre, ammo/turbo/mines on the buttons), so skip them there.
+    if (!isTouch) {
+      const statusRows = ['HULL', 'AMMO', this.hasOverTurbo ? 'OVERCHARGE' : 'TURBO', 'MINES']
+      statusRows.forEach((label, i) => {
+        const y = this.scale.height - 202 + i * 36
+        const labelText = text(this, 28, y, label, {
+          size: 'micro', color: i === 2 && this.hasOverTurbo ? C.warn : C.textSecondary,
+        })
+        labelText.setFontSize(TYPE.micro * S)
+        this.hudStatusLabels.push(labelText)
+        // right-anchored at the scaled grid's value column (386 at S=1) so the
+        // widest values ("100% LEFT", "100 / 100") never reach the bar column
+        const valueText = text(this, statusValueX(S), y - 2, '', {
+          size: 'micro', color: C.textPrimary, origin: [1, 0],
+        })
+        valueText.setFontSize(TYPE.micro * S)
+        this.hudStatusValues.push(valueText)
       })
-      labelText.setFontSize(TYPE.micro * S)
-      this.hudStatusLabels.push(labelText)
-      // right-anchored at the scaled grid's value column (386 at S=1) so the
-      // widest values ("100% LEFT", "100 / 100") never reach the bar column
-      const valueText = text(this, statusValueX(S), y - 2, '', {
-        size: 'micro', color: C.textPrimary, origin: [1, 0],
-      })
-      valueText.setFontSize(TYPE.micro * S)
-      this.hudStatusValues.push(valueText)
-    })
+    }
 
     this.cashText = text(this, 16, 62, '$0', {
       size: 'action',
@@ -2251,35 +2282,37 @@ export class RaceScene extends Phaser.Scene {
     // instead of showing a misleading static value (F3)
     this.cashText.setVisible(this.mode !== 'network')
 
-    this.speedText = text(this, 28, this.scale.height - speedTextBottomMargin(S), '0 MPH', {
-      size: 'speed',
-      color: C.oxide,
-      stroke: C.shadow,
-      strokeThickness: STROKE.heading,
-      origin: [0, 1],
-    })
-    // origin [0,1] anchors the text's bottom-left corner at (28, height - margin),
-    // so a bigger font grows up and right — the anchor point itself never moves.
-    // The margin shrinks at touch scale (speedTextBottomMargin) so the enlarged
-    // glyph's top edge still clears the MINES pip row above it — see hudScale.ts.
+    if (isTouch) {
+      // bottom-centre, between the two corner control clusters: a hull bar (drawn
+      // in updateHud) with its % above it, and the speed readout below.
+      this.touchHullText = text(this, this.scale.width / 2, this.scale.height - 118, 'HULL 100%', {
+        size: 'caption', color: C.ok, stroke: C.shadow, strokeThickness: STROKE.text, origin: [0.5, 1],
+      })
+      this.touchHullText.setFontSize(TYPE.caption * S)
+      this.speedText = text(this, this.scale.width / 2, this.scale.height - 18, '0 MPH', {
+        size: 'speed', color: C.oxide, stroke: C.shadow, strokeThickness: STROKE.heading, origin: [0.5, 1],
+      })
+    } else {
+      this.speedText = text(this, 28, this.scale.height - speedTextBottomMargin(S), '0 MPH', {
+        size: 'speed', color: C.oxide, stroke: C.shadow, strokeThickness: STROKE.heading, origin: [0, 1],
+      })
+    }
+    // origin anchors the text corner at the fixed point, so a bigger font grows
+    // away from it. On desktop the margin shrinks at touch scale so the enlarged
+    // glyph clears the MINES pip row above it — see hudScale.ts.
     this.speedText.setFontSize(TYPE.speed * S)
 
     this.hudBars = this.add.graphics()
 
-    // bottom-right anchor: grows up and left from the scaled screen-edge offset.
-    this.positionText = text(
-      this,
-      anchorRight(this.scale.width, 28, S),
-      anchorBottom(this.scale.height, 30, S),
-      '4th',
-      {
-        size: 'readout',
-        color: C.oxide,
-        stroke: C.shadow,
-        strokeThickness: STROKE.title,
-        origin: [1, 1],
-      },
-    )
+    // desktop: bottom-right corner. touch: top-centre (the bottom-right corner
+    // now holds the action button cluster).
+    this.positionText = isTouch
+      ? text(this, this.scale.width / 2, 14, '4th', {
+          size: 'readout', color: C.oxide, stroke: C.shadow, strokeThickness: STROKE.title, origin: [0.5, 0],
+        })
+      : text(this, anchorRight(this.scale.width, 28, S), anchorBottom(this.scale.height, 30, S), '4th', {
+          size: 'readout', color: C.oxide, stroke: C.shadow, strokeThickness: STROKE.title, origin: [1, 1],
+        })
     this.positionText.setFontSize(TYPE.readout * S)
 
     // top-right anchor: the lap/time/best stack and the standings rows below
@@ -2319,7 +2352,10 @@ export class RaceScene extends Phaser.Scene {
     // top (854) can't grow, so on touch the tag's font caps at 1.25x and the
     // tag lifts ~6px to keep its bottom clear of the plate border (both are
     // identity at S=1; see hudScale.ts gearTagY / gearTagFontScale)
-    const gearText = text(this, 16, gearTagY(this.scale.height, S), gear.join(' · '), {
+    // desktop: just above the bottom-left status plate. touch: that corner is
+    // the joystick now, so tuck the tag top-left, under the identity line.
+    const gearY = isTouch ? 62 + TYPE.action * S + 8 + TYPE.caption * S + 6 : gearTagY(this.scale.height, S)
+    const gearText = text(this, 16, gearY, gear.join(' · '), {
       size: 'caption',
       color: C.oxideDim,
       stroke: C.shadow,
@@ -2358,6 +2394,7 @@ export class RaceScene extends Phaser.Scene {
       ...this.hudStatusValues,
       this.cashText,
       this.speedText,
+      ...(this.touchHullText ? [this.touchHullText] : []),
       this.hudBars,
       this.positionText,
       this.lapText,
@@ -2390,44 +2427,53 @@ export class RaceScene extends Phaser.Scene {
       this.bestText.setText(`BEST ${formatTime(Math.min(...player.lapTimes))}`)
     }
 
-    // HULL fills with safety remaining (not damage taken), so every bar answers
-    // "how much do I have left?" in the same direction.
-    // by/row spacing/pip spacing stay put; bx and bw come from the scaled row
-    // grid (130/170 at S=1) so the bar clears the widest label on its left
-    // and the right-anchored value text on its right — see hudScale.ts.
-    const S = this.hudScaleFactor
-    const bx = statusBarX(S)
-    const by = this.scale.height - 200
-    const bw = statusBarWidth(S)
-    const bh = 14 * S
-    const pipRadius = 7 * S
+    // HULL fills with safety remaining (not damage taken), so it answers
+    // "how much do I have left?" the same direction as every other meter.
     const hullRemaining = Math.max(0, 100 - player.damage)
-    const bars: Array<[number, number]> = [
-      [hullRemaining / 100, damageColor(player.damage)],
-      [player.ammo / GUN.ammoMax, C.ammo],
-      [player.turbo, this.hasOverTurbo ? C.warn : C.turbo],
-    ]
     this.hudBars.clear()
-    bars.forEach(([ratio, color], i) => {
-      statBar(this.hudBars, bx, by + i * 36, bw, bh, Phaser.Math.Clamp(ratio, 0, 1), color, { backdrop: true })
-    })
-    // Always draw the full mine capacity: an empty row now visibly means zero.
-    for (let i = 0; i < MINES.count; i++) {
-      const x = bx + 8 + i * 25
-      const y = by + 3 * 36 + 6
-      this.hudBars.fillStyle(i < player.mines ? C.danger : C.surfaceTrack, 1)
-      this.hudBars.fillCircle(x, y, pipRadius)
-      this.hudBars.lineStyle(2, i < player.mines ? C.warn : C.border, 0.9)
-      this.hudBars.strokeCircle(x, y, pipRadius)
-    }
 
-    // env.weaponsEnabled mirrors career.profile.weaponsEnabled in single-player and
-    // is always true online — read it so this per-frame HUD never touches the career
-    const weapons = this.mode === 'network' ? this.env.weaponsEnabled : this.career.profile.weaponsEnabled
-    this.hudStatusValues[0].setText(`${Math.round(hullRemaining)}% LEFT`).setColor(hex(damageColor(player.damage)))
-    this.hudStatusValues[1].setText(weapons ? `${player.ammo} / ${GUN.ammoMax}` : 'DISABLED').setColor(hex(weapons ? C.ammo : C.textDisabled))
-    this.hudStatusValues[2].setText(`${Math.round(player.turbo * 100)}%`).setColor(hex(this.hasOverTurbo ? C.warn : C.turbo))
-    this.hudStatusValues[3].setText(weapons ? `${player.mines} / ${MINES.count}` : 'DISABLED').setColor(hex(weapons ? C.danger : C.textDisabled))
+    if (this.isTouchHud) {
+      // bottom-centre hull bar + %; ammo/turbo/mines counts go onto the buttons
+      const bw = 280
+      const bx = this.scale.width / 2 - bw / 2
+      const by = this.scale.height - 112
+      statBar(this.hudBars, bx, by, bw, 14, Phaser.Math.Clamp(hullRemaining / 100, 0, 1), damageColor(player.damage), { backdrop: true })
+      this.touchHullText?.setText(`HULL ${Math.round(hullRemaining)}%`).setColor(hex(damageColor(player.damage)))
+      this.touchControls?.setReadouts({ ammo: player.ammo, mines: player.mines, turbo: player.turbo })
+    } else {
+      // desktop bottom-left status grid. bx/bw come from the scaled row grid
+      // (130/170 at S=1) so the bar clears its label and value — see hudScale.ts.
+      const S = this.hudScaleFactor
+      const bx = statusBarX(S)
+      const by = this.scale.height - 200
+      const bw = statusBarWidth(S)
+      const bh = 14 * S
+      const pipRadius = 7 * S
+      const bars: Array<[number, number]> = [
+        [hullRemaining / 100, damageColor(player.damage)],
+        [player.ammo / GUN.ammoMax, C.ammo],
+        [player.turbo, this.hasOverTurbo ? C.warn : C.turbo],
+      ]
+      bars.forEach(([ratio, color], i) => {
+        statBar(this.hudBars, bx, by + i * 36, bw, bh, Phaser.Math.Clamp(ratio, 0, 1), color, { backdrop: true })
+      })
+      // Always draw the full mine capacity: an empty row now visibly means zero.
+      for (let i = 0; i < MINES.count; i++) {
+        const x = bx + 8 + i * 25
+        const y = by + 3 * 36 + 6
+        this.hudBars.fillStyle(i < player.mines ? C.danger : C.surfaceTrack, 1)
+        this.hudBars.fillCircle(x, y, pipRadius)
+        this.hudBars.lineStyle(2, i < player.mines ? C.warn : C.border, 0.9)
+        this.hudBars.strokeCircle(x, y, pipRadius)
+      }
+      // env.weaponsEnabled mirrors career.profile.weaponsEnabled in single-player and
+      // is always true online — read it so this per-frame HUD never touches the career
+      const weapons = this.mode === 'network' ? this.env.weaponsEnabled : this.career.profile.weaponsEnabled
+      this.hudStatusValues[0].setText(`${Math.round(hullRemaining)}% LEFT`).setColor(hex(damageColor(player.damage)))
+      this.hudStatusValues[1].setText(weapons ? `${player.ammo} / ${GUN.ammoMax}` : 'DISABLED').setColor(hex(weapons ? C.ammo : C.textDisabled))
+      this.hudStatusValues[2].setText(`${Math.round(player.turbo * 100)}%`).setColor(hex(this.hasOverTurbo ? C.warn : C.turbo))
+      this.hudStatusValues[3].setText(weapons ? `${player.mines} / ${MINES.count}` : 'DISABLED').setColor(hex(weapons ? C.danger : C.textDisabled))
+    }
 
     const playerPos = this.sim.placementOrder.indexOf(this.localCarId) + 1
     if (playerPos > 0) this.positionText.setText(player.wrecked ? 'OUT' : ordinal(playerPos))

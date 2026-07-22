@@ -3,7 +3,7 @@
  * No Phaser, DOM, or side effects — only data structures and calculations.
  */
 
-import { STATUS_PLATE_X, TOUCH_HUD_SCALE, anchorBottom, anchorRight, statusPlateWidth } from '../race/hudScale'
+import { TOUCH_HUD_SCALE, anchorRight } from '../race/hudScale'
 
 // Mirrors GAME_WIDTH from src/config/game.ts, which cannot be imported here:
 // that module reads window.location at load time and this one must stay browser-free.
@@ -35,77 +35,63 @@ export interface TouchLayout {
 }
 
 /**
- * Screen regions the race HUD already owns, measured from the running scene:
- * driver/cash readouts (top left), lap + timer + standings (top right), the
- * hull/ammo/turbo/mines panel and speed (bottom left), and the position
- * readout (bottom right). Touch controls must not cover any of them.
- *
- * Touch controls only ever render on touch devices (`isTouchDevice()`), and
- * on those devices RaceScene draws its HUD at `TOUCH_HUD_SCALE`, not 1x — so
- * these boxes describe the *scaled* HUD footprint, not the desktop one.
- *
- * The top-left (driver/cash) cluster keeps its original box: every text
- * element there uses a top-left anchor and grows down/right into padding
- * that was already generous at 1x, so scaling its font doesn't grow its
- * footprint enough to matter. The standings (top-right) and position
- * (bottom-right) clusters do outgrow their boxes — their line heights and
- * text widths were already tight at 1x — so those two boxes scale with the
- * HUD using the same corner-anchor math RaceScene uses to lay them out. The
- * bottom-left status plate's row grid scales horizontally (label · bar ·
- * value no longer fit a 1x-wide row at touch font sizes), so its box widens
- * to the scaled plate right edge — statusPlateWidth caps that edge at
- * x=524, 16px clear of the brake button's hit box (starts x=540). Its top
- * stays at y=820: rows keep their 36px pitch and the gear tag above the
- * plate lifts to exactly y=820 (gearTagY), because the steer pad's hit zone
- * ends at y=815 and the band between cannot grow.
+ * Screen regions the race HUD owns on touch devices, which push the controls
+ * into the empty corners. On touch (see RaceScene.buildHud's touch branch) the
+ * HUD is: cash/driver/gear top-left, the race position top-centre, lap/timer/
+ * standings top-right, and a compact hull-bar + speed readout bottom-centre —
+ * every ammo/turbo/mine count moved onto the buttons themselves. The joystick
+ * (bottom-left corner) and action cluster (bottom-right corner) must clear all
+ * four boxes. Boxes use TOUCH_HUD_SCALE because the HUD is drawn at 1.4x there.
  */
 export const HUD_RESERVED: ReadonlyArray<{ x: number; y: number; w: number; h: number }> = [
-  { x: 0, y: 0, w: 620, h: 160 },
-  // standings plate's right edge sits 320px in from the screen edge at 1x
-  // (plate starts at x=1600, not 1650); scaled, that gap grows to 320*1.4=448
-  { x: anchorRight(LAYOUT_WIDTH, 320, TOUCH_HUD_SCALE), y: 0, w: 320 * TOUCH_HUD_SCALE, h: 300 * TOUCH_HUD_SCALE },
-  // status plate sits at y=854; the gear tag row above it starts at y=820.
-  // Width = scaled plate right edge (14 + 510 = 524; see hudScale.ts)
-  { x: 0, y: 820, w: STATUS_PLATE_X + statusPlateWidth(TOUCH_HUD_SCALE), h: 260 },
-  {
-    x: anchorRight(LAYOUT_WIDTH, 180, TOUCH_HUD_SCALE),
-    y: anchorBottom(LAYOUT_HEIGHT, 130, TOUCH_HUD_SCALE),
-    w: 180 * TOUCH_HUD_SCALE,
-    h: 130 * TOUCH_HUD_SCALE,
-  },
+  // top-left: cash + driver identity + gear tag
+  { x: 0, y: 0, w: 520, h: 240 },
+  // top-centre: race position readout ("4th")
+  { x: LAYOUT_WIDTH / 2 - 170, y: 0, w: 340, h: 130 },
+  // top-right: lap/time/best + standings, anchored to the screen edge
+  { x: anchorRight(LAYOUT_WIDTH, 320, TOUCH_HUD_SCALE), y: 0, w: 320 * TOUCH_HUD_SCALE, h: 306 * TOUCH_HUD_SCALE },
+  // bottom-centre: hull bar + speed, between the two control clusters
+  { x: LAYOUT_WIDTH / 2 - 200, y: LAYOUT_HEIGHT - 160, w: 400, h: 160 },
 ]
 
 /** Extra hit-area padding around the steer pad, in the same 1920x1080 space. */
 export const STEER_ZONE_SLOP = 40
 
-// Layout constants for the unmirrored (right-handed) scheme. Positions sit in
-// the thumb arcs near the bottom corners while clearing every HUD_RESERVED box.
-// pad y accounts for STEER_ZONE_SLOP: the hit zone, not just the drawn rect,
-// has to clear the status plate below it
-const STEER_PAD_X = 290
-const STEER_PAD_Y = 680
-const STEER_PAD_HALF_WIDTH = 190
-const STEER_PAD_HALF_HEIGHT = 95
+// Layout constants for the unmirrored (right-handed) scheme. The controls are
+// tucked into the two bottom corners so the thumbs never cover the play area;
+// the HUD lives along the top and bottom-centre (see HUD_RESERVED).
+//
+// Left corner: a round joystick dial (drawn as a circle; the hit test stays a
+// square that bounds it, only making the corners forgiving). Square, so
+// halfWidth === halfHeight. Its hit zone bottom (835 + 150 + 40 = 1025) stays
+// on-screen (< 1080).
+const STEER_PAD_X = 215
+const STEER_PAD_Y = 835
+const STEER_PAD_HALF_WIDTH = 150
+const STEER_PAD_HALF_HEIGHT = 150
 
-const HANDBRAKE_X = 620
-const HANDBRAKE_Y = 620
-const HANDBRAKE_R = 60
+// brake sits just right of the joystick's grab zone (right edge 405):
+// 500 - 56 = 444, clear of it, still reachable by the left thumb.
+const BRAKE_X = 500
+const BRAKE_Y = 900
+const BRAKE_R = 56
 
-const BRAKE_X = 620
-const BRAKE_Y = 800
-const BRAKE_R = 80
+// right corner action cluster: TURBO/MINE on top, HB/FIRE below, FIRE largest.
+const HANDBRAKE_X = 1560
+const HANDBRAKE_Y = 890
+const HANDBRAKE_R = 48
 
-const FIRE_X = 1640
-const FIRE_Y = 700
-const FIRE_R = 110
+const FIRE_X = 1725
+const FIRE_Y = 840
+const FIRE_R = 92
 
-const TURBO_X = 1440
-const TURBO_Y = 620
-const TURBO_R = 70
+const TURBO_X = 1580
+const TURBO_Y = 690
+const TURBO_R = 62
 
-const MINE_X = 1800
-const MINE_Y = 570
-const MINE_R = 45
+const MINE_X = 1790
+const MINE_Y = 655
+const MINE_R = 46
 
 // Infrequent system actions belong in the upper row (per the touch-layout
 // guide). They sit at the right end of the free gap between the HUD readouts

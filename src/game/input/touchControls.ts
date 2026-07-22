@@ -4,13 +4,9 @@ import { C, type TypeToken } from '../ui/theme'
 import { text } from '../ui/widgets'
 import {
   computeTouchLayout,
-  driveAxisFromTouch,
   heldButtonActions,
-  isSchemeActive,
   pointInCircle,
   pointInPad,
-  resolveThrottle,
-  steerFromPad,
   STEER_ZONE_SLOP,
   type CircleControl,
   type TouchLayout,
@@ -35,10 +31,10 @@ export interface TouchControlsOptions {
  * per control so multi-touch chords work, and every frame re-asserts the
  * drive axis into InputManager via `update()`.
  *
- * Steering and throttle MUST go through `setTouchAxis` — InputManager derives
- * accelerate/brake/steerLeft/steerRight only from the touch axis, never from
- * the touch button set (see inputManager.ts). Only fire/mine/turbo/handbrake
- * go through `setTouchButton`.
+ * The steer dial is a point-to-go analog stick: its raw thumb vector goes to
+ * InputManager via `setTouchStick`, and RaceScene.readPlayerInput turns it into
+ * a heading-seeking steer + distance-based throttle. Fire/mine/turbo/handbrake/
+ * brake go through `setTouchButton`.
  *
  * All objects live inside one container added to the fixed HUD layer (the
  * non-scrolling hudCam), at DEPTH above the rest of the HUD but below the
@@ -51,11 +47,14 @@ export class TouchControls {
 
   private readonly padGfx: Phaser.GameObjects.Graphics
   private steerPointerId: number | null = null
-  private steer: -1 | 0 | 1 = 0
+  // analog thumb vector, screen space (y-down), clamped to the unit circle
+  private stickX = 0
+  private stickY = 0
+  private steering = false
 
-  private braking = false
   private hiddenOnFinish = false
-  private engaged = false
+  /** live count labels on the fire/mine/turbo buttons, updated from RaceScene */
+  private readonly readouts = new Map<GameAction, Phaser.GameObjects.Text>()
   /** held controls, polled each frame so a missed pointerup cannot stick */
   private readonly held: Array<{
     action: GameAction | null
@@ -94,44 +93,40 @@ export class TouchControls {
     this.drawPad()
 
     const pad = this.layout.steerPad
-    const leftArrow = text(scene, pad.x - pad.halfWidth * 0.5, pad.y, '<', {
-      face: 'display', size: 'heading', color: C.textPrimary, origin: [0.5, 0.5],
-    })
-    const rightArrow = text(scene, pad.x + pad.halfWidth * 0.5, pad.y, '>', {
-      face: 'display', size: 'heading', color: C.textPrimary, origin: [0.5, 0.5],
-    })
-    this.container.add([leftArrow, rightArrow])
-
     const zoneW = pad.halfWidth * 2 + STEER_ZONE_SLOP * 2
     const zoneH = pad.halfHeight * 2 + STEER_ZONE_SLOP * 2
+    // Only the initial grab is gated to the dial zone. Once grabbed, the finger
+    // is tracked anywhere on screen by syncHeldButtons and released only when it
+    // actually lifts — so dragging outside the dial keeps steering (floating stick).
     const steerZone = scene.add.zone(pad.x, pad.y, zoneW, zoneH).setInteractive()
     steerZone.on('pointerdown', (p: Phaser.Input.Pointer) => this.onSteerMove(p))
     steerZone.on('pointermove', (p: Phaser.Input.Pointer) => { if (p.isDown) this.onSteerMove(p) })
-    steerZone.on('pointerup', (p: Phaser.Input.Pointer) => this.onSteerRelease(p))
-    steerZone.on('pointerout', (p: Phaser.Input.Pointer) => this.onSteerRelease(p))
     this.container.add(steerZone)
 
     // -- hold buttons -------------------------------------------------------
-    this.addHoldButton(this.layout.brake, 'BRK', C.concrete, 'action', null,
-      () => { this.braking = true },
-      () => { this.braking = false },
+    this.addHoldButton(this.layout.brake, 'BRK', C.concrete, 'action', 'brake',
+      () => this.input.setTouchButton('brake', true),
+      () => this.input.setTouchButton('brake', false),
     )
     this.addHoldButton(this.layout.handbrake, 'HB', C.oxideDim, 'action', 'handbrake',
       () => this.input.setTouchButton('handbrake', true),
       () => this.input.setTouchButton('handbrake', false),
     )
-    this.addHoldButton(this.layout.turbo, 'TURBO', C.turbo, 'action', 'turbo',
+    this.addHoldButton(this.layout.turbo, 'TURBO', C.turbo, 'caption', 'turbo',
       () => this.input.setTouchButton('turbo', true),
       () => this.input.setTouchButton('turbo', false),
+      'subtitle', C.turbo,
     )
     if (options.weaponsEnabled) {
-      this.addHoldButton(this.layout.fire, 'FIRE', C.danger, 'subtitle', 'fire',
+      this.addHoldButton(this.layout.fire, 'FIRE', C.danger, 'caption', 'fire',
         () => this.input.setTouchButton('fire', true),
         () => this.input.setTouchButton('fire', false),
+        'heading', C.ammo,
       )
-      this.addHoldButton(this.layout.mine, 'MINE', C.warn, 'caption', 'mine',
+      this.addHoldButton(this.layout.mine, 'MINE', C.warn, 'micro', 'mine',
         () => this.input.setTouchButton('mine', true),
         () => this.input.setTouchButton('mine', false),
+        'subtitle', C.textPrimary,
       )
     }
 
@@ -175,18 +170,18 @@ export class TouchControls {
    */
   update(finished: boolean) {
     this.syncHeldButtons()
-    const schemeActive = isSchemeActive(this.engaged, finished)
-    const throttle = resolveThrottle({ schemeActive, braking: this.braking })
-    const axis = driveAxisFromTouch(this.steer, throttle)
-    this.input.setTouchAxis(axis.x, axis.y)
-    // a finger held through a pause gets no repeat event, so re-assert it
-    for (const action of heldButtonActions(this.held)) this.input.setTouchButton(action, true)
-
-    if (finished && !this.hiddenOnFinish) {
-      this.hiddenOnFinish = true
-      this.container.setVisible(false)
-      this.input.clearTouch()
+    if (finished) {
+      if (!this.hiddenOnFinish) {
+        this.hiddenOnFinish = true
+        this.container.setVisible(false)
+        this.input.clearTouch()
+      }
+      return
     }
+    // re-assert the raw stick vector every frame: InputManager.reset() (pause)
+    // clears it, and a held finger produces no repeat event to restore it.
+    this.input.setTouchStick(this.steering ? this.stickX : 0, this.steering ? this.stickY : 0, this.steering)
+    for (const action of heldButtonActions(this.held)) this.input.setTouchButton(action, true)
   }
 
   destroy() {
@@ -219,11 +214,12 @@ export class TouchControls {
       }
     }
 
-    // the steer pad re-validates position too, not just pointer liveness: a
-    // missed pointerout would otherwise freeze steering at its last value
+    // Floating stick: once a finger has grabbed the dial, follow it wherever it
+    // goes (no pad bounds check) and release only when it lifts. A new grab is
+    // only accepted from inside the dial zone.
     const steerOwner =
       this.steerPointerId === null ? undefined : down.find((p) => p.id === this.steerPointerId)
-    if (steerOwner && pointInPad(steerOwner.x, steerOwner.y, this.layout.steerPad, STEER_ZONE_SLOP)) {
+    if (steerOwner) {
       this.onSteerMove(steerOwner)
     } else {
       if (this.steerPointerId !== null) {
@@ -231,7 +227,7 @@ export class TouchControls {
         this.onSteerRelease({ id: this.steerPointerId } as Phaser.Input.Pointer)
       }
       const candidate = down.find(
-        (p) => !owned.has(p.id) && pointInPad(p.x, p.y, this.layout.steerPad, STEER_ZONE_SLOP),
+        (p) => !owned.has(p.id) && p.wasTouch && pointInPad(p.x, p.y, this.layout.steerPad, STEER_ZONE_SLOP),
       )
       if (candidate) this.onSteerMove(candidate)
     }
@@ -245,20 +241,34 @@ export class TouchControls {
     action: GameAction | null,
     onDown: () => void,
     onUp: () => void,
+    valueSize?: TypeToken,
+    valueColor: number = C.textPrimary,
   ) {
-    const circle = this.scene.add
-      .circle(pos.x, pos.y, pos.r, color, this.hitAlpha)
-      .setStrokeStyle(3, color, Math.min(1, this.hitAlpha + 0.3))
-      .setInteractive()
-    // light fills need dark type: near-white on turbo cyan or mine yellow
-    // sits around 1.6:1 contrast, well under the 4.5:1 minimum
-    const LIGHT_FILLS: number[] = [C.turbo, C.warn]
-    const t = text(this.scene, pos.x, pos.y, label, {
-      face: 'display',
-      size,
-      color: LIGHT_FILLS.includes(color) ? C.surfaceHud : C.textPrimary,
-      origin: [0.5, 0.5],
+    // FIRE (the only danger-red button) reads as the primary action, so its
+    // body carries a stronger accent tint than the utility buttons.
+    const strong = color === C.danger
+    const gfx = this.scene.add.graphics()
+    const draw = (pressed: boolean) => this.drawGlossyButton(gfx, pos, color, pressed, strong)
+    draw(false)
+
+    // a fully transparent circle owns the pointer geometry; the graphics above
+    // is non-interactive and just paints the glossy body.
+    const hit = this.scene.add.circle(pos.x, pos.y, pos.r, 0x000000, 0.001).setInteractive()
+
+    // dark glossy bodies take light type at full strength (>7:1 on every accent).
+    // a live-count button rides its label high and shows the number below.
+    const hasValue = valueSize !== undefined && action !== null
+    const t = text(this.scene, pos.x, hasValue ? pos.y - pos.r * 0.42 : pos.y, label, {
+      face: 'display', size, color: C.textPrimary, origin: [0.5, 0.5],
     })
+    const objs: Phaser.GameObjects.GameObject[] = [gfx, hit, t]
+    if (hasValue) {
+      const v = text(this.scene, pos.x, pos.y + pos.r * 0.16, '', {
+        face: 'mono', size: valueSize!, color: valueColor, origin: [0.5, 0.5],
+      })
+      this.readouts.set(action!, v)
+      objs.push(v)
+    }
 
     const entry = {
       action,
@@ -267,13 +277,13 @@ export class TouchControls {
       press: (pointerId: number) => {
         if (entry.pointerId !== null) return
         entry.pointerId = pointerId
-        circle.setFillStyle(color, Math.min(1, this.hitAlpha + 0.45))
+        draw(true)
         onDown()
       },
       release: () => {
         if (entry.pointerId === null) return
         entry.pointerId = null
-        circle.setFillStyle(color, this.hitAlpha)
+        draw(false)
         onUp()
       },
     }
@@ -282,63 +292,142 @@ export class TouchControls {
     // pointerdown gives an immediate response; syncHeldButtons() then owns the
     // held state from live pointer positions, so a finger resting on a control
     // through a pause is re-acquired rather than left dead.
-    circle.on('pointerdown', (p: Phaser.Input.Pointer) => {
-      this.markEngaged(p)
+    hit.on('pointerdown', (p: Phaser.Input.Pointer) => {
       entry.press(p.id)
     })
 
-    this.container.add([circle, t])
+    this.container.add(objs)
+  }
+
+  /** Push live ammo / mines / turbo counts onto the buttons (called each frame). */
+  setReadouts(r: { ammo: number; mines: number; turbo: number }) {
+    this.readouts.get('fire')?.setText(String(r.ammo))
+    this.readouts.get('mine')?.setText(String(r.mines))
+    this.readouts.get('turbo')?.setText(`${Math.round(r.turbo * 100)}%`)
+  }
+
+  /**
+   * A round action button in the reference's glossy language: soft accent halo,
+   * dark top-lit body, an accent tint (stronger for FIRE), a top sheen, and a
+   * bright accent rim. All static fills — no tween, so it stays reducedFlash-safe.
+   */
+  private drawGlossyButton(
+    g: Phaser.GameObjects.Graphics,
+    pos: CircleControl,
+    accent: number,
+    pressed: boolean,
+    strong: boolean,
+  ) {
+    const { x, y, r } = pos
+    const a = this.hitAlpha
+    g.clear()
+
+    // accent halo
+    g.fillStyle(accent, (pressed ? 0.34 : 0.16) * Math.min(1, a + 0.4))
+    g.fillCircle(x, y, r + 7)
+
+    // dark body, lit from the top
+    g.fillGradientStyle(C.buttonFace, C.buttonFace, C.buttonFace2, C.buttonFace2, Math.min(1, a + 0.28))
+    g.fillCircle(x, y, r)
+
+    // accent tint — how much colour bleeds through the body
+    const tint = strong ? (pressed ? 0.58 : 0.42) : pressed ? 0.32 : 0.2
+    g.fillStyle(accent, tint)
+    g.fillCircle(x, y, r * 0.9)
+
+    // top sheen
+    g.fillStyle(0xffffff, pressed ? 0.06 : 0.1)
+    g.fillCircle(x, y - r * 0.32, r * 0.55)
+
+    // inner depth ring + bright accent rim
+    g.lineStyle(2, C.surfaceHud, 0.55)
+    g.strokeCircle(x, y, r - 6)
+    g.lineStyle(pressed ? 5 : 4, accent, Math.min(1, a + 0.5))
+    g.strokeCircle(x, y, r - 2)
   }
 
   private onSteerMove(p: Phaser.Input.Pointer) {
-    this.markEngaged(p)
+    // isTouchDevice() is true on hybrid laptops; a mouse must never drive the
+    // car with a throttle it cannot release, so only a real touch grabs the stick.
+    if (!p.wasTouch) return
     this.steerPointerId = p.id
-    const { steerLeft, steerRight } = steerFromPad(p.x, this.layout.steerPad)
-    this.steer = steerLeft ? -1 : steerRight ? 1 : 0
+    const pad = this.layout.steerPad
+    let dx = (p.x - pad.x) / pad.halfWidth
+    let dy = (p.y - pad.y) / pad.halfWidth
+    const len = Math.hypot(dx, dy)
+    if (len > 1) { dx /= len; dy /= len }
+    this.stickX = dx
+    this.stickY = dy
+    this.steering = true
     this.drawPad()
   }
 
   private onSteerRelease(p: Phaser.Input.Pointer) {
     if (this.steerPointerId !== null && p.id !== this.steerPointerId) return
     this.steerPointerId = null
-    this.steer = 0
+    this.stickX = 0
+    this.stickY = 0
+    this.steering = false
     this.drawPad()
   }
 
-  private drawPad() {
-    const { x, y, halfWidth, halfHeight } = this.layout.steerPad
-    const left = x - halfWidth
-    const top = y - halfHeight
-    const w = halfWidth * 2
-    const h = halfHeight * 2
-    const radius = 16
-
-    this.padGfx.clear()
-    this.padGfx.fillStyle(C.surfaceHud, this.hitAlpha)
-    this.padGfx.fillRoundedRect(left, top, w, h, radius)
-
-    // steady tint on the active half — no tweened flash (reducedFlash-safe)
-    if (this.steer !== 0) {
-      const highlightAlpha = Math.min(1, this.hitAlpha + 0.35)
-      this.padGfx.fillStyle(C.amber, highlightAlpha)
-      if (this.steer < 0) {
-        this.padGfx.fillRoundedRect(left, top, halfWidth, h, { tl: radius, bl: radius, tr: 0, br: 0 })
-      } else {
-        this.padGfx.fillRoundedRect(x, top, halfWidth, h, { tl: 0, bl: 0, tr: radius, br: radius })
-      }
-    }
-
-    this.padGfx.lineStyle(3, C.oxide, Math.min(1, this.hitAlpha + 0.3))
-    this.padGfx.strokeRoundedRect(left, top, w, h, radius)
-  }
-
   /**
-   * Only a real touch arms auto-accelerate. isTouchDevice() is true on hybrid
-   * laptops, where a mouse user must never be given throttle they cannot let go
-   * of. Phaser reports the source on the pointer itself.
+   * The round point-to-go stick. The knob follows the thumb across the whole
+   * disc; each rim arrow lights amber in proportion to how far the stick points
+   * that way, so the player sees the aimed direction. All static fills —
+   * reducedFlash-safe.
    */
-  private markEngaged(p: Phaser.Input.Pointer) {
-    if (p.wasTouch) this.engaged = true
+  private drawPad() {
+    const { x, y, halfWidth } = this.layout.steerPad
+    const r = halfWidth
+    const a = this.hitAlpha
+    const g = this.padGfx
+    g.clear()
+
+    // faint outer halo, dark top-lit body, twin rings
+    g.fillStyle(C.oxide, 0.1)
+    g.fillCircle(x, y, r + 6)
+    g.fillGradientStyle(C.buttonFace, C.buttonFace, C.buttonFace2, C.buttonFace2, Math.min(1, a + 0.24))
+    g.fillCircle(x, y, r)
+    g.lineStyle(4, C.oxide, Math.min(1, a + 0.4))
+    g.strokeCircle(x, y, r - 2)
+    g.lineStyle(2, C.line, 0.7)
+    g.strokeCircle(x, y, r * 0.62)
+
+    // rim arrows, each lit by the stick's component toward it
+    const ar = r * 0.78 // arrow tip distance from center
+    const s = r * 0.12 // arrow half-size
+    const base = 0.28
+    const arrow = (comp: number) => ({
+      color: comp > 0.05 ? C.amber : C.textPrimary,
+      alpha: comp > 0.05 ? Math.min(1, base + comp * 0.72) : base,
+    })
+    const up = arrow(-this.stickY)
+    g.fillStyle(up.color, up.alpha)
+    g.fillTriangle(x, y - ar - s, x - s, y - ar + s, x + s, y - ar + s)
+    const dn = arrow(this.stickY)
+    g.fillStyle(dn.color, dn.alpha)
+    g.fillTriangle(x, y + ar + s, x - s, y + ar - s, x + s, y + ar - s)
+    const lf = arrow(-this.stickX)
+    g.fillStyle(lf.color, lf.alpha)
+    g.fillTriangle(x - ar - s, y, x - ar + s, y - s, x - ar + s, y + s)
+    const rt = arrow(this.stickX)
+    g.fillStyle(rt.color, rt.alpha)
+    g.fillTriangle(x + ar + s, y, x + ar - s, y - s, x + ar - s, y + s)
+
+    // knob follows the thumb across the disc
+    const knobR = r * 0.33
+    const travel = r - knobR - 6
+    const kx = x + this.stickX * travel
+    const ky = y + this.stickY * travel
+    g.fillStyle(C.oxideDim, 0.9)
+    g.fillCircle(kx, ky, knobR + 3)
+    g.fillGradientStyle(C.oxide, C.oxide, C.oxideDim, C.oxideDim, 1)
+    g.fillCircle(kx, ky, knobR)
+    g.lineStyle(2, C.buttonFace2, 0.7)
+    g.strokeCircle(kx, ky, knobR * 0.55)
+    g.fillStyle(0xffffff, 0.18)
+    g.fillCircle(kx, ky - knobR * 0.32, knobR * 0.45)
   }
 
   /** Tap feedback for the momentary system buttons, which have no held state. */

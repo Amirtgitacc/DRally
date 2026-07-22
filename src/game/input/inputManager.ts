@@ -21,6 +21,11 @@ export class InputManager {
   private touchAxisX = 0
   private touchAxisY = 0
   private touchButtons = new Set<GameAction>()
+  // analog point-to-go stick: raw thumb vector, consumed directionally by
+  // RaceScene.readPlayerInput (bypasses the boolean joystickToActions path).
+  private touchStickX = 0
+  private touchStickY = 0
+  private touchStickActive = false
 
   private readonly onBlur = () => this.reset()
 
@@ -65,7 +70,7 @@ export class InputManager {
 
       // touch source: joystick for drive actions, button set for the rest
       if (action === 'accelerate') down ||= drive.accelerate
-      else if (action === 'brake') down ||= drive.brake
+      else if (action === 'brake') down ||= drive.brake || this.touchButtons.has('brake')
       else if (action === 'steerLeft') down ||= drive.steerLeft
       else if (action === 'steerRight') down ||= drive.steerRight
       else down ||= this.touchButtons.has(action)
@@ -87,9 +92,23 @@ export class InputManager {
     else this.touchButtons.delete(action)
   }
 
+  /** Raw analog thumb vector for the point-to-go stick (screen space, y-down). */
+  setTouchStick(x: number, y: number, active: boolean): void {
+    this.touchStickX = x
+    this.touchStickY = y
+    this.touchStickActive = active
+  }
+
+  touchStick(): { x: number; y: number; active: boolean } {
+    return { x: this.touchStickX, y: this.touchStickY, active: this.touchStickActive }
+  }
+
   clearTouch(): void {
     this.touchAxisX = 0
     this.touchAxisY = 0
+    this.touchStickX = 0
+    this.touchStickY = 0
+    this.touchStickActive = false
     this.touchButtons.clear()
   }
 
