@@ -18,7 +18,10 @@ export const BOSS = {
   /** pace multiplier, a step above the rank-#1 ladder rival */
   paceScale: 1.06,
   /** collision mass — the heaviest thing on any grid */
-  mass: 1.35,
+  mass: 1.5,
+  /** body size (1.0 = Cielo) — the largest silhouette on any grid, a notch
+   *  above even the van, so the champion physically towers over the pack */
+  sizeScale: 1.25,
   /** winner-takes-the-crown purse */
   prizeCash: 25000,
   blurb: 'Nobody remembers crowning them. Nobody has taken the crown back either.',

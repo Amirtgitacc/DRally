@@ -45,6 +45,8 @@ export interface CarSim {
   mines: number
   lastMineAt: number
   mass: number
+  /** relative body size (1.0 = starter); scales this car's collision footprint */
+  sizeScale: number
   stuckMs: number
   armorTier: number
   /** when this car's booby-trap loss of control ends (0 = not trapped) — only meaningful for human cars */
@@ -104,6 +106,9 @@ export interface CarSetup {
   id: string
   isPlayer: boolean
   mass: number
+  /** relative body size (1.0 = starter). Optional — omitted setups (MP, tests)
+   *  default to 1.0, preserving the original single-radius collision behaviour. */
+  sizeScale?: number
   damage: number
   ammo: number
   mines: number
@@ -157,7 +162,7 @@ export function createRaceState(env: RaceEnv, setups: CarSetup[], seed: number):
       finishedAt: null, lapStartAt: 0, lapTimes: [],
       damage: setup.damage, wrecked: false, ammo: setup.ammo,
       turbo: 1, turboDepleted: false, gunCooldown: 0, burstEndsAt: 0, restEndsAt: 0,
-      cash: 0, mines: setup.mines, lastMineAt: -1e9, mass: setup.mass, stuckMs: 0,
+      cash: 0, mines: setup.mines, lastMineAt: -1e9, mass: setup.mass, sizeScale: setup.sizeScale ?? 1, stuckMs: 0,
       armorTier: setup.armorTier, trapUntil: 0, ai: setup.ai,
       lastInput: { ...IDLE_INPUT }, lastTurboActive: false,
     }

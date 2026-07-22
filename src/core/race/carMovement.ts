@@ -111,7 +111,7 @@ function updateStuckRescue(state: RaceState, env: RaceEnv, car: CarSim, dt: numb
   const gate = env.gates[nextGateIndex(car.progress) % env.gates.length]
   const pose = clearRescuePose(
     rescuePose(gate.a, gate.b, gate.tangent),
-    gate.a, gate.b, env.obstacleCircles, CAR_RADIUS + 6,
+    gate.a, gate.b, env.obstacleCircles, CAR_RADIUS * car.sizeScale + 6,
   )
   car.state = { ...car.state, ...pose, z: 0, vz: 0, vx: 0, vy: 0 }
   car.prevPos = { x: pose.x, y: pose.y }
@@ -139,7 +139,7 @@ function collideWithCircle(
   events: SimEvent[],
 ): void {
   const s = car.state
-  const minDist = CAR_RADIUS + radius
+  const minDist = CAR_RADIUS * car.sizeScale + radius
   const dx = s.x - cx
   const dy = s.y - cy
   if (Math.abs(dx) > minDist || Math.abs(dy) > minDist) return

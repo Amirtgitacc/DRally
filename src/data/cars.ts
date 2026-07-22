@@ -26,6 +26,11 @@ export interface CarSpec extends CarPhysicsSpec {
   upgradeCaps: Record<UpgradeKind, number>
   /** relative collision mass — heavier cars shove lighter ones around */
   mass: number
+  /** relative body size (1.0 = Cielo/starter). Drives both the on-screen
+   *  sprite scale and the collision footprint, so a bigger car looks bigger
+   *  AND takes up more room. Ordered by intended in-race bulk, not literal
+   *  real-world dimensions (the van reads as the largest chassis). */
+  sizeScale: number
   variant: CarVariant
   blurb: string
   /** cosmetic livery variants available for this chassis */
@@ -42,6 +47,7 @@ export const CAR_CATALOG: CarSpec[] = [
     blurb: 'Cheap, honest, slightly rusty. It starts every time — that is the whole sales pitch.',
     upgradeCaps: { engine: 1, tires: 2, armor: 1 },
     mass: 1.0,
+    sizeScale: 1.0,
     variant: 'compact',
     variants: [
       { key: 'base', label: 'Factory' },
@@ -68,7 +74,8 @@ export const CAR_CATALOG: CarSpec[] = [
     accentColor: 0x16161c,
     blurb: 'A street brawler with the mirrors already snapped off. Light, twitchy, cheerfully illegal.',
     upgradeCaps: { engine: 2, tires: 2, armor: 1 },
-    mass: 0.92,
+    mass: 1.02,
+    sizeScale: 1.01,
     variant: 'compact',
     variants: [
       { key: 'base', label: 'Factory' },
@@ -95,7 +102,8 @@ export const CAR_CATALOG: CarSpec[] = [
     accentColor: 0x16161c,
     blurb: 'Mid-ladder muscle. Corners like it means it, and takes a punch without whining.',
     upgradeCaps: { engine: 2, tires: 3, armor: 2 },
-    mass: 1.18,
+    mass: 0.8,
+    sizeScale: 0.9,
     variant: 'muscle',
     variants: [
       { key: 'base', label: 'Factory' },
@@ -122,7 +130,8 @@ export const CAR_CATALOG: CarSpec[] = [
     accentColor: 0xf0f0e8,
     blurb: 'Built by people who thought brakes were a compromise. Slippery, fast, faintly smug.',
     upgradeCaps: { engine: 3, tires: 3, armor: 2 },
-    mass: 1.05,
+    mass: 1.06,
+    sizeScale: 1.03,
     variant: 'muscle',
     variants: [
       { key: 'base', label: 'Factory' },
@@ -149,7 +158,8 @@ export const CAR_CATALOG: CarSpec[] = [
     accentColor: 0xf0f0e8,
     blurb: 'Fast enough that braking becomes a philosophical question.',
     upgradeCaps: { engine: 3, tires: 3, armor: 3 },
-    mass: 1.12,
+    mass: 1.4,
+    sizeScale: 1.2,
     variant: 'sleek',
     variants: [
       { key: 'base', label: 'Factory' },
@@ -176,7 +186,8 @@ export const CAR_CATALOG: CarSpec[] = [
     accentColor: 0xc9a227,
     blurb: 'Top of the ladder. Heavy, vicious, and faster than anything this heavy has a right to be.',
     upgradeCaps: { engine: 3, tires: 3, armor: 3 },
-    mass: 1.3,
+    mass: 1.28,
+    sizeScale: 1.14,
     variant: 'sleek',
     variants: [
       { key: 'base', label: 'Factory' },

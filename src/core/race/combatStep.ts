@@ -90,7 +90,7 @@ export function updateBullets(state: RaceState, env: RaceEnv, dt: number, events
         if (car.isPlayer && state.phase === 'finished') continue
         // bullets pass under a launched car
         if (isAirborne(car.state)) continue
-        if (sweptHit(prevX, prevY, b.x, b.y, car.state.x, car.state.y, CAR_BODY_RADIUS + 4)) {
+        if (sweptHit(prevX, prevY, b.x, b.y, car.state.x, car.state.y, CAR_BODY_RADIUS * car.sizeScale + 4)) {
           onBulletHit(state, env, car, b, events)
           dead = true
           break

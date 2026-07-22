@@ -143,7 +143,6 @@ function checkGateCrossing(state: RaceState, env: RaceEnv, car: CarSim, events: 
 
 function resolveCarCollisions(state: RaceState, env: RaceEnv, events: SimEvent[]): void {
   const now = state.simTimeMs
-  const minDist = CAR_BODY_RADIUS * 2
   for (let i = 0; i < state.cars.length; i++) {
     for (let j = i + 1; j < state.cars.length; j++) {
       const carA = state.cars[i]
@@ -152,6 +151,8 @@ function resolveCarCollisions(state: RaceState, env: RaceEnv, events: SimEvent[]
       const b = carB.state
       // a launched car passes over the top of the pack
       if (isAirborne(a) || isAirborne(b)) continue
+      // per-car body radius: bigger chassis touch sooner (sizeScale 1 = r30)
+      const minDist = CAR_BODY_RADIUS * (carA.sizeScale + carB.sizeScale)
       const dx = b.x - a.x
       const dy = b.y - a.y
       const dist = Math.hypot(dx, dy)

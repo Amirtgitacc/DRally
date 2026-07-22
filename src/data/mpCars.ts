@@ -14,7 +14,8 @@ export const MP_ONLY_CARS: CarSpec[] = [
     accentColor: 0xf0f0e8,
     blurb: 'A tidy hatchback nobody sells for career mode — quick, light, purely a multiplayer guest.',
     upgradeCaps: { engine: 2, tires: 2, armor: 1 },
-    mass: 1.05,
+    mass: 0.9,
+    sizeScale: 0.95,
     variant: 'compact',
     variants: [{ key: 'base', label: 'Factory' }],
 

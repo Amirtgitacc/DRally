@@ -17,6 +17,7 @@ import type { CarPhysicsSpec } from '../../core/vehicle/carPhysics'
 import { buildRaceEnv } from '../../core/race/raceEnvBuilder'
 import { createRaceState } from '../../core/race/raceState'
 import { trackById } from '../../data/tracks'
+import { mpCarById } from '../../data/mpCars'
 import { bracket, lerpCarState, INTERP_DELAY_MS } from './interpolation'
 import { LocalPredictor } from './localPredictor'
 import { GUN } from '../../data/weapons'
@@ -91,6 +92,7 @@ export class NetworkSource implements RaceSource {
       id: r.id,
       isPlayer: true,
       mass: 1000,
+      sizeScale: mpCarById(r.chassisId)?.sizeScale ?? 1,
       damage: 0,
       ammo: this.env.weaponsEnabled ? GUN.ammoMax : 0,
       mines: 0,

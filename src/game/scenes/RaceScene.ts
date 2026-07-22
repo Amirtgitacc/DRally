@@ -116,6 +116,8 @@ const MPH_PER_PX = 0.14
 
 /** The visual half of the old CarUnit: the Phaser objects a car renders through. */
 interface CarView {
+  /** resting sprite/shadow scale for this chassis (CAR_SCALE × its sizeScale) */
+  baseScale: number
   sprite: Phaser.GameObjects.Image
   shadow: Phaser.GameObjects.Image
   exhaust: Phaser.GameObjects.Particles.ParticleEmitter
@@ -792,11 +794,11 @@ export class RaceScene extends Phaser.Scene {
     this.tireSmoke.explode(this.scaleCount(IMPACT_FX.landingDustCount), x, y)
 
     // suspension bounce: the sprite squashes and settles
-    view.sprite.setScale(CAR_SCALE)
+    view.sprite.setScale(view.baseScale)
     this.tweens.add({
       targets: view.sprite,
-      scaleX: CAR_SCALE * 1.12,
-      scaleY: CAR_SCALE * 0.86,
+      scaleX: view.baseScale * 1.12,
+      scaleY: view.baseScale * 0.86,
       duration: 90,
       yoyo: true,
       ease: 'quad.out',
@@ -1105,6 +1107,7 @@ export class RaceScene extends Phaser.Scene {
       id: 'player',
       isPlayer: true,
       mass: playerCar.mass,
+      sizeScale: playerCar.sizeScale,
       damage: this.career.damage, // persistent damage carries into the race
       ammo: weapons ? GUN.ammoMax : 0,
       mines: weapons ? this.career.mines : 0,
@@ -1128,6 +1131,7 @@ export class RaceScene extends Phaser.Scene {
         id: BOSS.id,
         isPlayer: false,
         mass: BOSS.mass,
+        sizeScale: BOSS.sizeScale,
         damage: 0,
         ammo: weapons ? GUN.ammoMax : 0,
         mines: weapons ? talentMineCount(AI_MINES.count[this.track.tier], talent) : 0,
@@ -1168,6 +1172,7 @@ export class RaceScene extends Phaser.Scene {
           id,
           isPlayer: false,
           mass: chassis.mass,
+          sizeScale: chassis.sizeScale,
           damage: 0,
           ammo: weapons ? GUN.ammoMax : 0,
           mines: weapons ? talentMineCount(AI_MINES.count[this.track.tier], talent) : 0,
@@ -1202,7 +1207,7 @@ export class RaceScene extends Phaser.Scene {
   private buildCarViews() {
     for (const car of this.sim.cars) {
       const info = this.carInfo.get(car.id)!
-      const view = this.makeCarView(info.textureKey, info.color, car.isPlayer)
+      const view = this.makeCarView(info.textureKey, info.color, car.isPlayer, CAR_SCALE * car.sizeScale)
       this.carViews.set(car.id, view)
       this.syncCarVisuals(car, view)
     }
@@ -1220,14 +1225,14 @@ export class RaceScene extends Phaser.Scene {
     return Math.max(1, Math.round(n * this.particleScale))
   }
 
-  private makeCarView(textureKey: string, color: number, isPlayer: boolean): CarView {
+  private makeCarView(textureKey: string, color: number, isPlayer: boolean, baseScale: number): CarView {
     const shadow = this.add
       .image(0, 0, textureKey)
-      .setScale(CAR_SCALE)
+      .setScale(baseScale)
       .setTintFill(0x000000)
       .setAlpha(0.3)
       .setDepth(4)
-    const sprite = this.add.image(0, 0, textureKey).setScale(CAR_SCALE).setDepth(5)
+    const sprite = this.add.image(0, 0, textureKey).setScale(baseScale).setDepth(5)
     const exhaust = this.add.particles(0, 0, 'smoke', {
       speed: { min: 15, max: 50 },
       scale: { start: 0.22, end: 0.55 },
@@ -1313,6 +1318,7 @@ export class RaceScene extends Phaser.Scene {
     }
 
     return {
+      baseScale,
       sprite,
       shadow,
       exhaust,
@@ -1969,21 +1975,21 @@ export class RaceScene extends Phaser.Scene {
     view.liveryGlow
       .setPosition(car.state.x, car.state.y)
       .setRotation(car.state.heading)
-      .setScale(CAR_SCALE * 1.7, CAR_SCALE * 1.1)
+      .setScale(view.baseScale * 1.7, view.baseScale * 1.1)
       .setAlpha(car.wrecked ? 0 : 0.55)
 
     const z = car.state.z
     if (z > 0) {
       // height reads as scale-up over a shadow that falls away and softens
       const lift = z / IMPACT_FX.liftPerScale
-      view.sprite.setScale(CAR_SCALE * (1 + lift)).setDepth(5.6)
+      view.sprite.setScale(view.baseScale * (1 + lift)).setDepth(5.6)
       view.shadow
         .setPosition(car.state.x + 6 + z * IMPACT_FX.shadowThrowX, car.state.y + 8 + z * IMPACT_FX.shadowThrowY)
-        .setScale(CAR_SCALE * (1 - lift * 0.22))
+        .setScale(view.baseScale * (1 - lift * 0.22))
         .setAlpha(Math.max(0.12, 0.34 - lift * 0.18))
     } else {
       view.sprite.setDepth(5)
-      view.shadow.setPosition(car.state.x + 6, car.state.y + 8).setScale(CAR_SCALE).setAlpha(car.wrecked ? 0.2 : 0.3)
+      view.shadow.setPosition(car.state.x + 6, car.state.y + 8).setScale(view.baseScale).setAlpha(car.wrecked ? 0.2 : 0.3)
     }
   }
 
