@@ -14,7 +14,8 @@ const TIRE_RADIUS = 24
 export function damageCarSim(state: RaceState, env: RaceEnv, car: CarSim, amount: number, events: SimEvent[]): void {
   if (car.wrecked || state.phase === 'countdown') return
   // rivals fit armor too, from their ladder rank — an ace is not a soft target
-  const resistance = armorResistance(car.armorTier)
+  // MP cars carry a size-based resistance; SP cars fall back to armor tier
+  const resistance = car.damageResist ?? armorResistance(car.armorTier)
   const result = applyDamage(car.damage, amount, resistance)
   car.damage = result.damage
   if (result.wrecked) wreckCarSim(state, env, car, events)

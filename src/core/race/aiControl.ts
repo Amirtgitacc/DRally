@@ -26,7 +26,8 @@ export function progressScore(env: RaceEnv, car: CarSim): number {
 }
 
 export function effectiveSpec(state: RaceState, env: RaceEnv, car: CarSim, turboActive: boolean): CarPhysicsSpec {
-  let spec = car.isPlayer ? env.playerSpec : car.ai!.spec
+  // MP cars carry a per-car spec override; SP humans have none and use env.playerSpec
+  let spec = car.spec ?? (car.isPlayer ? env.playerSpec : car.ai!.spec)
   // rank pace and the rubber band are rival-only, even when the debug
   // autopilot has given the player an ai profile to drive with
   if (car.ai && !car.isPlayer) {
