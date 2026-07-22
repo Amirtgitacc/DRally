@@ -52,6 +52,10 @@ export interface CarSim {
   /** when this car's booby-trap loss of control ends (0 = not trapped) — only meaningful for human cars */
   trapUntil: number
   ai: CarAiSim | null
+  /** MP-only per-car physics override. Absent in single-player (uses env.playerSpec). */
+  spec?: CarPhysicsSpec
+  /** MP-only incoming-damage multiplier. Absent falls back to armorResistance(armorTier). */
+  damageResist?: number
   /** what the car did on the last step — renderer reads this for brake lights, exhaust, skids */
   lastInput: CarInput
   lastTurboActive: boolean
@@ -114,6 +118,10 @@ export interface CarSetup {
   mines: number
   armorTier: number
   ai: CarAiSim | null
+  /** MP-only per-car physics override; omit for single-player. */
+  spec?: CarPhysicsSpec
+  /** MP-only incoming-damage multiplier; omit for single-player. */
+  damageResist?: number
 }
 
 export function createRaceState(env: RaceEnv, setups: CarSetup[], seed: number): RaceState {
@@ -164,6 +172,7 @@ export function createRaceState(env: RaceEnv, setups: CarSetup[], seed: number):
       turbo: 1, turboDepleted: false, gunCooldown: 0, burstEndsAt: 0, restEndsAt: 0,
       cash: 0, mines: setup.mines, lastMineAt: -1e9, mass: setup.mass, sizeScale: setup.sizeScale ?? 1, stuckMs: 0,
       armorTier: setup.armorTier, trapUntil: 0, ai: setup.ai,
+      spec: setup.spec, damageResist: setup.damageResist,
       lastInput: { ...IDLE_INPUT }, lastTurboActive: false,
     }
   })
