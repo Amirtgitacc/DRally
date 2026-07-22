@@ -6,6 +6,7 @@ import {
   launchCar,
   speed,
   type CarInput,
+  type CarPhysicsSpec,
   type CarState,
 } from '../../core/vehicle/carPhysics'
 import {
@@ -37,7 +38,8 @@ import {
 } from '../../core/ai/talent'
 import { mineIsArmed } from '../../core/combat/mines'
 import { formatTime } from '../../core/race/format'
-import { effectiveCarSpec, NO_UPGRADES } from '../../core/vehicle/carSpec'
+import { effectiveCarSpec } from '../../core/vehicle/carSpec'
+import { mpCarSpec } from '../../core/vehicle/mpBalance'
 import { applyAbandonOutcome, applyRaceOutcome, updateTrackRecord, type CareerState } from '../../core/progression/career'
 import { applyDuelOutcome } from '../../core/progression/duel'
 import { rewardFor } from '../../core/economy/rewards'
@@ -149,7 +151,7 @@ export class RaceScene extends Phaser.Scene {
   private obstacleSprites: Phaser.GameObjects.Image[] = []
 
   private career!: CareerState
-  private playerSpec = { ...STARTER_CAR }
+  private playerSpec: CarPhysicsSpec = { ...STARTER_CAR }
   private isDuel = false
   private hasPlating = false
   private hasOverTurbo = false
@@ -368,8 +370,10 @@ export class RaceScene extends Phaser.Scene {
     this.raceSeed = raceStart.seed
     this.random = createSeededRandom(this.raceSeed) // cosmetics only; server owns gameplay
     this.localCarId = raceStart.youId
-    // stock chassis with no upgrades — network camera/HUD read spec, never the career
-    this.playerSpec = effectiveCarSpec(carById(STARTER_CAR.id), NO_UPGRADES)
+    // predict/render the local car with its own MP balance spec, matching the
+    // server (both derive it purely from the chosen chassis id)
+    const localChassis = raceStart.roster.find((r) => r.id === raceStart.youId)?.chassisId
+    this.playerSpec = mpCarSpec(localChassis ?? STARTER_CAR.id)
     this.hasPlating = false
     this.hasOverTurbo = false
     this.isDuel = false

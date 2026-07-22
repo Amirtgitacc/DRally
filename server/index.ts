@@ -17,9 +17,9 @@ const PORT = Number(process.env.PORT ?? 8080)
 const store = new RoomStore()
 const hosts = new Map<string, RaceHost>()
 
-// Every human car this phase drives with this one stock spec (no career/save
-// data on the server); car choice still varies mass via CarSetup. See
-// docs/DECISIONS.md multiplayer notes for the deferred per-car handling follow-up.
+// env.playerSpec fallback for any human car without a per-car spec override.
+// In MP every human now carries car.spec = mpCarSpec(chassis) (see raceSetup.ts),
+// so this is only a defensive default and no longer the human driving spec.
 const DEFAULT_PLAYER_SPEC = effectiveCarSpec(carById(STARTER_CAR.id), NO_UPGRADES)
 
 process.on('uncaughtException', (err) => {
