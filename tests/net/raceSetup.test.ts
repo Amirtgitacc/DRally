@@ -5,6 +5,8 @@ import type { LobbyPlayer } from '../../src/core/net/protocol'
 import { ALL_TRACKS } from '../../src/data/tracks'
 import { MP_ONLY_CARS } from '../../src/data/mpCars'
 import { CAR_CATALOG } from '../../src/data/cars'
+import { mpCarSpec, mpDamageResist } from '../../src/core/vehicle/mpBalance'
+import { mpCarById } from '../../src/data/mpCars'
 
 const track = ALL_TRACKS[0]
 const SEED = 12345
@@ -21,6 +23,22 @@ describe('buildNetworkRace', () => {
     expect(setups.every((s) => s.isPlayer && s.ai === null && s.damage === 0 && s.armorTier === 0)).toBe(true)
     expect(roster[0].color).not.toBe(roster[1].color)
     expect(roster.every((r) => !r.isAi)).toBe(true)
+  })
+
+  it('gives each human its chassis MP spec, resistance, and sizeScale', () => {
+    const players: LobbyPlayer[] = [
+      { id: 'a', name: 'Ana', carId: 'basilisk', variantId: 'base', ready: true, isAi: false },
+      { id: 'b', name: 'Bo', carId: 'marauder', variantId: 'base', ready: true, isAi: false },
+    ]
+    const { setups } = buildNetworkRace(players, true, track, SEED)
+    const a = setups.find((s) => s.id === 'a')!
+    const b = setups.find((s) => s.id === 'b')!
+    expect(a.spec).toEqual(mpCarSpec('basilisk'))
+    expect(a.damageResist).toBeCloseTo(mpDamageResist('basilisk'), 6)
+    expect(a.sizeScale).toBe(mpCarById('basilisk')!.sizeScale)
+    // bigger basilisk is slower + tougher than the smaller marauder
+    expect(a.spec!.topSpeed).toBeLessThan(b.spec!.topSpeed)
+    expect(a.damageResist!).toBeLessThan(b.damageResist!)
   })
 
   it('weapons off ⇒ zero ammo and mines for humans', () => {

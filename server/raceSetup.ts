@@ -16,6 +16,7 @@ import {
   talentTuning, talentPace, talentAimSpread, talentMineCount, talentMineCooldown, talentRubberBand,
 } from '../src/core/ai/talent'
 import { effectiveCarSpec } from '../src/core/vehicle/carSpec'
+import { mpCarSpec, mpDamageResist } from '../src/core/vehicle/mpBalance'
 import { GUN, MINES, AI_MINES } from '../src/data/weapons'
 import { createSeededRandom } from '../src/core/race/random'
 
@@ -76,6 +77,9 @@ export function buildNetworkRace(
         id: player.id,
         isPlayer: true,
         mass: car.mass,
+        sizeScale: car.sizeScale,
+        spec: mpCarSpec(car.id),
+        damageResist: mpDamageResist(car.id),
         damage: 0,
         ammo: weaponsEnabled ? GUN.ammoMax : 0,
         mines: weaponsEnabled ? STOCK_MINES : 0,
